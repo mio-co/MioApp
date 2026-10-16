@@ -1,0 +1,344 @@
+name: Build
+
+# iOS（未签名 ipa）、Android（apk）、Windows（Electron exe）、macOS（Mac Catalyst，ad-hoc 签名）
+# 打 v* 标签时所有平台都成功后把产物挂到 Release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Fetch adblock assets (AdGuard filters, Scriptlets, ExtendedCss)
+        run: node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          ls -la Payload/App.app/AdblockBundle
+          test -f Payload/App.app/AdblockBundle/filter-2.txt
+          test -f Payload/App.app/AdblockBundle/scriptlets.corelibs.json
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :UIBackgroundModes' Payload/App.app/Info.plist
+          zip -qry Mio.ipa Payload
+          ls -lh Mio.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mio-ipa
+          path: Mio.ipa
+          retention-days: 14
+
+  adblock-check:
+    # 在 macOS 上用同一份 MioAdblockCore.swift：转换 + 编译全部列表、查询 YouTube 规则、WKWebView 开/关对比
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch adblock assets
+        run: node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle
+
+      - name: Build checker
+        working-directory: tools/AdblockCheck
+        run: |
+          cp ../../ios/App/App/MioAdblockCore.swift Sources/AdblockCheck/
+          swift build -c release
+
+      - name: Run checker
+        working-directory: tools/AdblockCheck
+        run: .build/release/AdblockCheck ../../ios/App/App/AdblockBundle ../../adblock-check
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: adblock-check
+          path: adblock-check
+          retention-days: 14
+
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install
+        run: npm ci
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cargo-ndk
+            native/mioadblock/target
+          key: cargo-android-${{ hashFiles('native/mioadblock/Cargo.lock') }}
+
+      - name: Rust Android targets + cargo-ndk
+        run: |
+          rustup target add aarch64-linux-android x86_64-linux-android
+          command -v cargo-ndk || cargo install cargo-ndk --locked
+          cargo ndk --version
+          echo "NDK: $ANDROID_NDK_LATEST_HOME"
+
+      - name: Fetch adblock assets → android/app/src/main/assets/adblock
+        run: |
+          node scripts/fetch-adblock-assets.mjs android/app/src/main/assets/adblock
+          ls -la android/app/src/main/assets/adblock
+
+      - name: Test mioadblock on host (real lists)
+        working-directory: native/mioadblock
+        env:
+          MIO_ADBLOCK_BUNDLE: ${{ github.workspace }}/android/app/src/main/assets/adblock
+          MIO_ADBLOCK_REQUIRE: '1'
+        run: cargo test --release -- --nocapture
+
+      - name: Cross-compile libmioadblock.so (arm64-v8a, x86_64)
+        working-directory: native/mioadblock
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          cargo ndk -t arm64-v8a -t x86_64 --platform 24 -o ../../android/app/src/main/jniLibs build --release
+          ls -laR ../../android/app/src/main/jniLibs
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Gradle assembleRelease + assembleDebug
+        working-directory: android
+        run: ./gradlew --no-daemon --stacktrace assembleRelease assembleDebug
+
+      - name: Package APKs
+        run: |
+          set -e
+          V=$(node -p "require('./package.json').version")
+          mkdir -p out
+          ls -la android/app/build/outputs/apk/release android/app/build/outputs/apk/debug
+          REL=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          # release 只出未签名包；发布后在本地用固定 keystore 签名为 Mio.apk 再上传（不在 CI 里放 keystore）
+          case "$REL" in
+            *unsigned*) cp "$REL" "out/Mio-$V-android-unsigned.apk" ;;
+            *) echo "release APK unexpectedly signed: $REL"; exit 1 ;;
+          esac
+          cp android/app/build/outputs/apk/debug/app-debug.apk "out/Mio-$V-android-debug.apk"
+          for f in out/*.apk; do
+            echo "== $f"; ls -l "$f"
+            unzip -l "$f" | grep -E 'lib/(arm64-v8a|x86_64)/libmioadblock.so' 
+            unzip -l "$f" | grep -E 'assets/adblock/(filter-2.txt|filter-0.txt|scriptlets.corelibs.json|extended-css.min.js|manifest.json)' | wc -l | grep -qx 5
+            unzip -l "$f" | grep -q classes.dex
+          done
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/aapt2" dump badging "out/Mio-$V-android-debug.apk" | head -5
+          "$BT/apksigner" verify --print-certs "out/Mio-$V-android-debug.apk" | head -5
+          for f in out/*.apk; do echo "== verify $f"; "$BT/apksigner" verify "$f" 2>&1 | head -3 || true; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mio-android
+          path: out/*.apk
+          retention-days: 14
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Fetch adblock assets (AdGuard lists, uBO syntax + resources.json)
+        run: node scripts/fetch-assets.mjs assets/adblock
+
+      - name: Unit tests (+ engine from real lists)
+        env:
+          MIO_ADBLOCK_REQUIRE: '1'
+        run: npm test
+
+      - name: electron-builder (NSIS + portable, unsigned)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Smoke test packaged app (engine, MioDesktop bridge, YouTube blocking, whitelist)
+        run: |
+          OUT="$RUNNER_TEMP/smoke-win.json"
+          set +e
+          MIO_SMOKE_OUT="$OUT" timeout 240 ./dist/win-unpacked/Mio.exe
+          CODE=$?
+          set -e
+          cat "$OUT" || true
+          echo "exit $CODE"
+          test "$CODE" = 0
+
+      - name: List artifacts (+ Authenticode status, expected NotSigned)
+        run: |
+          ls -la dist
+          powershell -NoProfile -Command "Get-ChildItem dist\*.exe | ForEach-Object { '{0}: {1}' -f \$_.Name, (Get-AuthenticodeSignature \$_.FullName).Status }"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mio-windows
+          path: |
+            desktop/dist/*.exe
+          retention-days: 14
+
+  mac:
+    # Mac Catalyst（同一个 Xcode 工程；Capacitor 只链接到 iOS，Mac 用纯 WKWebView 根控制器 MioDesktop.swift），ad-hoc 签名
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Fetch adblock assets
+        run: node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Build (Mac Catalyst, unsigned)
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=macOS,variant=Mac Catalyst' \
+            -derivedDataPath build-mac \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package (ad-hoc codesign, zip + dmg)
+        run: |
+          set -euo pipefail
+          V=$(node -p "require('./package.json').version")
+          mkdir -p out dmgroot
+          ditto build-mac/Build/Products/Release-maccatalyst/App.app dmgroot/Mio.app
+          APP=dmgroot/Mio.app
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist"
+          test -f "$APP/Contents/Resources/AdblockBundle/filter-2.txt"
+          test -f "$APP/Contents/Resources/AdblockBundle/scriptlets.corelibs.json"
+          lipo -info "$APP/Contents/MacOS/App"
+          ! otool -L "$APP/Contents/MacOS/App" | grep -i capacitor
+          codesign --force --deep --sign - --timestamp=none "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | head -20
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "out/Mio-$V-mac.zip"
+          ln -s /Applications dmgroot/Applications
+          hdiutil create -volname "Mio $V" -srcfolder dmgroot -ov -format UDZO "out/Mio-$V-mac.dmg"
+          ls -lh out
+
+      - name: Smoke test (public site page → window.MioDesktop.browser.open → in-app browser + adblock ready)
+        run: |
+          set -u
+          OUT="$RUNNER_TEMP/smoke-mac.json"
+          MIO_SMOKE_OUT="$OUT" dmgroot/Mio.app/Contents/MacOS/App > mac-smoke.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 150); do kill -0 $PID 2>/dev/null || break; sleep 1; done
+          if kill -0 $PID 2>/dev/null; then echo "still running after 150s"; kill $PID; fi
+          wait $PID; CODE=$?
+          tail -40 mac-smoke.log
+          cat "$OUT" || true
+          echo "exit $CODE"
+          test "$CODE" = 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mio-mac
+          path: out/*
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ios, android, windows, mac]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Mio-*
+          path: dist
+          merge-multiple: true
+
+      - run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

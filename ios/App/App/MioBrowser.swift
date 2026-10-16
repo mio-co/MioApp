@@ -1,4 +1,4 @@
-// MioBrowser.swift — App 内置浏览器（全屏 WKWebView）+ Capacitor 插件 MioBrowser + 拦截设置页 + 后台规则刷新
+// MioBrowser.swift — App 内置浏览器（全屏 WKWebView）+ Capacitor 插件 MioBrowser（仅 iOS）+ 拦截设置页 + 后台规则刷新
 //
 // JS（MioCore 页面里）：
 //   Capacitor.Plugins.MioBrowser.open({ url })            内置浏览器打开（设置了「默认用 Safari」则交给 Safari）
@@ -10,7 +10,9 @@ import UIKit
 import WebKit
 import AVFoundation
 import BackgroundTasks
+#if canImport(Capacitor) && !targetEnvironment(macCatalyst)
 import Capacitor
+#endif
 
 // MARK: - Preferences
 
@@ -40,7 +42,9 @@ enum MioBrowserSettings {
     }
 }
 
-// MARK: - Capacitor plugin
+// MARK: - Capacitor plugin（iOS；Mac Catalyst 由 MioDesktop.swift 的 window.MioDesktop.browser 提供同样的接口）
+
+#if canImport(Capacitor) && !targetEnvironment(macCatalyst)
 
 @objc(MioBrowserPlugin)
 public class MioBrowserPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -97,6 +101,7 @@ public class MioBrowserPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 }
+#endif
 
 // MARK: - Background refresh (BGAppRefreshTask)
 

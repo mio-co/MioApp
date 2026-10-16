@@ -1,0 +1,22 @@
+[package]
+name = "mioadblock"
+version = "0.3.0"
+edition = "2021"
+license = "MPL-2.0 AND GPL-3.0-only"
+description = "Mio App (Android) ad blocking: adblock-rust (Brave) network + cosmetic engine, AdGuard advanced rules (scriptlets / CSS / JS / ExtendedCss) index + AdGuard Scriptlets code generation, JNI bindings"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Brave adblock-rust；不用 single-thread（Android shouldInterceptRequest 在多个线程调用，需要 Send + Sync）
+adblock = { version = "=0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
+jni = { version = "0.21", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

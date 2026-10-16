@@ -1,6 +1,10 @@
 import UIKit
-import Capacitor
 import WebKit
+// Capacitor 的 xcframework 没有 Mac Catalyst 切片：CapApp-SPM 只链接到 iOS（pbxproj platformFilter = ios），
+// Mac 版用 MioDesktop.swift 里的纯 WKWebView 根控制器
+#if canImport(Capacitor) && !targetEnvironment(macCatalyst)
+import Capacitor
+#endif
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -56,6 +60,28 @@ enum MioShellTheme {
     static let host = "mio.300031.xyz"
     /// App 直接打开后台导航页（Capacitor server.appStartPath = mio/nav），不经过首页 / 的 302
     static let home = URL(string: "https://mio.300031.xyz/mio/nav")!
+
+    /// 主界面加载失败时显示的提示页（真正的网络错误）
+    static func errorHTML(_ ns: NSError) -> String {
+        let failing = (ns.userInfo[NSURLErrorFailingURLStringErrorKey] as? String) ?? ""
+        let esc = { (s: String) in
+            s.replacingOccurrences(of: "&", with: "&amp;")
+             .replacingOccurrences(of: "<", with: "&lt;")
+             .replacingOccurrences(of: ">", with: "&gt;")
+        }
+        return """
+        <!doctype html><html><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta name="color-scheme" content="light dark">
+        <style>body{font-family:-apple-system;padding:48px 24px;color:#1f2937;background:#ffffff}
+        @media (prefers-color-scheme: dark){body{color:#e5e7eb;background:#0a0a0a}}
+        a{display:inline-block;margin-top:16px;padding:10px 20px;background:#f0a3bf;color:#fff;border-radius:10px;text-decoration:none}
+        code{font-size:12px;color:#6b7280;word-break:break-all}</style></head>
+        <body><h3>加载失败</h3><p>\(esc(ns.localizedDescription))</p>
+        <p><code>\(esc(ns.domain)) \(ns.code)<br>\(esc(failing))</code></p>
+        <a href="\(MioShellTheme.home.absoluteString)">重试</a></body></html>
+        """
+    }
 }
 
 // MARK: - Mio: launch cover
@@ -106,7 +132,9 @@ final class MioWeakScriptHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
-// MARK: - Mio: bridge view controller
+// MARK: - Mio: bridge view controller（iOS：Capacitor）
+
+#if canImport(Capacitor) && !targetEnvironment(macCatalyst)
 
 final class MioBridgeViewController: CAPBridgeViewController, WKScriptMessageHandler {
     private var navProxy: MioNavigationProxy?
@@ -262,25 +290,9 @@ final class MioNavigationProxy: NSObject, WKNavigationDelegate {
         if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
         if ns.domain == "WebKitErrorDomain" && (ns.code == 102 || ns.code == 101) { return }
 
-        let failing = (ns.userInfo[NSURLErrorFailingURLStringErrorKey] as? String) ?? ""
-        let esc = { (s: String) in
-            s.replacingOccurrences(of: "&", with: "&amp;")
-             .replacingOccurrences(of: "<", with: "&lt;")
-             .replacingOccurrences(of: ">", with: "&gt;")
-        }
-        let html = """
-        <!doctype html><html><head><meta charset="utf-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <meta name="color-scheme" content="light dark">
-        <style>body{font-family:-apple-system;padding:48px 24px;color:#1f2937;background:#ffffff}
-        @media (prefers-color-scheme: dark){body{color:#e5e7eb;background:#0a0a0a}}
-        a{display:inline-block;margin-top:16px;padding:10px 20px;background:#f0a3bf;color:#fff;border-radius:10px;text-decoration:none}
-        code{font-size:12px;color:#6b7280;word-break:break-all}</style></head>
-        <body><h3>加载失败</h3><p>\(esc(ns.localizedDescription))</p>
-        <p><code>\(esc(ns.domain)) \(ns.code)<br>\(esc(failing))</code></p>
-        <a href="\(MioShellTheme.home.absoluteString)">重试</a></body></html>
-        """
+        let html = MioShellTheme.errorHTML(ns)
         webView.loadHTMLString(html, baseURL: MioShellTheme.home)
         owner?.navigationDidShowError()
     }
 }
+#endif
