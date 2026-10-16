@@ -1,0 +1,21 @@
+{
+  "appId": "xyz.mio.app",
+  "appName": "Mio",
+  "webDir": "www",
+  "server": {
+    "url": "https://mio.300031.xyz",
+    "errorPath": "index.html",
+    "allowNavigation": [
+      "mio.300031.xyz",
+      "*.cloudflareaccess.com",
+      "accounts.google.com",
+      "github.com"
+    ],
+    "cleartext": false
+  },
+  "ios": {
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": false,
+    "scheme": "Mio"
+  }
+}

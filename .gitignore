@@ -1,0 +1,5 @@
+node_modules/
+build/
+Payload/
+*.ipa
+icon-preview.png
