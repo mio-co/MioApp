@@ -242,6 +242,7 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["adblockReady"] = MioAdblock.shared.snapshot.ready
                 report["ruleLists"] = MioAdblock.shared.snapshot.ruleListCount
                 report["browserProfile"] = MioWebKitCompat.profile.rawValue
+                report["mediaSourcePrefs"] = MioWebKitCompat.mediaSourcePrefs
                 report["browserUserAgent"] = MioWebKitCompat.desktopUserAgent
                 // 内置浏览器打开 YouTube 后的诊断：页面里的 UA 必须是桌面 Safari、MediaSource 可用
                 var desktopOK = true
