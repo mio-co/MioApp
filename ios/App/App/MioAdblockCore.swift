@@ -419,7 +419,8 @@ final class MioAdblock {
         guard let current = scriptlets else { return "Scriptlets 未加载" }
         let major = current.version.split(separator: ".").first.map(String.init) ?? "2"
         do {
-            var req = URLRequest(url: URL(string: "https://registry.npmjs.org/@adguard/scriptlets")!, timeoutInterval: 30)
+            guard let registryURL = URL(string: "https://registry.npmjs.org/@adguard/scriptlets") else { throw MioAdblockError.invalid("bad url") }
+            var req = URLRequest(url: registryURL, timeoutInterval: 30)
             req.setValue("application/vnd.npm.install-v1+json", forHTTPHeaderField: "Accept")
             let (meta, _) = try Self.fetch(req)
             guard let obj = try JSONSerialization.jsonObject(with: meta) as? [String: Any],
@@ -430,13 +431,17 @@ final class MioAdblock {
             guard latest.split(separator: ".").first.map(String.init) == major else { return "Scriptlets \(current.version)（新主版本 \(latest) 未自动采用）" }
             guard Self.compareVersions(latest, current.version) > 0 else { return "Scriptlets \(current.version) 已是最新" }
             let path = "/dist/scriptlets.corelibs.json"
-            let (flat, _) = try Self.fetch(URLRequest(url: URL(string: "https://data.jsdelivr.com/v1/packages/npm/@adguard/scriptlets@\(latest)?structure=flat")!, timeoutInterval: 30))
+            guard let flatURL = URL(string: "https://data.jsdelivr.com/v1/packages/npm/@adguard/scriptlets@\(latest)?structure=flat"),
+                  let fileURL = URL(string: "https://cdn.jsdelivr.net/npm/@adguard/scriptlets@\(latest)\(path)") else {
+                throw MioAdblockError.invalid("Scriptlets 版本号异常：\(latest)")
+            }
+            let (flat, _) = try Self.fetch(URLRequest(url: flatURL, timeoutInterval: 30))
             guard let fobj = try JSONSerialization.jsonObject(with: flat) as? [String: Any],
                   let files = fobj["files"] as? [[String: Any]],
                   let expected = files.first(where: { ($0["name"] as? String) == path })?["hash"] as? String else {
                 throw MioAdblockError.invalid("jsDelivr 没有 \(path) 的哈希")
             }
-            let (data, _) = try Self.fetch(URLRequest(url: URL(string: "https://cdn.jsdelivr.net/npm/@adguard/scriptlets@\(latest)\(path)")!, timeoutInterval: 60))
+            let (data, _) = try Self.fetch(URLRequest(url: fileURL, timeoutInterval: 60))
             let got = Data(SHA256.hash(data: data)).base64EncodedString()
             guard got == expected else { throw MioAdblockError.invalid("Scriptlets \(latest) 哈希不匹配") }
             let s = try MioScriptlets(data: data)
