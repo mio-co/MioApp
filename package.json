@@ -1,12 +1,18 @@
 {
   "name": "mio-app",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "description": "iOS shell for MioCore (https://mio.300031.xyz)",
-  "scripts": { "sync": "cap sync ios" },
+  "scripts": {
+    "sync": "cap sync ios"
+  },
   "dependencies": {
     "@capacitor/core": "8.5.3",
     "@capacitor/ios": "8.5.3"
   },
-  "devDependencies": { "@capacitor/cli": "8.5.3" }
+  "devDependencies": {
+    "@adguard/extended-css": "2.3.0",
+    "@adguard/scriptlets": "2.5.1",
+    "@capacitor/cli": "8.5.3"
+  }
 }
