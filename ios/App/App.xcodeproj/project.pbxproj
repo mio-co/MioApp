@@ -21,6 +21,7 @@
 		A1000001000000000000A003 /* AdblockBundle in Resources */ = {isa = PBXBuildFile; fileRef = A1000001000000000000F003 /* AdblockBundle */; };
 		A1000001000000000000A005 /* MioDesktop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001000000000000F005 /* MioDesktop.swift */; };
 		A1000001000000000000A006 /* MioObjCSafe.m in Sources */ = {isa = PBXBuildFile; fileRef = A1000001000000000000F006 /* MioObjCSafe.m */; };
+		A1000001000000000000A009 /* MioWebCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001000000000000F009 /* MioWebCompat.swift */; };
 		A1000001000000000000A004 /* ContentBlockerConverter in Frameworks */ = {isa = PBXBuildFile; productRef = A1000001000000000000D001 /* ContentBlockerConverter */; };
 /* End PBXBuildFile section */
 
@@ -39,6 +40,7 @@
 		A1000001000000000000F001 /* MioAdblockCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioAdblockCore.swift; sourceTree = "<group>"; };
 		A1000001000000000000F002 /* MioBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioBrowser.swift; sourceTree = "<group>"; };
 		A1000001000000000000F005 /* MioDesktop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioDesktop.swift; sourceTree = "<group>"; };
+		A1000001000000000000F009 /* MioWebCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioWebCompat.swift; sourceTree = "<group>"; };
 		A1000001000000000000F006 /* MioObjCSafe.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MioObjCSafe.m; sourceTree = "<group>"; };
 		A1000001000000000000F007 /* MioObjCSafe.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MioObjCSafe.h; sourceTree = "<group>"; };
 		A1000001000000000000F008 /* App-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "App-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -84,6 +86,7 @@
 				A1000001000000000000F001 /* MioAdblockCore.swift */,
 				A1000001000000000000F002 /* MioBrowser.swift */,
 				A1000001000000000000F005 /* MioDesktop.swift */,
+				A1000001000000000000F009 /* MioWebCompat.swift */,
 				A1000001000000000000F006 /* MioObjCSafe.m */,
 				A1000001000000000000F007 /* MioObjCSafe.h */,
 				A1000001000000000000F008 /* App-Bridging-Header.h */,
@@ -187,6 +190,7 @@
 				A1000001000000000000A001 /* MioAdblockCore.swift in Sources */,
 				A1000001000000000000A002 /* MioBrowser.swift in Sources */,
 				A1000001000000000000A005 /* MioDesktop.swift in Sources */,
+				A1000001000000000000A009 /* MioWebCompat.swift in Sources */,
 				A1000001000000000000A006 /* MioObjCSafe.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -40,6 +40,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
 
+    #if targetEnvironment(macCatalyst)
+    /// Mac 菜单栏：「浏览器 › 用 Safari 打开」⌘⇧O。沿响应链找实现了 mioOpenInSafari(_:) 的控制器：
+    /// 内置浏览器在前台时打开它的当前网页，否则打开主界面当前页面。通行密钥 / iCloud 钥匙串只能在 Safari 里用。
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        guard builder.system == .main else { return }
+        let openInSafari = UIKeyCommand(title: "用 Safari 打开",
+                                        image: UIImage(systemName: "safari"),
+                                        action: #selector(MioBrowserViewController.mioOpenInSafari(_:)),
+                                        input: "o",
+                                        modifierFlags: [.command, .shift])
+        openInSafari.discoverabilityTitle = "在 Safari 中打开当前网页（通行密钥 / 钥匙串登录）"
+        let menu = UIMenu(title: "浏览器", identifier: UIMenu.Identifier("xyz.mio.app.menu.browser"), children: [openInSafari])
+        builder.insertSibling(menu, afterMenu: .view)
+    }
+    #endif
+
     func application(_ application: UIApplication,
                      configurationForConnecting connectingSceneSession: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {

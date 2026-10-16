@@ -42,6 +42,66 @@ enum MioBrowserSettings {
     }
 }
 
+// MARK: - WebKit 兼容（UA / 内容模式 / MediaSource），纯逻辑在 MioWebCompat.swift
+
+enum MioWebKitCompat {
+    /// Mac Catalyst，或「为 iPad 设计」的 iOS 包跑在 Apple 芯片 Mac 上
+    static let isMac: Bool = {
+        #if targetEnvironment(macCatalyst)
+        return true
+        #else
+        return ProcessInfo.processInfo.isiOSAppOnMac
+        #endif
+    }()
+
+    static var profile: MioBrowserProfile {
+        MioWebCompat.profile(isMacCatalyst: isMac, isPad: UIDevice.current.userInterfaceIdiom == .pad)
+    }
+
+    /// 与本机系统 WebKit 对应的 Safari 版本号
+    static let safariVersion: String = {
+        let pv = ProcessInfo.processInfo.operatingSystemVersion
+        if isMac {
+            let plist = NSDictionary(contentsOfFile: "/System/Library/CoreServices/SystemVersion.plist") as? [String: Any]
+            let v = MioWebCompat.macOSVersion(systemVersionPlist: plist, processVersion: (pv.majorVersion, pv.minorVersion))
+            return MioWebCompat.safariVersion(macOSMajor: v.major, minor: v.minor)
+        }
+        // iPad：Safari 版本 = iPadOS 版本
+        return "\(pv.majorVersion).\(pv.minorVersion)"
+    }()
+
+    static var desktopUserAgent: String { MioWebCompat.desktopUserAgent(safariVersion: safariVersion) }
+
+    /// Mac 上确保 MediaSource（MSE）开启：没有 MSE 时 YouTube 只能给渐进式 mp4（最高 360p）。
+    /// iPad 布局的 Catalyst 默认应已开启；这里用 WKPreferences 的私有开关兜底（先 responds(to:) 检查，ObjC 异常也接住）。
+    /// 免签名包不经 App Review，私有开关只在 Mac 上设置，iPhone 不动。
+    @discardableResult
+    static func enableMediaSource(_ prefs: WKPreferences) -> [String: Bool] {
+        var applied: [String: Bool] = [:]
+        for (key, setter) in [("mediaSourceEnabled", "_setMediaSourceEnabled:"), ("managedMediaSourceEnabled", "_setManagedMediaSourceEnabled:")] {
+            guard prefs.responds(to: NSSelectorFromString(setter)) else { applied[key] = false; continue }
+            // KVC：key "mediaSourceEnabled" 会找到 _setMediaSourceEnabled:（set<Key>: 找不到时找 _set<Key>:）
+            let exc = MioObjCSafe.catching { prefs.setValue(true, forKey: key) }
+            applied[key] = exc == nil
+            if let exc = exc { NSLog("⚡️ Mio browser: %@ threw %@", key, exc.reason ?? exc.name.rawValue) }
+        }
+        mediaSourcePrefs = applied
+        NSLog("⚡️ Mio browser MSE prefs: %@", "\(applied)")
+        return applied
+    }
+
+    /// 最近一次 enableMediaSource 的结果（冒烟测试写进报告）
+    static var mediaSourcePrefs: [String: Bool] = [:]
+
+    #if targetEnvironment(macCatalyst)
+    /// 诊断：回车键冒泡到视图控制器 = 第一响应者（WKWebView）没有消费它
+    static func logUnhandledReturn(_ presses: Set<UIPress>, in responder: UIResponder) {
+        guard presses.contains(where: { $0.key?.keyCode == .keyboardReturnOrEnter || $0.key?.keyCode == .keypadEnter }) else { return }
+        NSLog("⚡️ Mio: Return key reached %@ unhandled (first responder: WKWebView did not consume it)", String(describing: type(of: responder)))
+    }
+    #endif
+}
+
 // MARK: - Capacitor plugin（iOS；Mac Catalyst 由 MioDesktop.swift 的 window.MioDesktop.browser 提供同样的接口）
 
 #if canImport(Capacitor) && !targetEnvironment(macCatalyst)
@@ -192,8 +252,11 @@ enum MioAdblockBackground {
 
 // MARK: - Browser view controller
 
-final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UITextFieldDelegate {
+final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UITextFieldDelegate {
     private static weak var current: MioBrowserViewController?
+    /// 最近一次 YouTube 页面的媒体诊断（UA / MediaSource / 清晰度），Mac 冒烟测试读取
+    static var lastMediaProbe: String?
+    private static let passkeyMessage = "mioPasskey"
 
     /// 已打开就在当前浏览器里加载，否则全屏弹出
     static func open(_ url: URL, from base: UIViewController?) {
@@ -229,6 +292,10 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     private var reloadItem: UIBarButtonItem!
     private var observations: [NSKeyValueObservation] = []
     private var changeObserver: NSObjectProtocol?
+    private let profile = MioWebKitCompat.profile
+    /// 桌面模式下 m.youtube.com → www 的改写记录（防止站点来回重定向时死循环）
+    private var desktopRewrites: [Date] = []
+    private var passkeyHintedHosts: Set<String> = []
 
     init(url: URL) {
         initialURL = url
@@ -240,6 +307,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     deinit {
         observations.forEach { $0.invalidate() }
         if let o = changeObserver { NotificationCenter.default.removeObserver(o) }
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: Self.passkeyMessage)
         adblock?.detach()
     }
 
@@ -259,10 +327,26 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsPictureInPictureMediaPlayback = true
         // 不带 Safari 标识时 Google 登录会拒绝（disallowed_useragent），YouTube 也会给降级页面
-        let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
-        config.applicationNameForUserAgent = "Version/\(major).0 Mobile/15E148 Safari/604.1"
+        switch profile {
+        case .mobile:
+            // iPhone：保持原来的手机 UA
+            let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+            config.applicationNameForUserAgent = MioWebCompat.mobileApplicationName(iOSMajor: major)
+        case .desktop:
+            // Mac / iPad：与系统 Safari 桌面版一致。以前 Mac 上也带 "Mobile/15E148"，YouTube 当成 iPhone →
+            // m.youtube.com + 只给渐进式 mp4（360p）。customUserAgent 在下面 WKWebView 建好后设置。
+            config.applicationNameForUserAgent = MioWebCompat.desktopApplicationName(safariVersion: MioWebKitCompat.safariVersion)
+            config.defaultWebpagePreferences.preferredContentMode = .desktop
+            if MioWebKitCompat.isMac {
+                MioWebKitCompat.enableMediaSource(config.preferences)
+            }
+        }
+        config.userContentController.add(MioWeakScriptHandler(self), name: Self.passkeyMessage)
 
         webView = WKWebView(frame: .zero, configuration: config)
+        if profile == .desktop {
+            webView.customUserAgent = MioWebKitCompat.desktopUserAgent
+        }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -333,7 +417,12 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         forwardItem = UIBarButtonItem(image: UIImage(systemName: "chevron.forward"), style: .plain, target: self, action: #selector(forwardTapped))
         reloadItem = UIBarButtonItem(image: UIImage(systemName: "arrow.clockwise"), style: .plain, target: self, action: #selector(reloadTapped))
         let share = UIBarButtonItem(image: UIImage(systemName: "square.and.arrow.up"), style: .plain, target: self, action: #selector(shareTapped))
+        #if targetEnvironment(macCatalyst)
+        // Mac：文字按钮更显眼（通行密钥 / 钥匙串登录要去 Safari），快捷键 ⌘⇧O
+        let safari = UIBarButtonItem(title: "用 Safari 打开 ⌘⇧O", style: .plain, target: self, action: #selector(safariTapped))
+        #else
         let safari = UIBarButtonItem(image: UIImage(systemName: "safari"), style: .plain, target: self, action: #selector(safariTapped))
+        #endif
         safari.accessibilityLabel = "用 Safari 打开"
         let settings = UIBarButtonItem(image: UIImage(systemName: "gearshape"), style: .plain, target: self, action: #selector(settingsTapped))
         settings.accessibilityLabel = "浏览器设置"
@@ -437,8 +526,21 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         }
     }
 
-    /// 后台播放：页面始终认为自己可见（YouTube 在 visibilitychange 时会暂停）
+    /// 内置浏览器额外的用户脚本（MioAdblockSession 重建脚本时会一起加回去）
     private static func extraScripts() -> [WKUserScript] {
+        var scripts: [WKUserScript] = [
+            // 第三方站点的通行密钥用不了时提示改用 Safari（不绕过系统限制）
+            WKUserScript(source: MioWebCompat.passkeyHintScript, injectionTime: .atDocumentStart, forMainFrameOnly: true),
+        ]
+        if MioWebKitCompat.isMac {
+            // Mac：textarea / contenteditable 回车不换行的兜底（所有 frame，评论框常在 iframe 里）
+            scripts.append(WKUserScript(source: MioWebCompat.returnKeyFixScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
+        return scripts + backgroundPlaybackScripts()
+    }
+
+    /// 后台播放：页面始终认为自己可见（YouTube 在 visibilitychange 时会暂停）
+    private static func backgroundPlaybackScripts() -> [WKUserScript] {
         guard MioBrowserSettings.backgroundPlayback else { return [] }
         let js = """
         (function(){try{
@@ -478,11 +580,49 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     }
 
     @objc private func safariTapped() {
-        UIApplication.shared.open(webView.url ?? initialURL)
+        openInSafari()
     }
 
+    /// 当前页面交给 Safari（通行密钥 / iCloud 钥匙串只能在 Safari 里用）
+    func openInSafari() {
+        var url = webView.url ?? initialURL
+        if let s = url.scheme?.lowercased(), s != "http" && s != "https" { url = initialURL }   // 错误页（about:blank）
+        UIApplication.shared.open(url)
+    }
+
+    /// 菜单「浏览器 › 用 Safari 打开」（⌘⇧O，Mac 菜单栏 / AppDelegate.buildMenu）和 iPad 键盘快捷键
+    @objc func mioOpenInSafari(_ sender: Any?) {
+        openInSafari()
+    }
+
+    @objc private func focusAddress() {
+        addressField.becomeFirstResponder()
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        var commands = [
+            UIKeyCommand(title: "刷新", action: #selector(reloadTapped), input: "r", modifierFlags: .command),
+            UIKeyCommand(title: "后退", action: #selector(backTapped), input: "[", modifierFlags: .command),
+            UIKeyCommand(title: "前进", action: #selector(forwardTapped), input: "]", modifierFlags: .command),
+            UIKeyCommand(title: "打开位置…", action: #selector(focusAddress), input: "l", modifierFlags: .command),
+        ]
+        #if !targetEnvironment(macCatalyst)
+        // Mac 上这一项在菜单栏里（同一快捷键不能既在菜单又在 keyCommands）
+        commands.append(UIKeyCommand(title: "用 Safari 打开", action: #selector(mioOpenInSafari(_:)), input: "o", modifierFlags: [.command, .shift]))
+        #endif
+        return commands
+    }
+
+    #if targetEnvironment(macCatalyst)
+    /// 诊断：回车键一路冒泡到这里说明 WKWebView 没有消费它（页面里回车不换行时看日志）
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        MioWebKitCompat.logUnhandledReturn(presses, in: self)
+        super.pressesBegan(presses, with: event)
+    }
+    #endif
+
     @objc private func settingsTapped() {
-        let nav = UINavigationController(rootViewController: MioBrowserSettingsViewController(currentHost: webView.url?.host))
+        let nav = UINavigationController(rootViewController: MioBrowserSettingsViewController(currentHost: webView.url?.host, currentURL: webView.url))
         present(nav, animated: true)
     }
 
@@ -550,20 +690,41 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     // MARK: WKNavigationDelegate
 
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
+    // 带 preferences 的版本：WebKit 实现了它就不再调用旧的 decidePolicyFor(_:decisionHandler:)
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+        let isMain = navigationAction.targetFrame?.isMainFrame ?? true
+        if profile == .desktop, isMain {
+            // 每次主框架导航（包括服务端重定向）都按桌面版请求，与 Safari 桌面版一致；内容模式只对主框架有意义，子框架不动
+            preferences.preferredContentMode = .desktop
+        }
+        guard let url = navigationAction.request.url else { decisionHandler(.cancel, preferences); return }
         let scheme = url.scheme?.lowercased() ?? ""
         if scheme != "http" && scheme != "https" && scheme != "about" && scheme != "blob" && scheme != "data" {
             // tel: mailto: itms-apps: 以及各种 App 链接交给系统
             UIApplication.shared.open(url)
-            decisionHandler(.cancel)
+            decisionHandler(.cancel, preferences)
             return
         }
-        if navigationAction.targetFrame?.isMainFrame ?? true, scheme == "http" || scheme == "https" {
+        if isMain, profile == .desktop, let desktop = MioWebCompat.desktopURL(for: url), allowDesktopRewrite() {
+            // m.youtube.com → www.youtube.com（旧链接 / 历史记录 / 旧 Cookie 触发的重定向）
+            decisionHandler(.cancel, preferences)
+            DispatchQueue.main.async { [weak self] in self?.webView.load(URLRequest(url: desktop)) }
+            return
+        }
+        if isMain, scheme == "http" || scheme == "https" {
             adblock.prepareMainFrame(url)
             updateShield()
         }
-        decisionHandler(.allow)
+        decisionHandler(.allow, preferences)
+    }
+
+    /// 10 秒内最多改写 3 次：站点坚持把桌面版重定向回手机版时不跟它打架
+    private func allowDesktopRewrite() -> Bool {
+        let now = Date()
+        desktopRewrites = desktopRewrites.filter { now.timeIntervalSince($0) < 10 }
+        guard desktopRewrites.count < 3 else { return false }
+        desktopRewrites.append(now)
+        return true
     }
 
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
@@ -580,6 +741,38 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // 诊断：YouTube 上记录 UA / MediaSource / 播放器拿到的最高清晰度（Mac 或 Debug）
+        guard let host = webView.url?.host?.lowercased(), host == "youtube.com" || host.hasSuffix(".youtube.com") else { return }
+        #if !DEBUG
+        guard MioWebKitCompat.isMac else { return }
+        #endif
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak webView] in
+            webView?.evaluateJavaScript(MioWebCompat.mediaProbeScript) { result, error in
+                let s = (result as? String) ?? "error: \(String(describing: error))"
+                MioBrowserViewController.lastMediaProbe = s
+                NSLog("⚡️ Mio browser media probe: %@", s)
+            }
+        }
+    }
+
+    // MARK: WKScriptMessageHandler（通行密钥提示）
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == Self.passkeyMessage, message.frameInfo.isMainFrame else { return }
+        let host = webView.url?.host ?? (message.body as? [String: Any])?["host"] as? String ?? ""
+        guard !passkeyHintedHosts.contains(host) else { return }
+        passkeyHintedHosts.insert(host)
+        NSLog("⚡️ Mio browser: WebAuthn failed on %@ (%@)", host, "\(message.body)")
+        let a = UIAlertController(
+            title: "请在 Safari 中使用通行密钥",
+            message: "\(host.isEmpty ? "此网站" : host) 想用通行密钥（Passkey）或 iCloud 钥匙串登录。Mio 不是经 App Store 签名分发的 App，系统不允许它使用这些功能（需要 Apple 审批的浏览器权限）。用 Safari 打开此页面即可正常登录。",
+            preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "取消", style: .cancel))
+        a.addAction(UIAlertAction(title: "用 Safari 打开", style: .default) { [weak self] _ in self?.openInSafari() })
+        presentPanel(a, fallback: {})
     }
 
     private func showError(_ error: Error) {
@@ -646,16 +839,22 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
 final class MioBrowserSettingsViewController: UITableViewController {
     private enum Row {
-        case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, licenses, version
+        case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, passkeyInfo, openInSafari(URL), licenses, version
     }
 
     private let currentHost: String?
+    private let currentURL: URL?
     private var sections: [(title: String?, footer: String?, rows: [Row])] = []
     private var observer: NSObjectProtocol?
     private var updating = false
 
-    init(currentHost: String?) {
+    init(currentHost: String?, currentURL: URL? = nil) {
         self.currentHost = currentHost
+        if let u = currentURL, let s = u.scheme?.lowercased(), s == "http" || s == "https" {
+            self.currentURL = u
+        } else {
+            self.currentURL = nil
+        }
         super.init(style: .insetGrouped)
     }
 
@@ -694,7 +893,10 @@ final class MioBrowserSettingsViewController: UITableViewController {
         allow.append(.allowlistAdd)
         s.append(("白名单（不拦截的网站）", "包含其所有子域名。左滑删除。", allow))
 
-        s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的指南针图标改用 Safari。", [.preferSafari, .backgroundPlayback]))
+        s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的「用 Safari 打开」（\(Self.safariHint)）改用 Safari。", [.preferSafari, .backgroundPlayback]))
+        var login: [Row] = [.passkeyInfo]
+        if let u = currentURL { login.append(.openInSafari(u)) }
+        s.append(("通行密钥与钥匙串", Self.passkeyFooter, login))
         s.append((nil, nil, [.licenses, .version]))
         sections = s.map { (title: $0.0, footer: $0.1, rows: $0.2) }
         tableView.reloadData()
@@ -712,6 +914,15 @@ final class MioBrowserSettingsViewController: UITableViewController {
     }()
 
     private func fmt(_ d: Date?) -> String { d.map { Self.dateFormatter.string(from: $0) } ?? "—" }
+
+    #if targetEnvironment(macCatalyst)
+    static let safariHint = "菜单「浏览器 › 用 Safari 打开」或 ⌘⇧O"
+    #else
+    static let safariHint = "指南针图标，外接键盘 ⌘⇧O"
+    #endif
+
+    /// 为什么内置浏览器里用不了通行密钥 / iCloud 钥匙串（不尝试绕过）
+    static let passkeyFooter = "第三方网站的通行密钥（Passkey）和 iCloud 钥匙串自动填充，系统只开放给获得 Apple 审批的浏览器权限、并经 App Store 签名分发的 App。Mio 是免签名安装包，拿不到这项权限，所以内置浏览器里无法使用它们——这不是设置问题，也无法绕过。需要这样登录的网站请用 Safari 打开（\(safariHint)）；网页调用通行密钥失败时 Mio 也会提示。"
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
@@ -776,6 +987,14 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.textLabel?.text = "后台 / 锁屏继续播放"
             cell.detailTextLabel?.text = "对之后打开的页面生效"
             cell.accessoryView = makeSwitch(MioBrowserSettings.backgroundPlayback) { MioBrowserSettings.backgroundPlayback = $0 }
+        case .passkeyInfo:
+            cell.textLabel?.text = "内置浏览器不支持通行密钥 / 钥匙串自动填充"
+            cell.detailTextLabel?.text = "账号密码可手动输入；通行密钥登录请用 Safari"
+        case .openInSafari(let url):
+            cell.textLabel?.text = "用 Safari 打开当前网页"
+            cell.textLabel?.textColor = .systemBlue
+            cell.detailTextLabel?.text = url.host
+            cell.selectionStyle = .default
         case .licenses:
             cell.textLabel?.text = "开源许可"
             cell.detailTextLabel?.text = "SafariConverterLib、AdGuard Scriptlets、ExtendedCss（GPL-3.0）；过滤列表：AdGuard（CC BY-SA 3.0 / GPL-3.0）、EasyList / EasyPrivacy（GPL-3.0 / CC BY-SA 3.0）。详见仓库 NOTICE。"
@@ -822,6 +1041,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
                 if let t = a.textFields?.first?.text, !t.isEmpty { MioAdblockSettings.setAllowlisted(t, true) }
             })
             present(a, animated: true)
+        case .openInSafari(let url):
+            UIApplication.shared.open(url)
         default:
             break
         }

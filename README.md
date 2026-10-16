@@ -74,7 +74,7 @@ ipa 未签名。用电脑上的 [iloader](https://iloader.app) → Import IPA，
 MioCore（≥ 2026-10-17 部署的版本）在 App 里点**站外链接**（导航页、云剪贴板、笔记、密码库里的网址，以及 `window.open`）会调用原生插件
 `Capacitor.Plugins.MioBrowser.open({ url })`，在 App 内置浏览器全屏打开；普通浏览器里行为不变（`MioCore/src/utils/appShell.ts`）。
 
-- 浏览器：地址栏（标题 — 域名；点一下可输入网址或搜索）、前进 / 后退 / 刷新、分享、**用 Safari 打开**（指南针图标）、设置（齿轮）、关闭；左右滑动手势前进后退。
+- 浏览器：地址栏（标题 — 域名；点一下可输入网址或搜索）、前进 / 后退 / 刷新、分享、**用 Safari 打开**（指南针图标；Mac 上为文字按钮，⌘⇧O）、设置（齿轮）、关闭；左右滑动手势前进后退。
   `target=_blank` / `window.open` 在当前页打开；`tel:` `mailto:` 等交给系统。
 - 数据隔离：独立的持久化 `WKWebsiteDataStore(forIdentifier:)`（iOS 17+），登录状态保留，和 MioCore 主界面的会话互不影响。（iOS 15–16 只能用默认存储。）
 - 后台 / 锁屏播放：`UIBackgroundModes audio` + `AVAudioSession .playback`，页面里 `document.hidden` / `visibilityState` 恒为可见（YouTube 切后台不再自动暂停）。设置里可关。
@@ -128,7 +128,17 @@ YouTube 视频广告靠 AdGuard Base 里的 `set-constant ytInitialPlayerRespons
   （`open` / `openSettings` / `getInfo`，WKScriptMessageHandlerWithReply 返回 Promise，只对 MioCore 的 https 主框架开放）。内置浏览器、拦截（SafariConverterLib + Scriptlets + ExtendedCss）、设置页复用 iOS 代码；常驻时每小时检查是否满 24 小时需要更新规则。
 - 页面没交给 bridge 的站外链接点击 → 内置浏览器；Access / Google / GitHub 登录留在主窗口；站内新窗口 / 登录弹窗 → 同会话弹窗。⌘R 刷新、⌘[ ⌘] 前进后退、⌘, 拦截设置。
 - 内置浏览器在 Mac 上是主窗口里的全屏层（不是独立窗口）。
-- CI 冒烟：`MIO_SMOKE_OUT` 时打开公开首页 `/`，确认 `MioDesktop.browser` 存在、`open()` 弹出内置浏览器、拦截规则编译就绪。
+- 内置浏览器在 Mac（和 iPad）上按桌面 Safari 访问：UA 与系统 Safari 相同（`Macintosh; Intel Mac OS X 10_15_7 … Version/<系统 Safari 版本> Safari/605.1.15`，
+  版本由 macOS 版本推出）、`preferredContentMode = .desktop`、`m.youtube.com` 改写到 `www.youtube.com`、Mac 上确保 MediaSource 开启。iPhone 仍用手机 UA。
+  纯逻辑在 `ios/App/App/MioWebCompat.swift`（不依赖 UIKit / WebKit）。
+- 回车键：Mac 上主界面和内置浏览器都注入 `MioWebCompat.returnKeyFixScript`——textarea / contenteditable 里 Enter / Shift+Enter 没被原生处理时补一次与 Safari 相同的编辑命令
+  （页面 preventDefault、输入法组字、原生已插入时都不动）；补过时控制台打印 `[Mio] Return key not handled natively`，回车冒泡到原生控制器时日志 `Return key reached … unhandled`。
+- 通行密钥 / iCloud 钥匙串：第三方站点的 Passkey 和钥匙串自动填充需要 Apple 审批的浏览器权限，免签名包拿不到，不做绕过。
+  入口：内置浏览器工具栏「用 Safari 打开」、菜单栏「浏览器 › 用 Safari 打开」⌘⇧O、设置页说明；网页调用 WebAuthn 失败时提示改用 Safari。
+- CI 冒烟：`MIO_SMOKE_OUT` 时打开公开首页 `/`，确认 `MioDesktop.browser` 存在、`open()` 弹出内置浏览器、拦截规则编译就绪，
+  且内置浏览器里 YouTube 页面的 `navigator.userAgent` 是桌面 Safari、MediaSource 可用（`browserProbe`）。
+- 单测（`unit` job，不需要 Xcode）：`swift test --package-path tools/MioAppTests`（UA、桌面版改写、过滤列表里会删 YouTube `streamingData` 的规则体检），
+  `node --test tools/MioAppTests/js/*.test.mjs`（回车键兜底、通行密钥提示脚本，从 Swift 文件里抽出 JS 跑）。
 
 ## Windows（Electron，0.3.0 起）
 
