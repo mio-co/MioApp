@@ -18,6 +18,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }
 
+    // 使用 UIScene 生命周期时 AppDelegate 的 applicationDidBecomeActive / DidEnterBackground 不会被调用
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        // 长时间挂在后台后回到前台：超过 24 小时就检查规则更新
+        if MioAdblock.shared.needsUpdateCheck && MioAdblock.shared.snapshot.busy == nil {
+            MioAdblock.shared.checkForUpdates(force: false)
+        }
+    }
+
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        MioAdblockBackground.schedule()
+    }
+
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         SceneDelegateProxy.shared.scene(scene, openURLContexts: URLContexts)
     }

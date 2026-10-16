@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -24,6 +24,9 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      - name: Fetch adblock assets (AdGuard filters, Scriptlets, ExtendedCss)
+        run: node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle
 
       - name: Sync Capacitor
         run: npx cap sync ios
@@ -40,6 +43,8 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -49,6 +54,10 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          ls -la Payload/App.app/AdblockBundle
+          test -f Payload/App.app/AdblockBundle/filter-2.txt
+          test -f Payload/App.app/AdblockBundle/scriptlets.corelibs.json
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :UIBackgroundModes' Payload/App.app/Info.plist
           zip -qry Mio.ipa Payload
           ls -lh Mio.ipa
 
@@ -63,3 +72,37 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Mio.ipa
+
+  adblock-check:
+    # 在 macOS 上用同一份 MioAdblockCore.swift：转换 + 编译全部列表、查询 YouTube 规则、WKWebView 开/关对比
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch adblock assets
+        run: node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle
+
+      - name: Build checker
+        working-directory: tools/AdblockCheck
+        run: |
+          cp ../../ios/App/App/MioAdblockCore.swift Sources/AdblockCheck/
+          swift build -c release
+
+      - name: Run checker
+        working-directory: tools/AdblockCheck
+        run: .build/release/AdblockCheck ../../ios/App/App/AdblockBundle ../../adblock-check
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: adblock-check
+          path: adblock-check
+          retention-days: 14

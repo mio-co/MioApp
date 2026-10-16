@@ -1,0 +1,10 @@
+# 由 scripts/fetch-adblock-assets.mjs 在构建前生成（CI 每次出包时拉最新的 AdGuard 官方列表）
+filter-2.txt
+filter-3.txt
+filter-11.txt
+filter-101.txt
+filter-118.txt
+filter-224.txt
+manifest.json
+scriptlets.corelibs.json
+extended-css.min.js

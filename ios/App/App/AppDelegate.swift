@@ -8,7 +8,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // 内置浏览器广告拦截：后台刷新任务必须在启动结束前注册；规则加载 / 首次编译在后台队列
+        MioAdblockBackground.register()
+        MioAdblock.shared.start()
         return true
     }
 
@@ -118,6 +120,8 @@ final class MioBridgeViewController: CAPBridgeViewController, WKScriptMessageHan
 
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
+        // App 内置浏览器（Capacitor.Plugins.MioBrowser）：MioCore 页面里点外链时调用
+        bridge?.registerPluginInstance(MioBrowserPlugin())
         guard let webView = webView else { return }
         // WKWebView 首帧前（Capacitor 首次加载时还会把它设为不透明=false）露出的底色：跟站点主题一致，不是黑色
         let background = MioShellTheme.background
