@@ -19,6 +19,9 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
     private var sawBoot = false
     private let startedAt = CACurrentMediaTime()
     private var updateTimer: Timer?
+    /// CI 冒烟测试：MIO_SMOKE_OUT=<json 路径> 时打开公开的站点首页 /，检查 window.MioDesktop.browser、调用 open、等拦截规则就绪，写结果后退出
+    private static let smokeOut = ProcessInfo.processInfo.environment["MIO_SMOKE_OUT"]
+    private var smokeStarted = false
 
     static func configure(_ scene: UIWindowScene) {
         #if targetEnvironment(macCatalyst)
@@ -77,7 +80,11 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
         self.cover = cover
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.hideCover("timeout") }
 
-        webView.load(URLRequest(url: MioShellTheme.home))
+        if Self.smokeOut != nil {
+            webView.load(URLRequest(url: URL(string: "https://\(MioShellTheme.host)/")!))
+        } else {
+            webView.load(URLRequest(url: MioShellTheme.home))
+        }
 
         // Mac 上 App 常驻：每小时看一次，距上次检查满 24 小时就更新拦截规则（iOS 靠回到前台 / BGAppRefreshTask）
         updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
@@ -194,6 +201,44 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
         }
     }
 
+    private func runSmoke(_ out: String) {
+        let js = """
+        const r = { host: location.hostname, open: typeof (window.MioDesktop && window.MioDesktop.browser && window.MioDesktop.browser.open), platform: window.MioDesktop && window.MioDesktop.platform };
+        try { r.opened = await window.MioDesktop.browser.open({ url: 'https://www.youtube.com/' }); } catch (e) { r.openError = String(e); }
+        try { r.info = await window.MioDesktop.browser.getInfo(); } catch (e) { r.infoError = String(e); }
+        return JSON.stringify(r);
+        """
+        webView.callAsyncJavaScript(js, arguments: [:], in: nil, in: .page) { [weak self] result in
+            var report: [String: Any] = [:]
+            switch result {
+            case .success(let v): report["page"] = (v as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } ?? "\(String(describing: v))"
+            case .failure(let e): report["pageError"] = "\(e)"
+            }
+            let started = Date()
+            func finish() {
+                let presented = MioBrowserViewController.topPresenter(self) is MioBrowserViewController
+                report["browserPresented"] = presented
+                report["adblockReady"] = MioAdblock.shared.snapshot.ready
+                report["ruleLists"] = MioAdblock.shared.snapshot.ruleListCount
+                let page = report["page"] as? [String: Any]
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function"
+                report["ok"] = ok
+                if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+                    try? data.write(to: URL(fileURLWithPath: out))
+                }
+                exit(ok ? 0 : 1)
+            }
+            func poll() {
+                if MioAdblock.shared.snapshot.ready || Date().timeIntervalSince(started) > 90 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { finish() }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { poll() }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { poll() }
+        }
+    }
+
     @discardableResult
     private func openExternal(_ url: URL, mode: String = "auto") -> String {
         if mode == "safari" || mode == "system" || (mode == "auto" && MioBrowserSettings.preferSafari) {
@@ -235,6 +280,10 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let out = Self.smokeOut, !smokeStarted, webView.url?.host == MioShellTheme.host {
+            smokeStarted = true
+            runSmoke(out)
+        }
         guard !coverDone else { return }
         if webView.url?.host != MioShellTheme.host {
             hideCover("external page")

@@ -23,3 +23,19 @@ iOS / Mac Catalyst
 - filter-0.txt「Mio YouTube 补充规则」— 本仓库自写，GPL-3.0
 
 本仓库自身代码中与上述组件链接的部分（ios/App/App/MioAdblockCore.swift 等）按 GPL-3.0 提供。
+
+Android
+-------
+- adblock-rust — Brave Software — MPL-2.0 — https://github.com/brave/adblock-rust （crate adblock 0.13.3，链接进 libmioadblock.so）
+- jni crate — MIT / Apache-2.0 — https://github.com/jni-rs/jni-rs
+- AdGuard Scriptlets / ExtendedCss、过滤列表 — 同上
+- native/mioadblock 按 MPL-2.0 AND GPL-3.0-only 提供（见 Cargo.toml）
+
+Windows / desktop
+-----------------
+- Electron — MIT — https://github.com/electron/electron
+- @ghostery/adblocker(-electron, -electron-preload) — Ghostery GmbH — MPL-2.0 — https://github.com/ghostery/adblocker
+- tldts — MIT — https://github.com/remusao/tldts
+- uBlock Origin scriptlets / redirect resources（resources.json，经 Ghostery 仓库同步）— Raymond Hill — GPL-3.0 — https://github.com/gorhill/uBlock
+- 过滤列表：AdGuard 官方的 uBlock Origin 语法版本（https://filters.adtidy.org/extension/ublock/filters/），许可同上
+- desktop/filters/mio-youtube.txt — 本仓库自写，GPL-3.0

@@ -16,8 +16,8 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    // 发布签名：CI 从环境变量读取（GitHub Actions secrets：ANDROID_KEYSTORE_BASE64 等，见 .github/workflows/ios.yml）。
-    // 没有配置时出未签名的 release APK（scripts/sign-apk.sh 用固定 keystore 签名）
+    // 发布签名：从环境变量 MIO_KEYSTORE_FILE / MIO_KEYSTORE_PASSWORD / MIO_KEY_ALIAS / MIO_KEY_PASSWORD 读取（本地构建用）；
+    // 缺失时跳过签名。CI 不放 keystore，只出未签名的 release APK，发布后在本地用固定 keystore 签名成 Mio.apk 上传到 Release
     signingConfigs {
         release {
             if (System.getenv("MIO_KEYSTORE_FILE")) {

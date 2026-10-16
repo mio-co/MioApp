@@ -161,25 +161,6 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Release signing (only if a keystore secret is configured)
-        env:
-          KS_B64: ${{ secrets.MIO_ANDROID_KEYSTORE_BASE64 }}
-          KS_PASS: ${{ secrets.MIO_ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.MIO_ANDROID_KEY_ALIAS }}
-          KEY_PASS: ${{ secrets.MIO_ANDROID_KEY_PASSWORD }}
-        run: |
-          if [ -z "$KS_B64" ]; then
-            echo "No keystore secret: release APK stays unsigned (debug APK is debug-signed)."
-            exit 0
-          fi
-          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/mio-release.p12"
-          {
-            echo "MIO_KEYSTORE_FILE=$RUNNER_TEMP/mio-release.p12"
-            echo "MIO_KEYSTORE_PASSWORD=$KS_PASS"
-            echo "MIO_KEY_ALIAS=$KEY_ALIAS"
-            echo "MIO_KEY_PASSWORD=${KEY_PASS:-$KS_PASS}"
-          } >> "$GITHUB_ENV"
-
       - name: Gradle assembleRelease + assembleDebug
         working-directory: android
         run: ./gradlew --no-daemon --stacktrace assembleRelease assembleDebug
@@ -191,9 +172,10 @@ jobs:
           mkdir -p out
           ls -la android/app/build/outputs/apk/release android/app/build/outputs/apk/debug
           REL=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          # release 只出未签名包；发布后在本地用固定 keystore 签名为 Mio.apk 再上传（不在 CI 里放 keystore）
           case "$REL" in
             *unsigned*) cp "$REL" "out/Mio-$V-android-unsigned.apk" ;;
-            *) cp "$REL" "out/Mio-$V-android.apk" ;;
+            *) echo "release APK unexpectedly signed: $REL"; exit 1 ;;
           esac
           cp android/app/build/outputs/apk/debug/app-debug.apk "out/Mio-$V-android-debug.apk"
           for f in out/*.apk; do
@@ -256,8 +238,10 @@ jobs:
           echo "exit $CODE"
           test "$CODE" = 0
 
-      - name: List artifacts
-        run: ls -la dist
+      - name: List artifacts (+ Authenticode status, expected NotSigned)
+        run: |
+          ls -la dist
+          powershell -NoProfile -Command "Get-ChildItem dist\*.exe | ForEach-Object { '{0}: {1}' -f \$_.Name, (Get-AuthenticodeSignature \$_.FullName).Status }"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -322,18 +306,19 @@ jobs:
           hdiutil create -volname "Mio $V" -srcfolder dmgroot -ov -format UDZO "out/Mio-$V-mac.dmg"
           ls -lh out
 
-      - name: Smoke test (launches and stays up)
+      - name: Smoke test (public site page → window.MioDesktop.browser.open → in-app browser + adblock ready)
         run: |
           set -u
-          APP=dmgroot/Mio.app
-          "$APP/Contents/MacOS/App" > mac-smoke.log 2>&1 &
+          OUT="$RUNNER_TEMP/smoke-mac.json"
+          MIO_SMOKE_OUT="$OUT" dmgroot/Mio.app/Contents/MacOS/App > mac-smoke.log 2>&1 &
           PID=$!
-          sleep 25
-          if kill -0 $PID 2>/dev/null; then echo "running after 25s"; ALIVE=1; else ALIVE=0; fi
-          kill $PID 2>/dev/null || true
-          sleep 1
-          cat mac-smoke.log
-          test $ALIVE = 1
+          for i in $(seq 1 150); do kill -0 $PID 2>/dev/null || break; sleep 1; done
+          if kill -0 $PID 2>/dev/null; then echo "still running after 150s"; kill $PID; fi
+          wait $PID; CODE=$?
+          tail -40 mac-smoke.log
+          cat "$OUT" || true
+          echo "exit $CODE"
+          test "$CODE" = 0
 
       - uses: actions/upload-artifact@v4
         with:
