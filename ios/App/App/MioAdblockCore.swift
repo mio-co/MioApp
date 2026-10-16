@@ -178,8 +178,10 @@ final class MioScriptlets {
 
     var count: Int { Set(functions.values).count }
 
-    /// 生成一个 scriptlet 调用（与 AdGuard Scriptlets passSourceAndProps 一致）
-    func code(name: String, args: [String]) -> String? {
+    func function(named name: String) -> String? { functions[name] }
+
+    /// 生成一个 scriptlet 调用（与 AdGuard Scriptlets passSourceAndProps 一致）；fnRef 给定时调用已定义的函数变量（同一函数只定义一次）
+    func code(name: String, args: [String], fnRef: String? = nil) -> String? {
         guard let fn = functions[name] else { return nil }
         let source: [String: Any] = [
             "name": name,
@@ -190,7 +192,7 @@ final class MioScriptlets {
             "uniqueId": "mio",
         ]
         guard let src = MioJS.json(source), let a = MioJS.json(args) else { return nil }
-        return "try{(\(fn))(\(src),\(a));}catch(e){}"
+        return "try{(\(fnRef ?? fn))(\(src),\(a));}catch(e){}"
     }
 }
 
@@ -738,10 +740,28 @@ final class MioAdblock {
 
     static func script(for conf: WebExtension.Configuration, scriptlets: MioScriptlets?, extendedCssLib: String?) -> String? {
         var parts: [String] = []
-        // 1) scriptlets 最先（要赶在页面脚本之前）
+        // 1) scriptlets 最先（要赶在页面脚本之前）；去重，同一个函数只定义一次
         if let sl = scriptlets {
+            var seen = Set<String>()
+            var fnVars: [String: String] = [:]
+            var defs: [String] = []
+            var calls: [String] = []
             for s in conf.scriptlets {
-                if let code = sl.code(name: s.name, args: s.args) { parts.append(code) }
+                let key = s.name + "\u{1}" + s.args.joined(separator: "\u{1}")
+                guard !seen.contains(key), let fn = sl.function(named: s.name) else { continue }
+                seen.insert(key)
+                let v: String
+                if let existing = fnVars[fn] {
+                    v = existing
+                } else {
+                    v = "__mioS\(fnVars.count)"
+                    fnVars[fn] = v
+                    defs.append("var \(v)=\(fn);")
+                }
+                if let code = sl.code(name: s.name, args: s.args, fnRef: v) { calls.append(code) }
+            }
+            if !calls.isEmpty {
+                parts.append("(function(){\n" + defs.joined(separator: "\n") + "\n" + calls.joined(separator: "\n") + "\n})();")
             }
         }
         // 2) 普通 CSS
@@ -897,7 +917,7 @@ final class MioAdblockSession: NSObject, WKScriptMessageHandler {
     private let controller: WKUserContentController
     /// 外部附加的用户脚本（例如后台播放用的 visibility 覆盖）
     var extraScripts: [WKUserScript] = [] { didSet { rebuildScripts() } }
-    /// 最近准备过的主框架页面：host → 注入代码（最多保留几个，处理重定向）
+    /// 最近准备过的主框架页面：host → 注入代码（保留 2 个，处理跨主机重定向 youtube.com → m.youtube.com）
     private var prepared: [(host: String, code: String)] = []
     private var attachedKey = ""
     private var observer: NSObjectProtocol?
@@ -934,7 +954,7 @@ final class MioAdblockSession: NSObject, WKScriptMessageHandler {
         prepared.removeAll { $0.host == host }
         if isActiveForCurrentPage, let code = MioAdblock.shared.pageScript(for: url, topURL: nil) {
             prepared.append((host, code))
-            if prepared.count > 4 { prepared.removeFirst(prepared.count - 4) }
+            if prepared.count > 2 { prepared.removeFirst(prepared.count - 2) }
         }
         rebuildScripts()
     }

@@ -109,13 +109,22 @@ let ytProbe = """
     adElements: els.length, adElementsVisible: visible.length,
     mioStyles: document.querySelectorAll('style[data-mio-adblock]').length,
     resources: res.length, adResources: adRes.slice(0, 20), adResourceCount: adRes.length,
-    htmlHasAdPlacements: document.documentElement.innerHTML.indexOf('"adPlacements"') >= 0
+    htmlHasAdPlacements: document.documentElement.innerHTML.indexOf('"adPlacements"') >= 0,
+    // 机制自检：在真实 YouTube 页面里，scriptlets 是否已在页面世界生效
+    setConstantInstalled: !!(Object.getOwnPropertyDescriptor(window, 'ytInitialPlayerResponse') || {}).get,
+    googleAdStatus: window.google_ad_status === undefined ? null : window.google_ad_status,
+    jsonPruneParse: (function(){ try { var o = JSON.parse('{"playerResponse":{"adPlacements":[{"x":1}],"playerAds":[1],"videoDetails":{"videoId":"t"}}}'); return { adPlacements: o.playerResponse.adPlacements === undefined ? 'pruned' : 'kept', videoDetails: !!o.playerResponse.videoDetails }; } catch (e) { return String(e); } })(),
+    setConstantAssign: (function(){ try { var saved = window.ytInitialPlayerResponse; window.ytInitialPlayerResponse = { adPlacements: [1], videoDetails: {} }; var r2 = window.ytInitialPlayerResponse; var out = r2 && r2.adPlacements === undefined ? 'stripped' : 'kept'; window.ytInitialPlayerResponse = saved; return out; } catch (e) { return String(e); } })()
   });
 })()
 """
 
-let toolzProbe = """
-(function(){ var t = (document.body && document.body.innerText) || ''; return JSON.stringify({ title: document.title, text: t.slice(0, 1500) }); })()
+let testerProbe = """
+(function(){
+  var score = document.querySelector('.final-score-value');
+  var t = (document.body && document.body.innerText) || '';
+  return JSON.stringify({ title: document.title, score: score ? score.textContent.trim() : null, text: t.slice(0, 2500) });
+})()
 """
 
 func runPages(_ adblock: Bool, _ pages: [(String, URL, String, TimeInterval)], _ index: Int, _ results: [String: Any], done: @escaping ([String: Any]) -> Void) {
@@ -187,12 +196,19 @@ MioAdblock.shared.start(checkUpdates: false) {
     let pages: [(String, URL, String, TimeInterval)] = [
         ("youtube-watch", URL(string: "https://m.youtube.com/watch?v=dQw4w9WgXcQ")!, ytProbe, 8),
         ("youtube-home", URL(string: "https://m.youtube.com/")!, ytProbe, 6),
-        ("toolz-adblock", URL(string: "https://d3ward.github.io/toolz/adblock.html")!, toolzProbe, 20),
+        ("adblock-tester", URL(string: "https://adblock-tester.com/")!, testerProbe, 25),
     ]
     runPages(false, pages, 0, [:]) { off in
         report["pagesOff"] = off
         runPages(true, pages, 0, [:]) { on in
             report["pagesOn"] = on
+            if let w = (on["youtube-watch"] as? [String: Any])?["result"] as? [String: Any] {
+                if (w["jsonPruneParse"] as? [String: Any])?["adPlacements"] as? String != "pruned" { failures.append("youtube ON: json-prune not active") }
+                if w["setConstantAssign"] as? String != "stripped" { failures.append("youtube ON: set-constant not active") }
+                if (w["adElementsVisible"] as? Int ?? 0) > 0 { failures.append("youtube ON: visible ad elements") }
+            } else {
+                failures.append("youtube ON: no probe result")
+            }
             report["failures"] = failures
             if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                 try? data.write(to: outDir.appendingPathComponent("report.json"))
