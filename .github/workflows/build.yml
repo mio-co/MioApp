@@ -13,6 +13,33 @@ permissions:
   contents: write
 
 jobs:
+  unit:
+    # 纯逻辑单测（不需要 Xcode）：tools/MioAppTests —— UA / 桌面版改写 / 拦截规则清晰度体检（Swift，ios/App/App/MioWebCompat.swift），
+    # 以及注入页面的回车键兜底、通行密钥提示脚本（node --test，从同一个 Swift 文件里抽出 JS）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Fetch adblock assets (audit the lists that ship)
+        run: node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle
+
+      - name: Injected JS tests
+        run: node --test tools/MioAppTests/js/*.test.mjs
+
+      - name: Swift tests
+        run: |
+          swift --version
+          swift test --package-path tools/MioAppTests
+
   ios:
     runs-on: macos-26
     timeout-minutes: 45
@@ -425,7 +452,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [ios, ios-sim-smoke, android, android-emulator, windows, mac]
+    needs: [unit, ios, ios-sim-smoke, android, android-emulator, windows, mac]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4

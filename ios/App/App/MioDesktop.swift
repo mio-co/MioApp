@@ -56,6 +56,10 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
         ucc.add(MioWeakScriptHandler(self), name: "mioShell")
         ucc.addScriptMessageHandler(MioWeakReplyHandler(self), contentWorld: .page, name: "mioDesktop")
         ucc.addUserScript(WKUserScript(source: Self.bridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        #if targetEnvironment(macCatalyst)
+        // Mac：textarea / contenteditable 回车 / Shift+回车不换行的兜底（与内置浏览器同一份脚本，见 MioWebCompat.swift）
+        ucc.addUserScript(WKUserScript(source: MioWebCompat.returnKeyFixScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        #endif
 
         let webView = WKWebView(frame: view.bounds, configuration: config)
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -109,7 +113,10 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
         })
     }
 
-    // MARK: keyboard（⌘R 刷新、⌘[ ⌘] 前进后退、⌘, 浏览器设置）
+    // MARK: keyboard（⌘R 刷新、⌘[ ⌘] 前进后退、⌘, 浏览器设置；⌘⇧O 用 Safari 打开在菜单栏，见 AppDelegate.buildMenu）
+    //
+    // 回车键：这里和 Capacitor（Mac 上不链接）都没有注册 Return / Enter 的 UIKeyCommand，也没有拦截 pressesBegan；
+    // 回车不换行的兜底在注入的 MioWebCompat.returnKeyFixScript 里，下面的 pressesBegan 只记录诊断日志。
 
     override var keyCommands: [UIKeyCommand]? {
         [
@@ -125,6 +132,20 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
     }
     @objc private func goBack() { if webView.canGoBack { webView.goBack() } }
     @objc private func goForward() { if webView.canGoForward { webView.goForward() } }
+    /// 菜单「浏览器 › 用 Safari 打开」（⌘⇧O）：主界面当前页面交给 Safari
+    @objc func mioOpenInSafari(_ sender: Any?) {
+        var url = webView.url ?? MioShellTheme.home
+        if let s = url.scheme?.lowercased(), s != "http" && s != "https" { url = MioShellTheme.home }
+        UIApplication.shared.open(url)
+    }
+
+    #if targetEnvironment(macCatalyst)
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        MioWebKitCompat.logUnhandledReturn(presses, in: self)
+        super.pressesBegan(presses, with: event)
+    }
+    #endif
+
     @objc func openBrowserSettings() {
         guard let presenter = MioBrowserViewController.topPresenter(self) else { return }
         let nav = UINavigationController(rootViewController: MioBrowserSettingsViewController(currentHost: nil))
@@ -220,17 +241,38 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["browserPresented"] = presented
                 report["adblockReady"] = MioAdblock.shared.snapshot.ready
                 report["ruleLists"] = MioAdblock.shared.snapshot.ruleListCount
+                report["browserProfile"] = MioWebKitCompat.profile.rawValue
+                report["browserUserAgent"] = MioWebKitCompat.desktopUserAgent
+                // 内置浏览器打开 YouTube 后的诊断：页面里的 UA 必须是桌面 Safari、MediaSource 可用
+                var desktopOK = true
+                if let probe = MioBrowserViewController.lastMediaProbe,
+                   let obj = try? JSONSerialization.jsonObject(with: Data(probe.utf8)) as? [String: Any] {
+                    report["browserProbe"] = obj
+                    let ua = obj["ua"] as? String ?? ""
+                    let mse = (obj["mediaSource"] as? String) == "function" || (obj["managedMediaSource"] as? String) == "function"
+                    desktopOK = ua.contains("Macintosh") && !ua.contains("Mobile") && mse && (obj["host"] as? String) != "m.youtube.com"
+                } else {
+                    report["browserProbe"] = MioBrowserViewController.lastMediaProbe ?? "none"
+                }
+                report["desktopOK"] = desktopOK
                 let page = report["page"] as? [String: Any]
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function"
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
                 }
                 exit(ok ? 0 : 1)
             }
+            func waitProbe(_ deadline: Date) {
+                if MioBrowserViewController.lastMediaProbe != nil || Date() > deadline {
+                    finish()
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { waitProbe(deadline) }
+                }
+            }
             func poll() {
                 if MioAdblock.shared.snapshot.ready || Date().timeIntervalSince(started) > 90 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { finish() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { waitProbe(Date().addingTimeInterval(25)) }
                 } else {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { poll() }
                 }
