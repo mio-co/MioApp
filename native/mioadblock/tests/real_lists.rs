@@ -4,13 +4,20 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 fn bundle() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ios/App/App/AdblockBundle")
+    // MIO_ADBLOCK_BUNDLE：fetch-adblock-assets.mjs 的输出目录（CI 里是 Android assets）；默认 iOS 的 AdblockBundle
+    match std::env::var("MIO_ADBLOCK_BUNDLE") {
+        Ok(p) if !p.is_empty() => PathBuf::from(p),
+        _ => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ios/App/App/AdblockBundle"),
+    }
 }
 
 #[test]
 fn real_lists() {
     let dir = bundle();
     if !dir.join("filter-2.txt").exists() {
+        if std::env::var("MIO_ADBLOCK_REQUIRE").is_ok() {
+            panic!("no bundled lists at {:?}", dir);
+        }
         eprintln!("skip: no bundled lists at {:?}", dir);
         return;
     }

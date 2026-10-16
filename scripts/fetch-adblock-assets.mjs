@@ -2,7 +2,7 @@
 // 构建前准备内置浏览器的拦截资源（iOS / Mac Catalyst 的 AdblockBundle，Android / Electron 也共用这份）：
 // - AdGuard 官方过滤列表（filters.adtidy.org，iOS 优化版）→ filter-<id>.txt + manifest.json（ETag / Last-Modified，App 首次更新时可直接 304）
 // - @adguard/scriptlets 的 scriptlets.corelibs.json、@adguard/extended-css 的 extended-css.min.js（版本由 package-lock 固定）
-// 用法：node scripts/fetch-adblock-assets.mjs [输出目录，默认 ios/App/App/AdblockBundle]
+// 用法：node scripts/fetch-adblock-assets.mjs [输出目录，默认 ios/App/App/AdblockBundle；Android 用 android/app/src/main/assets/adblock]
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -59,6 +59,10 @@ const ecssPkg = readJSON(join(ecssDir, 'package.json'));
 copyFileSync(join(ecssDir, 'dist/extended-css.min.js'), join(out, 'extended-css.min.js'));
 manifest.extendedCss = { version: ecssPkg.version };
 console.log(`extended-css ${ecssPkg.version}`);
+
+// App 自带的 Mio YouTube 补充规则（filter-0.txt，AdGuard 语法）在 iOS 的 AdblockBundle 里维护；输出到别处（Android assets）时一并复制
+const extra = join(root, 'ios/App/App/AdblockBundle/filter-0.txt');
+if (resolve(extra) !== resolve(join(out, 'filter-0.txt'))) copyFileSync(extra, join(out, 'filter-0.txt'));
 
 writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 2));
 console.log(`→ ${out}`);
