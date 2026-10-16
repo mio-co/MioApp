@@ -4,7 +4,8 @@
 // - @adguard/scriptlets 的 scriptlets.corelibs.json、@adguard/extended-css 的 extended-css.min.js（版本由 package-lock 固定）
 // 用法：node scripts/fetch-adblock-assets.mjs [输出目录，默认 ios/App/App/AdblockBundle]
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,26 +20,26 @@ const manifest = { generatedAt: new Date().toISOString(), lists: {}, scriptlets:
 
 for (const id of FILTERS) {
   const url = `https://filters.adtidy.org/ios/filters/${id}_optimized.txt`;
-  let res;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      res = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
-      if (res.ok) break;
-      throw new Error(`HTTP ${res.status}`);
-    } catch (e) {
-      if (attempt === 3) throw new Error(`${url}: ${e.message}`);
-      await new Promise((r) => setTimeout(r, 2000 * attempt));
-    }
-  }
-  const text = await res.text();
+  // curl（带重试）比 Node 内置 fetch 稳：CI 上 undici 偶发内部断言直接让进程崩溃
+  const headerFile = join(out, `.headers-${id}`);
+  execFileSync('curl', ['-fsSL', '--retry', '4', '--retry-all-errors', '--retry-delay', '3', '--compressed',
+    '-H', 'Cache-Control: no-cache', '-D', headerFile, '-o', join(out, `filter-${id}.txt`), url], { stdio: 'inherit' });
+  const rawHeaders = readFileSync(headerFile, 'utf8');
+  rmSync(headerFile);
+  // 重定向时有多段响应头，取最后一段
+  const lastBlock = rawHeaders.trim().split(/\r?\n\r?\n/).pop() || '';
+  const header = (name) => {
+    const m = new RegExp(`^${name}:\\s*(.+)$`, 'im').exec(lastBlock);
+    return m ? m[1].trim() : null;
+  };
+  const text = readFileSync(join(out, `filter-${id}.txt`), 'utf8');
   if (text.length < 1000 || /<html/i.test(text.slice(0, 2048))) throw new Error(`${url}: not a filter list`);
-  writeFileSync(join(out, `filter-${id}.txt`), text);
   const rules = text.split('\n').filter((l) => l && !l.startsWith('!')).length;
   const version = /^! Version:\s*(.+)$/m.exec(text)?.[1]?.trim();
   manifest.lists[String(id)] = {
     url,
-    etag: res.headers.get('etag'),
-    lastModified: res.headers.get('last-modified'),
+    etag: header('etag'),
+    lastModified: header('last-modified'),
     version,
     rules,
     sha256: createHash('sha256').update(text).digest('hex'),
