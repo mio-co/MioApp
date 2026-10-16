@@ -1,0 +1,382 @@
+// MioDesktop.swift — Mac（Mac Catalyst）主界面：不用 Capacitor（它的 xcframework 没有 Catalyst 切片），
+// 纯 WKWebView 加载 MioCore（/mio/nav），并在页面里暴露与 Windows 壳相同的 window.MioDesktop.browser：
+//   MioDesktop.browser.open({ url, mode? })  → App 内置浏览器（MioBrowserViewController，带 AdGuard 拦截；设置了「默认用系统浏览器」则交给 Safari）
+//   MioDesktop.browser.openSettings()        → 拦截设置
+//   MioDesktop.browser.getInfo()
+// MioCore 的 src/utils/appShell.ts 检测到 MioDesktop.browser 后接管站外链接。复用 MioBrowser.swift / MioAdblockCore.swift。
+// 这个文件 iOS 上也会编译（不被使用），所以不依赖任何 Catalyst 专有 API（专有的放在 #if targetEnvironment(macCatalyst) 里）。
+
+import UIKit
+import WebKit
+
+final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKScriptMessageHandlerWithReply {
+    /// 主界面里允许直接跳转的站点（Cloudflare Access 登录、Google / GitHub 身份提供方）
+    static let allowedHosts = ["mio.300031.xyz", "*.cloudflareaccess.com", "accounts.google.com", "github.com"]
+
+    private(set) var webView: WKWebView!
+    private var cover: MioLaunchCover?
+    private var coverDone = false
+    private var sawBoot = false
+    private let startedAt = CACurrentMediaTime()
+    private var updateTimer: Timer?
+
+    static func configure(_ scene: UIWindowScene) {
+        #if targetEnvironment(macCatalyst)
+        scene.sizeRestrictions?.minimumSize = CGSize(width: 480, height: 420)
+        scene.title = "Mio"
+        if let titlebar = scene.titlebar {
+            titlebar.titleVisibility = .visible
+            titlebar.toolbar = nil
+        }
+        #endif
+    }
+
+    static func hostAllowed(_ host: String?) -> Bool {
+        guard let host = host?.lowercased(), !host.isEmpty else { return false }
+        return allowedHosts.contains { p in
+            if p.hasPrefix("*.") { return host.hasSuffix(String(p.dropFirst(1))) }
+            return host == p || host.hasSuffix("." + p)
+        }
+    }
+
+    // MARK: lifecycle
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = MioShellTheme.background
+
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
+        let ucc = config.userContentController
+        ucc.add(MioWeakScriptHandler(self), name: "mioShell")
+        ucc.addScriptMessageHandler(MioWeakReplyHandler(self), contentWorld: .page, name: "mioDesktop")
+        ucc.addUserScript(WKUserScript(source: Self.bridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+
+        let webView = WKWebView(frame: view.bounds, configuration: config)
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        webView.backgroundColor = MioShellTheme.background
+        webView.scrollView.backgroundColor = MioShellTheme.background
+        webView.isOpaque = false
+        if #available(iOS 15.0, macCatalyst 15.0, *) {
+            webView.underPageBackgroundColor = MioShellTheme.background
+        }
+        if #available(iOS 16.4, macCatalyst 16.4, *) {
+            webView.isInspectable = true
+        }
+        view.addSubview(webView)
+        self.webView = webView
+
+        let cover = MioLaunchCover(frame: view.bounds)
+        cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(cover)
+        self.cover = cover
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.hideCover("timeout") }
+
+        webView.load(URLRequest(url: MioShellTheme.home))
+
+        // Mac 上 App 常驻：每小时看一次，距上次检查满 24 小时就更新拦截规则（iOS 靠回到前台 / BGAppRefreshTask）
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
+            if MioAdblock.shared.needsUpdateCheck && MioAdblock.shared.snapshot.busy == nil {
+                MioAdblock.shared.checkForUpdates(force: false)
+            }
+        }
+    }
+
+    deinit {
+        updateTimer?.invalidate()
+        webView?.configuration.userContentController.removeAllScriptMessageHandlers()
+    }
+
+    private func hideCover(_ reason: String) {
+        guard !coverDone, let cover = cover else { return }
+        coverDone = true
+        print("⚡️ Mio (mac) launch cover hidden (\(reason)) at +\(Int((CACurrentMediaTime() - startedAt) * 1000)) ms")
+        UIView.animate(withDuration: 0.2, animations: { cover.alpha = 0 }, completion: { _ in
+            cover.removeFromSuperview()
+            self.cover = nil
+        })
+    }
+
+    // MARK: keyboard（⌘R 刷新、⌘[ ⌘] 前进后退、⌘, 浏览器设置）
+
+    override var keyCommands: [UIKeyCommand]? {
+        [
+            UIKeyCommand(title: "刷新", action: #selector(reloadPage), input: "r", modifierFlags: .command),
+            UIKeyCommand(title: "后退", action: #selector(goBack), input: "[", modifierFlags: .command),
+            UIKeyCommand(title: "前进", action: #selector(goForward), input: "]", modifierFlags: .command),
+            UIKeyCommand(title: "浏览器设置", action: #selector(openBrowserSettings), input: ",", modifierFlags: .command),
+        ]
+    }
+
+    @objc private func reloadPage() {
+        if webView.url == nil || webView.url?.host != MioShellTheme.host { webView.load(URLRequest(url: MioShellTheme.home)) } else { webView.reload() }
+    }
+    @objc private func goBack() { if webView.canGoBack { webView.goBack() } }
+    @objc private func goForward() { if webView.canGoForward { webView.goForward() } }
+    @objc func openBrowserSettings() {
+        guard let presenter = MioBrowserViewController.topPresenter(self) else { return }
+        let nav = UINavigationController(rootViewController: MioBrowserSettingsViewController(currentHost: nil))
+        presenter.present(nav, animated: true)
+    }
+
+    // MARK: bridge
+
+    /// window.MioDesktop（只在 MioCore 站点的主框架注入）
+    static let bridgeScript = """
+    (function () {
+      if (location.hostname !== '\(MioShellTheme.host)' || window.MioDesktop) return;
+      var h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.mioDesktop;
+      if (!h) return;
+      function call(method, args) { return h.postMessage({ method: method, args: args || {} }); }
+      var browser = Object.freeze({
+        open: function (o) { return call('open', { url: String((o && o.url) || ''), mode: String((o && o.mode) || 'auto') }); },
+        openSettings: function () { return call('openSettings'); },
+        getInfo: function () { return call('getInfo'); }
+      });
+      Object.defineProperty(window, 'MioDesktop', { value: Object.freeze({ platform: 'mac', shell: 'catalyst', browser: browser }), enumerable: true });
+    })();
+    """
+
+    // boot-loader.js → mioShell
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "mioShell" else { return }
+        let body = message.body as? [String: Any]
+        let type = (body?["type"] as? String) ?? (message.body as? String) ?? ""
+        switch type {
+        case "boot": sawBoot = true
+        case "ready", "failed": hideCover(type)
+        default: break
+        }
+    }
+
+    // window.MioDesktop.browser.* → Promise
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
+        guard message.name == "mioDesktop", message.frameInfo.isMainFrame,
+              message.frameInfo.securityOrigin.host == MioShellTheme.host,
+              message.frameInfo.securityOrigin.protocol == "https" else {
+            replyHandler(nil, "forbidden")
+            return
+        }
+        let body = message.body as? [String: Any] ?? [:]
+        let method = body["method"] as? String ?? ""
+        let args = body["args"] as? [String: Any] ?? [:]
+        switch method {
+        case "open":
+            let raw = (args["url"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: raw), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+                replyHandler(nil, "invalid url")
+                return
+            }
+            let mode = args["mode"] as? String ?? "auto"
+            replyHandler(["opened": openExternal(url, mode: mode)], nil)
+        case "openSettings":
+            openBrowserSettings()
+            replyHandler(true, nil)
+        case "getInfo":
+            let snap = MioAdblock.shared.snapshot
+            var info: [String: Any] = [
+                "version": MioBrowserSettings.appVersion,
+                "platform": "mac",
+                "adblock": MioAdblockSettings.enabled,
+                "preferSafari": MioBrowserSettings.preferSafari,
+                "ruleLists": snap.ruleListCount,
+            ]
+            if let d = snap.state.lastCheck { info["rulesCheckedAt"] = ISO8601DateFormatter().string(from: d) }
+            if let s = snap.state.scriptlets { info["scriptlets"] = s.version }
+            replyHandler(info, nil)
+        default:
+            replyHandler(nil, "unknown method")
+        }
+    }
+
+    @discardableResult
+    private func openExternal(_ url: URL, mode: String = "auto") -> String {
+        if mode == "safari" || mode == "system" || (mode == "auto" && MioBrowserSettings.preferSafari) {
+            UIApplication.shared.open(url)
+            return "system"
+        }
+        MioBrowserViewController.open(url, from: self)
+        return "inapp"
+    }
+
+    // MARK: navigation
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else {
+            decisionHandler(.allow)
+            return
+        }
+        if scheme != "http" && scheme != "https" {
+            if ["about", "blob", "data"].contains(scheme) {
+                decisionHandler(.allow)
+            } else {
+                if ["mailto", "tel", "sms", "facetime", "maps"].contains(scheme) { UIApplication.shared.open(url) }
+                decisionHandler(.cancel)
+            }
+            return
+        }
+        let mainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+        // 用户点了站外链接（页面没交给 MioDesktop.browser 的情况）：内置浏览器打开；跳转 / 表单（登录流程）照常
+        if mainFrame && navigationAction.navigationType == .linkActivated && !Self.hostAllowed(url.host) {
+            openExternal(url)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        sawBoot = false
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard !coverDone else { return }
+        if webView.url?.host != MioShellTheme.host {
+            hideCover("external page")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self = self, !self.sawBoot else { return }
+            self.hideCover("page without boot-loader")
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        showError(error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        showError(error)
+    }
+
+    private func showError(_ error: Error) {
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
+        if ns.domain == "WebKitErrorDomain" && (ns.code == 102 || ns.code == 101) { return }
+        webView.loadHTMLString(MioShellTheme.errorHTML(ns), baseURL: MioShellTheme.home)
+        hideCover("load error")
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        webView.reload()
+    }
+
+    // MARK: windows / dialogs
+
+    /// target=_blank / window.open：站外 → 内置浏览器；站内（图片预览等）和登录弹窗 → 同一会话的弹窗
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard let url = navigationAction.request.url else { return nil }
+        let scheme = url.scheme?.lowercased() ?? ""
+        if scheme == "http" || scheme == "https" {
+            if !Self.hostAllowed(url.host) {
+                openExternal(url)
+                return nil
+            }
+            let popup = MioPopupViewController(configuration: configuration)
+            let nav = UINavigationController(rootViewController: popup)
+            nav.modalPresentationStyle = .formSheet
+            MioBrowserViewController.topPresenter(self)?.present(nav, animated: true)
+            return popup.webView
+        }
+        if scheme == "about" || scheme.isEmpty {
+            let popup = MioPopupViewController(configuration: configuration)
+            let nav = UINavigationController(rootViewController: popup)
+            MioBrowserViewController.topPresenter(self)?.present(nav, animated: true)
+            return popup.webView
+        }
+        return nil
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "好", style: .default) { _ in completionHandler() })
+        presentAlert(a, fallback: completionHandler)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(false) })
+        a.addAction(UIAlertAction(title: "好", style: .default) { _ in completionHandler(true) })
+        presentAlert(a) { completionHandler(false) }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        let a = UIAlertController(title: nil, message: prompt, preferredStyle: .alert)
+        a.addTextField { $0.text = defaultText }
+        a.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(nil) })
+        a.addAction(UIAlertAction(title: "好", style: .default) { _ in completionHandler(a.textFields?.first?.text) })
+        presentAlert(a) { completionHandler(nil) }
+    }
+
+    private func presentAlert(_ alert: UIAlertController, fallback: @escaping () -> Void) {
+        guard let presenter = MioBrowserViewController.topPresenter(self) else {
+            fallback()
+            return
+        }
+        presenter.present(alert, animated: true)
+    }
+}
+
+/// WKUserContentController 强引用 handler：弱引用控制器，避免循环引用
+final class MioWeakReplyHandler: NSObject, WKScriptMessageHandlerWithReply {
+    weak var target: WKScriptMessageHandlerWithReply?
+    init(_ target: WKScriptMessageHandlerWithReply) { self.target = target }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
+        guard let target = target else {
+            replyHandler(nil, "gone")
+            return
+        }
+        target.userContentController(userContentController, didReceive: message, replyHandler: replyHandler)
+    }
+}
+
+/// 主界面的弹窗（站内新窗口 / 登录弹窗）：与主界面同一会话，window.close() 时关闭
+final class MioPopupViewController: UIViewController, WKUIDelegate, WKNavigationDelegate {
+    let webView: WKWebView
+    private var titleObservation: NSKeyValueObservation?
+
+    init(configuration: WKWebViewConfiguration) {
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = MioShellTheme.background
+        webView.frame = view.bounds
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView.uiDelegate = self
+        webView.navigationDelegate = self
+        view.addSubview(webView)
+        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .close, target: self, action: #selector(close))
+        titleObservation = webView.observe(\.title, options: [.initial, .new]) { [weak self] wv, _ in
+            self?.title = wv.title
+        }
+    }
+
+    @objc private func close() {
+        dismiss(animated: true)
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        close()
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url, navigationAction.navigationType == .linkActivated,
+           let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+           !MioDesktopViewController.hostAllowed(url.host) {
+            MioBrowserViewController.open(url, from: self)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+}

@@ -1,5 +1,7 @@
 import UIKit
+#if canImport(Capacitor) && !targetEnvironment(macCatalyst)
 import Capacitor
+#endif
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -11,11 +13,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // 根控制器用 MioBridgeViewController：启动遮罩 + 导航错误过滤（v0.1.1 写了但这里用的是 CAPBridgeViewController，没生效）
         let window = UIWindow(windowScene: windowScene)
         window.backgroundColor = MioShellTheme.background
+        #if canImport(Capacitor) && !targetEnvironment(macCatalyst)
         window.rootViewController = MioBridgeViewController()
+        #else
+        // Mac Catalyst：纯 WKWebView 根控制器，暴露 window.MioDesktop.browser
+        window.rootViewController = MioDesktopViewController()
+        MioDesktopViewController.configure(windowScene)
+        #endif
         self.window = window
         window.makeKeyAndVisible()
 
+        #if canImport(Capacitor) && !targetEnvironment(macCatalyst)
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
+        #endif
     }
 
     // 使用 UIScene 生命周期时 AppDelegate 的 applicationDidBecomeActive / DidEnterBackground 不会被调用
@@ -30,6 +40,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         MioAdblockBackground.schedule()
     }
 
+    #if canImport(Capacitor) && !targetEnvironment(macCatalyst)
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         SceneDelegateProxy.shared.scene(scene, openURLContexts: URLContexts)
     }
@@ -37,4 +48,5 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
         SceneDelegateProxy.shared.scene(scene, continue: userActivity)
     }
+    #endif
 }

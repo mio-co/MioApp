@@ -205,7 +205,7 @@ jobs:
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/aapt2" dump badging "out/Mio-$V-android-debug.apk" | head -5
           "$BT/apksigner" verify --print-certs "out/Mio-$V-android-debug.apk" | head -5
-          "$BT/apksigner" verify "out/Mio-$V-android"*.apk 2>&1 | head -5 || true
+          for f in out/*.apk; do echo "== verify $f"; "$BT/apksigner" verify "$f" 2>&1 | head -3 || true; done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -266,9 +266,84 @@ jobs:
             desktop/dist/*.exe
           retention-days: 14
 
+  mac:
+    # Mac Catalyst（同一个 Xcode 工程；Capacitor 只链接到 iOS，Mac 用纯 WKWebView 根控制器 MioDesktop.swift），ad-hoc 签名
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Fetch adblock assets
+        run: node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Build (Mac Catalyst, unsigned)
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=macOS,variant=Mac Catalyst' \
+            -derivedDataPath build-mac \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package (ad-hoc codesign, zip + dmg)
+        run: |
+          set -euo pipefail
+          V=$(node -p "require('./package.json').version")
+          mkdir -p out dmgroot
+          ditto build-mac/Build/Products/Release-maccatalyst/App.app dmgroot/Mio.app
+          APP=dmgroot/Mio.app
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist"
+          test -f "$APP/Contents/Resources/AdblockBundle/filter-2.txt"
+          test -f "$APP/Contents/Resources/AdblockBundle/scriptlets.corelibs.json"
+          lipo -info "$APP/Contents/MacOS/App"
+          ! otool -L "$APP/Contents/MacOS/App" | grep -i capacitor
+          codesign --force --deep --sign - --timestamp=none "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | head -20
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "out/Mio-$V-mac.zip"
+          ln -s /Applications dmgroot/Applications
+          hdiutil create -volname "Mio $V" -srcfolder dmgroot -ov -format UDZO "out/Mio-$V-mac.dmg"
+          ls -lh out
+
+      - name: Smoke test (launches and stays up)
+        run: |
+          set -u
+          APP=dmgroot/Mio.app
+          "$APP/Contents/MacOS/App" > mac-smoke.log 2>&1 &
+          PID=$!
+          sleep 25
+          if kill -0 $PID 2>/dev/null; then echo "running after 25s"; ALIVE=1; else ALIVE=0; fi
+          kill $PID 2>/dev/null || true
+          sleep 1
+          cat mac-smoke.log
+          test $ALIVE = 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mio-mac
+          path: out/*
+          retention-days: 14
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [ios, android, windows]
+    needs: [ios, android, windows, mac]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
