@@ -10,7 +10,8 @@
       "accounts.google.com",
       "github.com"
     ],
-    "cleartext": false
+    "cleartext": false,
+    "appStartPath": "mio/nav"
   },
   "ios": {
     "contentInset": "never",
