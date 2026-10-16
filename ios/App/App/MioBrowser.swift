@@ -137,7 +137,7 @@ enum MioAdblockBackground {
         }
         for id in candidateIDs(permitted: permitted, bundleID: Bundle.main.bundleIdentifier) {
             var ok = false
-            let exc = MioObjCSafe.tryBlock {
+            let exc = MioObjCSafe.catching {
                 ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { task in
                     guard let task = task as? BGAppRefreshTask else {
                         task.setTaskCompleted(success: false)
@@ -166,7 +166,7 @@ enum MioAdblockBackground {
         let req = BGAppRefreshTaskRequest(identifier: id)
         req.earliestBeginDate = Date(timeIntervalSinceNow: 6 * 3600)
         var submitError: Error?
-        let exc = MioObjCSafe.tryBlock {
+        let exc = MioObjCSafe.catching {
             do {
                 try BGTaskScheduler.shared.submit(req)
             } catch {

@@ -58,17 +58,22 @@ run_case() {
   echo "$out" > "$dir/launch.txt"
   local pid=${out##*: }
   log "launched pid=$pid, waiting ${WAIT}s"
-  # 模拟器里的 App 进程：看模拟器 launchd 的 UIKitApplication:<bid> 条目有没有 pid
-  sim_pid() {
-    xcrun simctl spawn "$DEV" launchctl list 2>/dev/null | awk -v b="UIKitApplication:$bid" 'index($3,b)==1 {print $1; exit}'
+  # 存活判断：宿主机进程（模拟器 App 是宿主机上的进程）或模拟器 launchd 的 UIKitApplication:<bid> 条目
+  is_alive() {
+    if kill -0 "$pid" 2>/dev/null; then return 0; fi
+    xcrun simctl spawn "$DEV" launchctl list 2>/dev/null | grep -q "UIKitApplication:${bid}\["
   }
-  local alive=1 p
+  local alive=1
+  sleep 3
+  ps -axo pid,ppid,stat,etime,command | grep -F "/App.app/App" | grep -v grep > "$dir/ps.txt" || true
+  xcrun simctl spawn "$DEV" launchctl list > "$dir/launchctl.txt" 2>&1 || true
+  xcrun simctl io "$DEV" screenshot "$dir/screen-3s.png" >/dev/null 2>&1 || true
   for i in $(seq 1 "$WAIT"); do
+    if ! is_alive; then alive=0; log "gone after ~$((i+3))s"; break; fi
     sleep 1
-    p=$(sim_pid)
-    if [ -z "$p" ] || [ "$p" = "-" ]; then alive=0; log "gone after ${i}s (launchctl pid='$p')"; break; fi
   done
-  xcrun simctl spawn "$DEV" launchctl list 2>/dev/null | grep -i "mio\|UIKitApplication" > "$dir/launchctl.txt" || true
+  xcrun simctl spawn "$DEV" log show --style compact --last 2m \
+    --predicate "eventMessage CONTAINS[c] \"$bid\" OR process == \"App\"" > "$dir/oslog-all.txt" 2>/dev/null || true
   # 崩溃报告（模拟器进程的 .ips 写在宿主机）
   sleep 2
   find "$REPORTS" -newer "$dir/.start" \( -name 'App-*.ips' -o -name 'App_*.ips' -o -name 'App*.crash' \) -exec cp {} "$dir/" \; 2>/dev/null || true
@@ -119,7 +124,6 @@ PY
 WORK=$(mktemp -d)
 APP1="$WORK/orig/App.app"
 mkdir -p "$WORK/orig"; rm -rf "$APP1"; ditto "$APP_SRC" "$APP1"
-codesign -f -s - "$APP1" >/dev/null 2>&1 || true
 run_case original "$APP1"
 
 # 2) 模拟 iloader / isideload：bundle id 加 TEAMID 后缀，其余 Info.plist 不动，ad-hoc 重签、无 entitlements
@@ -127,8 +131,12 @@ APP2="$WORK/sideload/App.app"
 mkdir -p "$WORK/sideload"; rm -rf "$APP2"; ditto "$APP_SRC" "$APP2"
 ORIG_BID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP2/Info.plist")
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${ORIG_BID}.ABCDE12345" "$APP2/Info.plist"
-find "$APP2/Frameworks" -name '*.framework' -maxdepth 1 -exec codesign -f -s - {} \; >/dev/null 2>&1 || true
-codesign -f -s - "$APP2" >/dev/null 2>&1 || true
+codesign -d --entitlements :- "$APP_SRC" > "$WORK/ent.plist" 2>/dev/null || true
+if [ -s "$WORK/ent.plist" ]; then
+  codesign -f -s - --entitlements "$WORK/ent.plist" "$APP2" >/dev/null 2>&1 || codesign -f -s - "$APP2"
+else
+  codesign -f -s - "$APP2" >/dev/null 2>&1 || true
+fi
 run_case sideload-bundle-id "$APP2"
 
 # 3) 侧载工具裁掉 BGTaskSchedulerPermittedIdentifiers / UIBackgroundModes 的极端情况
@@ -136,7 +144,7 @@ APP3="$WORK/stripped/App.app"
 mkdir -p "$WORK/stripped"; rm -rf "$APP3"; ditto "$APP2" "$APP3"
 /usr/libexec/PlistBuddy -c 'Delete :BGTaskSchedulerPermittedIdentifiers' "$APP3/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c 'Delete :UIBackgroundModes' "$APP3/Info.plist" 2>/dev/null || true
-codesign -f -s - "$APP3" >/dev/null 2>&1 || true
+if [ -s "$WORK/ent.plist" ]; then codesign -f -s - --entitlements "$WORK/ent.plist" "$APP3" >/dev/null 2>&1; else codesign -f -s - "$APP3" >/dev/null 2>&1; fi || true
 run_case sideload-stripped-plist "$APP3"
 
 echo "==== [$LABEL] summary"; cat "$SUMMARY"

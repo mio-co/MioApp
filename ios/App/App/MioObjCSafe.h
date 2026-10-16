@@ -6,7 +6,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface MioObjCSafe : NSObject
 /// 执行 block；抛出 NSException 时返回该异常（不再向上抛），否则返回 nil。
-+ (nullable NSException *)tryBlock:(NS_NOESCAPE void (^)(void))block;
++ (nullable NSException *)tryBlock:(NS_NOESCAPE void (^)(void))block NS_SWIFT_NAME(catching(_:));
 @end
 
 NS_ASSUME_NONNULL_END

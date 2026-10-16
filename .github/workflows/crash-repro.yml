@@ -38,10 +38,11 @@ jobs:
       - name: Build (simulator)
         working-directory: src
         run: |
+          set -o pipefail
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build-sim -skipPackagePluginValidation -skipMacroValidation \
-            CODE_SIGNING_ALLOWED=NO build | tail -n 30
+            CODE_SIGN_IDENTITY=- build | tail -n 40
           ls build-sim/Build/Products/Release-iphonesimulator/App.app
       - name: Launch smoke
         run: |
