@@ -1,6 +1,6 @@
 {
   "name": "mio-app",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "iOS shell for MioCore (https://mio.300031.xyz)",
   "scripts": {
@@ -14,6 +14,7 @@
   "devDependencies": {
     "@adguard/extended-css": "2.3.0",
     "@adguard/scriptlets": "2.5.1",
-    "@capacitor/cli": "8.5.3"
+    "@capacitor/cli": "8.5.3",
+    "jsdom": "^26.1.0"
   }
 }

@@ -105,6 +105,22 @@ YouTube 视频广告靠 AdGuard Base 里的 `set-constant ytInitialPlayerRespons
 
 `adblock-check` job 在 macOS runner 上编译与 App 相同的 `MioAdblockCore.swift`（`tools/AdblockCheck`），转换 + 编译全部内置列表、查询 YouTube 的高级规则，并用 WKWebView（iPhone UA）对比开 / 关拦截加载 m.youtube.com 和 adblock-tester.com，产物 `adblock-check`（report.json + 截图）。
 
+## YouTube 防沉迷 + 滚动隐藏工具栏（iOS / Mac 内置浏览器，0.3.2 起）
+
+- **YouTube 防沉迷**（设置 › 浏览体验，默认开；提醒间隔默认 60 秒，可选 30 秒–10 分钟）：`MioWebCompat.youtubeFocusScriptTemplate`，
+  document-start 注入，脚本自己只在 `*.youtube.com` 主框架生效。隐藏首页 / 推荐 / 搜索 / 侧栏里的 Shorts 区块和卡片（`html.mio-channel-page` 频道页保留）、
+  底部 pivot 栏 / guide / mini guide 的 Shorts 入口、「打开 App」推广，删掉 `apple-itunes-app` meta。手机版（`ytm-*`）和桌面版（`ytd-*`、`grid-shelf-view-model`）都覆盖。
+  - 不轮询、不常驻观察整份文档：路由变化靠 `yt-navigate-finish` / `yt-page-data-updated` / `state-navigateend` / `popstate` / `history.pushState/replaceState` 钩子；
+    文本识别的 Shorts 导航项只在路由变化和导航容器自己的观察器（200ms 节流）里处理。
+  - 进入 `/shorts/` 立即提醒，之后只在页面可见时累计时间（读 `Document.prototype` 的真实可见性，不受「后台播放」脚本影响），离开 Shorts 即重置。
+  - 提醒胶囊用 DOM API 构建（YouTube 有 Trusted Types，不能用 innerHTML），`pointer-events: none`，顶部留出 safe-area，深浅色都可读。
+  - 关闭后不注入（对之后加载的页面生效）。与 AdGuard Scriptlets 各自独立注入。
+  - 测试：`tools/MioAppTests/js/youtube-focus.test.mjs`（jsdom）；Mac CI 冒烟在真实 YouTube 页面里检查脚本已注入并能弹出提醒（`youtubeFocusOK`）。
+- **滚动时隐藏工具栏**（iPhone / iPad 默认开，Mac 默认关）：webView 固定铺满安全区，地址栏和底部工具栏浮在上面，用 `scrollView.contentInset` 让出位置
+  （尺寸不变 → 页面不重排）。向下滚动超过 16pt 隐藏，向上滚动、回到顶部、停在底部、点状态栏、新的主框架导航、地址栏聚焦（⌘L）、旋转时显示；
+  隐藏时顶部保留域名条，点一下恢复。只认用户手势驱动的滚动，VoiceOver 开启或网页全屏时不隐藏。
+  状态机是纯函数 `MioToolbarAutoHide`（`MioWebCompat.swift`），单测在 `tools/MioAppTests`。scroll delegate 挂在 WKScrollView 的外部 delegate 上（WebKit 自己的回调照常）。
+
 ## 已知限制
 
 - WKWebView 不支持网页里的文件下载，快传取件下载可能无效（后续可加原生下载插件）。
