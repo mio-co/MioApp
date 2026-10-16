@@ -1,0 +1,8 @@
+<!doctype html>
+<!--
+  占位文件，不会被显示。
+  capacitor.config.json 设了 server.appStartPath = "mio/nav"（App 直接打开远端 https://mio.300031.xyz/mio/nav）。
+  Capacitor iOS 的 CAPBridgeViewController.loadWebView() 仍会检查本地 public/<appStartPath> 是否存在，
+  不存在就 exit(1) —— v0.1.2 ~ v0.3.0 在 iPhone 上「打开立刻闪退」的根因。删除本文件前先看 AppDelegate.swift 的 instanceDescriptor()。
+-->
+<meta charset="utf-8"><title>Mio</title>

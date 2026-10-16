@@ -80,6 +80,11 @@ run_case() {
   xcrun simctl spawn "$DEV" log show --style compact --last 2m \
     --predicate 'process == "App" AND (messageType == error OR messageType == fault OR eventMessage CONTAINS[c] "exception" OR eventMessage CONTAINS "⚡️")' \
     > "$dir/oslog.txt" 2>/dev/null || true
+  # Capacitor 找不到本地 appStartPath 时打印这句后 exit(1)
+  if grep -q "ERROR: Unable to load" "$dir/stdout.txt" "$dir/stderr.txt" 2>/dev/null; then
+    log "$name: Capacitor fatalLoadError (exit 1)"
+    alive=0
+  fi
   if [ "$alive" = 1 ]; then
     log "$name: ALIVE after ${WAIT}s"
     echo "$name ALIVE bid=$bid" >> "$SUMMARY"

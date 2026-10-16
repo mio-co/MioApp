@@ -146,6 +146,21 @@ final class MioBridgeViewController: CAPBridgeViewController, WKScriptMessageHan
     /// 网页一直没发 'ready'（旧版站点 / 脚本被拦截）时的兜底：最多盖这么久
     private static let coverTimeout: TimeInterval = 8
 
+    /// Capacitor 在 loadWebView() 里要求本地 public/<server.appStartPath> 存在，否则直接 exit(1)（启动即闪退，无崩溃报告）。
+    /// 正常情况下 www/mio/nav/index.html 会被 cap sync 拷进 public/；万一包里缺了，就去掉 appStartPath
+    /// 退回打开站点根路径（会 302 到 /mio/nav），而不是让 App 退出。
+    override func instanceDescriptor() -> InstanceDescriptor {
+        let descriptor = super.instanceDescriptor()
+        if let start = descriptor.appStartPath?.trimmingCharacters(in: .whitespacesAndNewlines), !start.isEmpty {
+            let local = descriptor.appLocation.appendingPathComponent(start)
+            if !FileManager.default.fileExists(atPath: local.path) {
+                NSLog("⚡️ Mio: local start path %@ missing, falling back to server root", local.path)
+                descriptor.appStartPath = nil
+            }
+        }
+        return descriptor
+    }
+
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
         // App 内置浏览器（Capacitor.Plugins.MioBrowser）：MioCore 页面里点外链时调用

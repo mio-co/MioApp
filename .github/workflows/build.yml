@@ -59,6 +59,8 @@ jobs:
           ls -la Payload/App.app/AdblockBundle
           test -f Payload/App.app/AdblockBundle/filter-2.txt
           test -f Payload/App.app/AdblockBundle/scriptlets.corelibs.json
+          # Capacitor 启动时要求本地 public/<server.appStartPath> 存在，否则 exit(1)（v0.1.2–v0.3.0 闪退）
+          test -e Payload/App.app/public/mio/nav/index.html
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :UIBackgroundModes' Payload/App.app/Info.plist
           zip -qry Mio.ipa Payload
           ls -lh Mio.ipa
@@ -67,6 +69,58 @@ jobs:
         with:
           name: Mio-ipa
           path: Mio.ipa
+          retention-days: 14
+
+  ios-sim-smoke:
+    # iOS 模拟器冷启动冒烟：原包 + 模拟免费 Apple ID 侧载（bundle id 改成 xyz.mio.app.<TEAMID>、BGTask identifiers 不变、ad-hoc 重签）
+    # 任一场景 20 秒内退出 / 崩溃即失败
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Fetch adblock assets
+        run: node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Build (iOS Simulator)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-sim \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGN_IDENTITY=- \
+            build | tail -n 40
+          test -e build-sim/Build/Products/Release-iphonesimulator/App.app/App
+          test -e build-sim/Build/Products/Release-iphonesimulator/App.app/public/mio/nav/index.html
+
+      - name: Cold start smoke (original + sideload bundle-id rewrite + stripped plist)
+        env:
+          SMOKE_STRICT: '1'
+          SMOKE_WAIT: '20'
+        run: bash scripts/sim-launch-smoke.sh build-sim/Build/Products/Release-iphonesimulator/App.app sim-smoke ios-sim
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-sim-smoke
+          path: sim-smoke
           retention-days: 14
 
   adblock-check:
@@ -161,6 +215,13 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Unit tests (start URL = https://mio.300031.xyz/mio/nav)
+        working-directory: android
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Check synced Capacitor config start URL
+        run: node -e "const c=require('./android/app/src/main/assets/capacitor.config.json');const u=c.server.url+c.server.appStartPath;console.log(u);if(u!=='https://mio.300031.xyz/mio/nav')process.exit(1)"
+
       - name: Gradle assembleRelease + assembleDebug
         working-directory: android
         run: ./gradlew --no-daemon --stacktrace assembleRelease assembleDebug
@@ -193,6 +254,42 @@ jobs:
         with:
           name: Mio-android
           path: out/*.apk
+          retention-days: 14
+
+  android-emulator:
+    # Android 模拟器冷启动：起始地址必须是 https://mio.300031.xyz/mio/nav，首个页面能加载（未登录 → Access / 登录页也算通过）
+    needs: [android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Mio-android
+          path: apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Cold start on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash scripts/android-emulator-smoke.sh "$(ls apk/*-android-debug.apk | head -1)" android-smoke
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-emulator-smoke
+          path: android-smoke
           retention-days: 14
 
   windows:
@@ -328,7 +425,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [ios, android, windows, mac]
+    needs: [ios, ios-sim-smoke, android, android-emulator, windows, mac]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4

@@ -6,7 +6,7 @@ const SITE_ORIGIN = 'https://mio.300031.xyz';
 module.exports = {
   SITE_ORIGIN,
   SITE_HOST: new URL(SITE_ORIGIN).hostname,
-  START_URL: `${SITE_ORIGIN}/mio/nav`,
+  START_URL: new URL('/mio/nav', SITE_ORIGIN).toString(),
   // 主窗口内允许直接跳转的站点（Cloudflare Access 登录、Google / GitHub 身份提供方），其余站外地址交给内置浏览器
   MAIN_ALLOWED_HOSTS: ['mio.300031.xyz', '*.cloudflareaccess.com', 'accounts.google.com', 'github.com'],
   MAIN_PARTITION: 'persist:mio',
