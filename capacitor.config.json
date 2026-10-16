@@ -4,7 +4,6 @@
   "webDir": "www",
   "server": {
     "url": "https://mio.300031.xyz",
-    "errorPath": "index.html",
     "allowNavigation": [
       "mio.300031.xyz",
       "*.cloudflareaccess.com",
