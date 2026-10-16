@@ -1,6 +1,6 @@
 {
   "name": "mio-app",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "iOS shell for MioCore (https://mio.300031.xyz)",
   "scripts": { "sync": "cap sync ios" },
