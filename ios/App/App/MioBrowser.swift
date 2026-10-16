@@ -32,6 +32,35 @@ enum MioBrowserSettings {
         set { UserDefaults.standard.set(newValue, forKey: backgroundPlaybackKey) }
     }
 
+    private static let youtubeFocusKey = "mio.browser.youtubeFocus"
+    private static let youtubeFocusIntervalKey = "mio.browser.youtubeFocusInterval"
+    private static let hideToolbarsOnScrollKey = "mio.browser.hideToolbarsOnScroll"
+
+    /// YouTube 防沉迷（隐藏 Shorts 推荐 / 入口、App 推广；看 Shorts 时定时提醒）。默认开
+    static var youtubeFocus: Bool {
+        get { UserDefaults.standard.object(forKey: youtubeFocusKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: youtubeFocusKey); changed() }
+    }
+
+    /// Shorts 提醒间隔（秒），默认 60
+    static var youtubeFocusInterval: Int {
+        get {
+            let v = UserDefaults.standard.integer(forKey: youtubeFocusIntervalKey)
+            return v >= 5 ? v : MioWebCompat.youtubeFocusDefaultInterval
+        }
+        set { UserDefaults.standard.set(newValue, forKey: youtubeFocusIntervalKey); changed() }
+    }
+
+    /// 滚动时自动隐藏地址栏和工具栏。iPhone / iPad 默认开，Mac 默认关（桌面窗口不需要）
+    static var hideToolbarsOnScroll: Bool {
+        get { UserDefaults.standard.object(forKey: hideToolbarsOnScrollKey) as? Bool ?? !MioWebKitCompat.isMac }
+        set { UserDefaults.standard.set(newValue, forKey: hideToolbarsOnScrollKey); changed() }
+    }
+
+    private static func changed() {
+        NotificationCenter.default.post(name: .mioBrowserSettingsDidChange, object: nil)
+    }
+
     /// 内置浏览器专用的持久化数据（Cookie / 存储），与 MioCore 主界面的 WebView 分开
     static let dataStoreID = UUID(uuidString: "6D696F00-6272-6F77-7365-720000000001")!
 
@@ -40,6 +69,10 @@ enum MioBrowserSettings {
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         return "\(v) (\(b))"
     }
+}
+
+extension Notification.Name {
+    static let mioBrowserSettingsDidChange = Notification.Name("mio.browser.settingsDidChange")
 }
 
 // MARK: - WebKit 兼容（UA / 内容模式 / MediaSource），纯逻辑在 MioWebCompat.swift
@@ -252,7 +285,7 @@ enum MioAdblockBackground {
 
 // MARK: - Browser view controller
 
-final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UITextFieldDelegate {
+final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UITextFieldDelegate, UIScrollViewDelegate {
     private static weak var current: MioBrowserViewController?
     /// 最近一次 YouTube 页面的媒体诊断（UA / MediaSource / 清晰度），Mac 冒烟测试读取
     static var lastMediaProbe: String?
@@ -269,6 +302,12 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         vc.modalPresentationStyle = .fullScreen
         presenter.present(vc, animated: true)
         current = vc
+    }
+
+    /// 冒烟测试：在当前内置浏览器的页面里执行 JS（没有打开的浏览器时 result = nil）
+    static func smokeEvaluate(_ js: String, completion: @escaping (Any?, Error?) -> Void) {
+        guard let wv = current?.webView else { completion(nil, nil); return }
+        wv.evaluateJavaScript(js, completionHandler: completion)
     }
 
     static func topPresenter(_ base: UIViewController?) -> UIViewController? {
@@ -292,6 +331,16 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     private var reloadItem: UIBarButtonItem!
     private var observations: [NSKeyValueObservation] = []
     private var changeObserver: NSObjectProtocol?
+    private var settingsObserver: NSObjectProtocol?
+    // 滚动时自动隐藏工具栏（Safari 式）：webView 固定铺满安全区，顶 / 底栏浮在上面，用 contentInset 让出位置
+    private let miniBar = UIControl()
+    private let miniLabel = UILabel()
+    private var topBarTop: NSLayoutConstraint!
+    private var toolbarBottom: NSLayoutConstraint!
+    private var autoHide = MioToolbarAutoHide(threshold: 16)
+    private var chromeHidden = false
+    private var animatingChrome = false
+    private static let miniBarHeight: CGFloat = 22
     private let profile = MioWebKitCompat.profile
     /// 桌面模式下 m.youtube.com → www 的改写记录（防止站点来回重定向时死循环）
     private var desktopRewrites: [Date] = []
@@ -307,6 +356,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     deinit {
         observations.forEach { $0.invalidate() }
         if let o = changeObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = settingsObserver { NotificationCenter.default.removeObserver(o) }
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: Self.passkeyMessage)
         adblock?.detach()
     }
@@ -351,6 +401,11 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         webView.backgroundColor = .systemBackground
+        // inset 由我们按工具栏高度管理（webView 已经贴着安全区，不需要系统再加）
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // WKScrollView 支持外部 delegate：它把回调先转给 WKWebView 自己，再转给我们（不替换 WebKit 的行为）。
+        // 这里只实现无返回值的回调，不实现 viewForZooming / shouldScrollToTop 之类会影响 WebKit 决策的方法。
+        webView.scrollView.delegate = self
         if #available(iOS 16.4, macCatalyst 16.4, *) { webView.isInspectable = true }
 
         adblock = MioAdblockSession(configuration: config)
@@ -363,6 +418,12 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
         changeObserver = NotificationCenter.default.addObserver(forName: .mioAdblockDidChange, object: nil, queue: .main) { [weak self] _ in
             self?.updateShield()
+        }
+        settingsObserver = NotificationCenter.default.addObserver(forName: .mioBrowserSettingsDidChange, object: nil, queue: .main) { [weak self] _ in
+            guard let self = self else { return }
+            // YouTube 防沉迷开关 / 间隔：重建用户脚本，下一次加载页面生效
+            self.adblock.extraScripts = Self.extraScripts()
+            if !MioBrowserSettings.hideToolbarsOnScroll { self.showChrome(animated: true) }
         }
         load(initialURL)
     }
@@ -408,10 +469,27 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         topBar.addSubview(progress)
 
         webView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(webView)
+        view.insertSubview(webView, at: 0)
+
+        // 工具栏隐藏时顶部保留的极简域名条（点一下恢复），像 Safari
+        miniBar.translatesAutoresizingMaskIntoConstraints = false
+        miniBar.backgroundColor = .secondarySystemBackground
+        miniBar.alpha = 0
+        miniBar.isAccessibilityElement = true
+        miniBar.accessibilityTraits = .button
+        miniBar.accessibilityHint = "显示地址栏和工具栏"
+        miniBar.addTarget(self, action: #selector(miniBarTapped), for: .touchUpInside)
+        miniLabel.translatesAutoresizingMaskIntoConstraints = false
+        miniLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        miniLabel.textColor = .secondaryLabel
+        miniLabel.textAlignment = .center
+        miniLabel.isUserInteractionEnabled = false
+        miniBar.addSubview(miniLabel)
+        view.insertSubview(miniBar, belowSubview: topBar)
 
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(toolbar)
+        view.bringSubviewToFront(topBar)
 
         backItem = UIBarButtonItem(image: UIImage(systemName: "chevron.backward"), style: .plain, target: self, action: #selector(backTapped))
         forwardItem = UIBarButtonItem(image: UIImage(systemName: "chevron.forward"), style: .plain, target: self, action: #selector(forwardTapped))
@@ -429,8 +507,10 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         let flex = { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
         toolbar.items = [backItem, flex(), forwardItem, flex(), reloadItem, flex(), share, flex(), safari, flex(), settings]
 
+        topBarTop = topBar.topAnchor.constraint(equalTo: view.topAnchor)
+        toolbarBottom = toolbar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         NSLayoutConstraint.activate([
-            topBar.topAnchor.constraint(equalTo: view.topAnchor),
+            topBarTop,
             topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
@@ -447,14 +527,23 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             progress.bottomAnchor.constraint(equalTo: topBar.bottomAnchor),
             progress.heightAnchor.constraint(equalToConstant: 2),
 
-            webView.topAnchor.constraint(equalTo: topBar.bottomAnchor),
-            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: toolbar.topAnchor),
+            // webView 固定铺满安全区（尺寸不随工具栏显示 / 隐藏变化 → 页面不重排、不抖动），顶 / 底栏浮在上面
+            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+
+            miniBar.topAnchor.constraint(equalTo: view.topAnchor),
+            miniBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            miniBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            miniBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: Self.miniBarHeight),
+            miniLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            miniLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            miniLabel.bottomAnchor.constraint(equalTo: miniBar.bottomAnchor, constant: -3),
 
             toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            toolbar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            toolbarBottom,
         ])
         updateShield()
         updateButtons()
@@ -480,6 +569,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         let host = webView.url?.host ?? initialURL.host ?? ""
         let title = webView.title ?? ""
         addressField.text = title.isEmpty ? host : "\(title) — \(host)"
+        miniLabel.text = host
+        miniBar.accessibilityLabel = host
     }
 
     private func updateButtons() {
@@ -532,6 +623,12 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             // 第三方站点的通行密钥用不了时提示改用 Safari（不绕过系统限制）
             WKUserScript(source: MioWebCompat.passkeyHintScript, injectionTime: .atDocumentStart, forMainFrameOnly: true),
         ]
+        if MioBrowserSettings.youtubeFocus {
+            // YouTube 防沉迷：所有页面都注入，脚本自己只在 *.youtube.com 主框架生效（WKUserScript 不能按域名过滤）。
+            // 排在后台播放脚本之前；可见性用 window 捕获阶段 + Document.prototype 的真实 getter，不受它伪造 hidden 的影响
+            scripts.append(WKUserScript(source: MioWebCompat.youtubeFocusScript(intervalSeconds: MioBrowserSettings.youtubeFocusInterval),
+                                        injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         if MioWebKitCompat.isMac {
             // Mac：textarea / contenteditable 回车不换行的兜底（所有 frame，评论框常在 iframe 里）
             scripts.append(WKUserScript(source: MioWebCompat.returnKeyFixScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -596,7 +693,133 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     }
 
     @objc private func focusAddress() {
+        showChrome(animated: false)
         addressField.becomeFirstResponder()
+    }
+
+    // MARK: 滚动时隐藏工具栏
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if !animatingChrome { applyInsets() }
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        // 旋转 / 改窗口大小：工具栏高度会变，先恢复显示
+        showChrome(animated: false)
+    }
+
+    /// 顶 / 底栏让出的位置：显示时 = 地址栏高度（不含状态栏）/ 工具栏高度；隐藏时 = 域名条 / 0
+    private func desiredInsets() -> UIEdgeInsets {
+        if chromeHidden { return UIEdgeInsets(top: Self.miniBarHeight, left: 0, bottom: 0, right: 0) }
+        let top = max(0, topBar.frame.maxY - view.safeAreaInsets.top)
+        let bottom = max(0, view.bounds.height - view.safeAreaInsets.bottom - toolbar.frame.minY)
+        return UIEdgeInsets(top: top, left: 0, bottom: bottom, right: 0)
+    }
+
+    private func applyInsets() {
+        guard let sv = webView?.scrollView else { return }
+        let want = desiredInsets()
+        let old = sv.contentInset
+        guard abs(old.top - want.top) > 0.5 || abs(old.bottom - want.bottom) > 0.5 else { return }
+        let wasAtTop = sv.contentOffset.y <= -old.top + 1
+        sv.contentInset = want
+        sv.verticalScrollIndicatorInsets = want
+        // 原来停在顶部：继续贴着顶部（否则内容会钻到地址栏下面）
+        if wasAtTop, !sv.isDragging { sv.contentOffset.y = -want.top }
+    }
+
+    private var autoHideActive: Bool {
+        guard MioBrowserSettings.hideToolbarsOnScroll, !UIAccessibility.isVoiceOverRunning,
+              presentedViewController == nil, !addressField.isFirstResponder else { return false }
+        if #available(iOS 16.0, macCatalyst 16.0, *), webView.fullscreenState != .notInFullscreen { return false }
+        return true
+    }
+
+    private func metrics(_ sv: UIScrollView) -> MioToolbarAutoHide.Metrics {
+        MioToolbarAutoHide.Metrics(offsetY: Double(sv.contentOffset.y), contentHeight: Double(sv.contentSize.height),
+                                   viewportHeight: Double(sv.bounds.height), hiddenTopInset: Double(Self.miniBarHeight),
+                                   bottomInset: Double(sv.contentInset.bottom))
+    }
+
+    private func applyAutoHide(_ action: MioToolbarAutoHide.Action) {
+        switch action {
+        case .hide: setChromeHidden(true, animated: true)
+        case .show: setChromeHidden(false, animated: true)
+        case .none: break
+        }
+    }
+
+    func showChrome(animated: Bool) {
+        _ = autoHide.forceShow()
+        setChromeHidden(false, animated: animated)
+    }
+
+    @objc private func miniBarTapped() { showChrome(animated: true) }
+
+    private func setChromeHidden(_ hide: Bool, animated: Bool) {
+        guard isViewLoaded, hide != chromeHidden else { return }
+        view.layoutIfNeeded()
+        let sv = webView.scrollView
+        // 停在底部时显示工具栏：内容跟着上移，最后一屏不被工具栏挡住
+        let maxY = sv.contentSize.height - sv.bounds.height + sv.contentInset.bottom
+        let atBottom = !hide && sv.contentOffset.y >= maxY - 2 && sv.contentSize.height > sv.bounds.height
+        chromeHidden = hide
+        topBarTop.constant = hide ? -topBar.bounds.height : 0
+        toolbarBottom.constant = hide ? toolbar.bounds.height + view.safeAreaInsets.bottom : 0
+        if hide && addressField.isFirstResponder { addressField.resignFirstResponder() }
+        animatingChrome = true
+        let changes = {
+            self.view.layoutIfNeeded()
+            self.miniBar.alpha = hide ? 1 : 0
+            self.topBar.alpha = hide ? 0 : 1
+            self.toolbar.alpha = hide ? 0 : 1
+            let want = self.desiredInsets()
+            let delta = want.bottom - sv.contentInset.bottom
+            sv.contentInset = want
+            sv.verticalScrollIndicatorInsets = want
+            if atBottom, delta > 0 { sv.contentOffset.y += delta }
+        }
+        let done: (Bool) -> Void = { _ in
+            self.animatingChrome = false
+            self.autoHide.resetTracking()
+            self.applyInsets()
+        }
+        autoHide.resetTracking()
+        if animated {
+            UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut], animations: changes, completion: done)
+        } else {
+            UIView.performWithoutAnimation(changes)
+            done(true)
+        }
+    }
+
+    // MARK: UIScrollViewDelegate（WKScrollView 转发：WebKit 自己的处理照常进行）
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        autoHide.beginDrag(at: Double(scrollView.contentOffset.y))
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard !animatingChrome, autoHideActive else { return }
+        let userDriven = scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating
+        applyAutoHide(autoHide.scrolled(metrics(scrollView), userDriven: userDriven))
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard !decelerate, autoHideActive else { return }
+        applyAutoHide(autoHide.scrollEnded(metrics(scrollView)))
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard autoHideActive else { return }
+        applyAutoHide(autoHide.scrollEnded(metrics(scrollView)))
+    }
+
+    /// 点状态栏回到顶部
+    func scrollViewDidScrollToTop(_ scrollView: UIScrollView) {
+        showChrome(animated: true)
     }
 
     override var keyCommands: [UIKeyCommand]? {
@@ -662,6 +885,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     // MARK: address field
 
     func textFieldDidBeginEditing(_ textField: UITextField) {
+        showChrome(animated: false)
         textField.textAlignment = .left
         textField.text = webView.url?.absoluteString ?? initialURL.absoluteString
         DispatchQueue.main.async { textField.selectAll(nil) }
@@ -714,6 +938,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         if isMain, scheme == "http" || scheme == "https" {
             adblock.prepareMainFrame(url)
             updateShield()
+            // 新的主框架导航：工具栏恢复显示
+            showChrome(animated: true)
         }
         decisionHandler(.allow, preferences)
     }
@@ -839,13 +1065,14 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
 final class MioBrowserSettingsViewController: UITableViewController {
     private enum Row {
-        case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, passkeyInfo, openInSafari(URL), licenses, version
+        case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, youtubeFocus, youtubeInterval, hideToolbars, passkeyInfo, openInSafari(URL), licenses, version
     }
 
     private let currentHost: String?
     private let currentURL: URL?
     private var sections: [(title: String?, footer: String?, rows: [Row])] = []
     private var observer: NSObjectProtocol?
+    private var settingsObserver: NSObjectProtocol?
     private var updating = false
 
     init(currentHost: String?, currentURL: URL? = nil) {
@@ -862,6 +1089,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
 
     deinit {
         if let o = observer { NotificationCenter.default.removeObserver(o) }
+        if let o = settingsObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     override func viewDidLoad() {
@@ -869,6 +1097,9 @@ final class MioBrowserSettingsViewController: UITableViewController {
         title = "浏览器与广告拦截"
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
         observer = NotificationCenter.default.addObserver(forName: .mioAdblockDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.rebuild()
+        }
+        settingsObserver = NotificationCenter.default.addObserver(forName: .mioBrowserSettingsDidChange, object: nil, queue: .main) { [weak self] _ in
             self?.rebuild()
         }
         rebuild()
@@ -893,6 +1124,10 @@ final class MioBrowserSettingsViewController: UITableViewController {
         allow.append(.allowlistAdd)
         s.append(("白名单（不拦截的网站）", "包含其所有子域名。左滑删除。", allow))
 
+        var browse: [Row] = [.youtubeFocus]
+        if MioBrowserSettings.youtubeFocus { browse.append(.youtubeInterval) }
+        browse.append(.hideToolbars)
+        s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
         s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的「用 Safari 打开」（\(Self.safariHint)）改用 Safari。", [.preferSafari, .backgroundPlayback]))
         var login: [Row] = [.passkeyInfo]
         if let u = currentURL { login.append(.openInSafari(u)) }
@@ -987,6 +1222,19 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.textLabel?.text = "后台 / 锁屏继续播放"
             cell.detailTextLabel?.text = "对之后打开的页面生效"
             cell.accessoryView = makeSwitch(MioBrowserSettings.backgroundPlayback) { MioBrowserSettings.backgroundPlayback = $0 }
+        case .youtubeFocus:
+            cell.textLabel?.text = "YouTube 防沉迷"
+            cell.detailTextLabel?.text = "隐藏 Shorts 推荐和入口，看 Shorts 时定时提醒"
+            cell.accessoryView = makeSwitch(MioBrowserSettings.youtubeFocus) { MioBrowserSettings.youtubeFocus = $0 }
+        case .youtubeInterval:
+            cell.textLabel?.text = "Shorts 提醒间隔"
+            cell.detailTextLabel?.text = Self.intervalText(MioBrowserSettings.youtubeFocusInterval)
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+        case .hideToolbars:
+            cell.textLabel?.text = "滚动时隐藏工具栏"
+            cell.detailTextLabel?.text = MioWebKitCompat.isMac ? "Mac 默认关闭" : "向上滚动或点顶部域名条恢复"
+            cell.accessoryView = makeSwitch(MioBrowserSettings.hideToolbarsOnScroll) { MioBrowserSettings.hideToolbarsOnScroll = $0 }
         case .passkeyInfo:
             cell.textLabel?.text = "内置浏览器不支持通行密钥 / 钥匙串自动填充"
             cell.detailTextLabel?.text = "账号密码可手动输入；通行密钥登录请用 Safari"
@@ -1003,6 +1251,10 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.detailTextLabel?.text = MioBrowserSettings.appVersion
         }
         return cell
+    }
+
+    static func intervalText(_ seconds: Int) -> String {
+        seconds % 60 == 0 ? "每 \(seconds / 60) 分钟" : "每 \(seconds) 秒"
     }
 
     private func makeSwitch(_ on: Bool, _ change: @escaping (Bool) -> Void) -> UISwitch {
@@ -1043,6 +1295,20 @@ final class MioBrowserSettingsViewController: UITableViewController {
             present(a, animated: true)
         case .openInSafari(let url):
             UIApplication.shared.open(url)
+        case .youtubeInterval:
+            let current = MioBrowserSettings.youtubeFocusInterval
+            let a = UIAlertController(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒", preferredStyle: .actionSheet)
+            for sec in MioWebCompat.youtubeFocusIntervalChoices {
+                a.addAction(UIAlertAction(title: Self.intervalText(sec) + (sec == current ? " ✓" : ""), style: .default) { _ in
+                    MioBrowserSettings.youtubeFocusInterval = sec
+                })
+            }
+            a.addAction(UIAlertAction(title: "取消", style: .cancel))
+            if let pop = a.popoverPresentationController, let cell = tableView.cellForRow(at: indexPath) {
+                pop.sourceView = cell
+                pop.sourceRect = cell.bounds
+            }
+            present(a, animated: true)
         default:
             break
         }

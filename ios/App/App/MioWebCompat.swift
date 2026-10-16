@@ -384,4 +384,403 @@ enum MioWebCompat {
     })();
     """#
     // MIO_JS_END mediaProbe
+
+    // MARK: - YouTube 防沉迷
+
+    /// 内置浏览器：YouTube 防沉迷（*.youtube.com 主框架，document-start）。来自用户脚本「最简 YouTube 防沉迷」，改成事件驱动：
+    /// 隐藏首页 / 推荐 / 搜索里的 Shorts（频道页保留）、导航栏 Shorts 入口、App 下载推广，删 apple-itunes-app meta；
+    /// 在 /shorts/ 立即提醒，之后页面可见时每 N 秒提醒一次（离开即重置）。全部用 DOM API 构建，不用 innerHTML（YouTube 有 Trusted Types）。
+    static let youtubeFocusDefaultInterval = 60
+    static let youtubeFocusIntervalChoices = [30, 60, 120, 300, 600]
+
+    static func youtubeFocusScript(intervalSeconds: Int) -> String {
+        let s = max(5, min(3600, intervalSeconds))
+        return youtubeFocusScriptTemplate.replacingOccurrences(of: "__MIO_YT_INTERVAL_MS__", with: String(s * 1000))
+    }
+
+    /// 只在这些主机上注入（脚本自己也会再检查一次 location.hostname）
+    static func isYouTubeHost(_ host: String?) -> Bool {
+        guard let h = host?.lowercased(), !h.isEmpty else { return false }
+        return h == "youtube.com" || h.hasSuffix(".youtube.com")
+    }
+
+    // MIO_JS_BEGIN youtubeFocus
+    static let youtubeFocusScriptTemplate = #"""
+    (function () {
+      'use strict';
+      // YouTube 防沉迷（内置浏览器，*.youtube.com 主框架，document-start）
+      // 不轮询、不常驻观察整份文档：路由变化靠 yt-navigate-finish / yt-page-data-updated / state-navigateend / popstate / history 钩子；
+      // 文本识别 Shorts 导航项只在路由变化时和导航容器自己的（节流）观察器里做。
+      var w = window, d = document;
+      if (w.top !== w.self) return;
+      if (!/(^|\.)youtube\.com$/i.test(location.hostname)) return;
+      if (w.__mioYTFocus) return;
+      w.__mioYTFocus = true;
+
+      var INTERVAL = Number('__MIO_YT_INTERVAL_MS__');
+      if (!(INTERVAL >= 5000)) INTERVAL = 60000;
+      var SHOW_MS = 4000;
+      var root = d.documentElement;
+      var NAV_ITEMS = 'ytm-pivot-bar-item-renderer, ytd-guide-entry-renderer, ytd-mini-guide-entry-renderer';
+      var NAV_CONTAINERS = 'ytm-pivot-bar-renderer, ytd-guide-renderer, ytd-mini-guide-renderer, tp-yt-app-drawer#guide';
+      var NC = 'html:not(.mio-channel-page) ';
+
+      var css = [
+        // ---- 首页 / 推荐 / 搜索里的 Shorts 区块和卡片（频道页 html.mio-channel-page 保留）----
+        NC + 'ytd-reel-shelf-renderer',
+        NC + 'ytm-reel-shelf-renderer',
+        NC + 'ytd-rich-shelf-renderer[is-shorts]',
+        NC + 'ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts])',
+        NC + 'ytd-rich-section-renderer:has(a[href^="/shorts/"])',
+        NC + 'ytm-rich-section-renderer:has(a[href^="/shorts/"])',
+        NC + 'grid-shelf-view-model:has(a[href^="/shorts/"])',
+        NC + 'ytd-rich-item-renderer:has(a[href^="/shorts/"])',
+        NC + 'ytm-rich-item-renderer:has(a[href^="/shorts/"])',
+        NC + 'ytd-video-renderer:has(a#thumbnail[href^="/shorts/"])',
+        NC + 'ytm-video-with-context-renderer:has(a[href^="/shorts/"])',
+        NC + 'ytd-compact-video-renderer:has(a[href^="/shorts/"])',
+        // ---- 导航里的 Shorts 入口（底部 pivot 栏 / 侧边 guide / mini guide）----
+        'ytm-pivot-bar-item-renderer:has(a[href^="/shorts"])',
+        'ytm-pivot-bar-item-renderer:has(.pivot-shorts)',
+        'ytd-guide-entry-renderer:has(a[href^="/shorts"])',
+        'ytd-guide-entry-renderer:has(a[title="Shorts"])',
+        'ytd-mini-guide-entry-renderer:has(a[href^="/shorts"])',
+        'ytd-mini-guide-entry-renderer[aria-label="Shorts"]',
+        '[data-mio-shorts-nav]',
+        // ---- 「打开 App / 下载 App」推广 ----
+        'ytm-unplugged-app-promo-renderer',
+        'ytm-promoted-app-install-renderer',
+        '.ytm-unplugged-app-promo-renderer',
+        '#unplugged-app-promo',
+        'ytm-bottom-sheet-promo-renderer',
+        '.ytm-promoted-app-install-action'
+      ].join(',\n') + ' { display: none !important; }\n' +
+        '#mio-shorts-reminder { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 50%;' +
+        ' transform: translate(-50%, calc(-100% - 40px)) scale(0.95); opacity: 0; z-index: 2147483647; pointer-events: none;' +
+        ' box-sizing: border-box; max-width: calc(100vw - 24px); padding: 12px 24px; border-radius: 9999px;' +
+        ' display: flex; flex-direction: column; align-items: center; text-align: center;' +
+        ' font: 400 12px/1.35 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;' +
+        ' background: rgba(28, 28, 30, 0.82); color: #f2f2f7;' +
+        ' box-shadow: 0 10px 40px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.10) inset;' +
+        ' -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);' +
+        ' transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease; }\n' +
+        '#mio-shorts-reminder.mio-show { transform: translate(-50%, 0) scale(1); opacity: 1; }\n' +
+        '#mio-shorts-reminder .mio-r-title { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; letter-spacing: 0.3px; }\n' +
+        '#mio-shorts-reminder .mio-r-sub { margin-top: 3px; opacity: 0.7; letter-spacing: 0.2px; }\n' +
+        '@media (prefers-color-scheme: light) { #mio-shorts-reminder { background: rgba(255, 255, 255, 0.88); color: #1c1c1e;' +
+        ' box-shadow: 0 10px 40px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.08) inset; } }\n';
+
+      function addStyle() {
+        if (d.getElementById('mio-yt-focus-style')) return;
+        var s = d.createElement('style');
+        s.id = 'mio-yt-focus-style';
+        s.textContent = css;
+        (d.head || root).appendChild(s);
+      }
+      addStyle();
+
+      // ---- 删掉 apple-itunes-app meta（「在 App 中打开」横幅）：只看 <html> / <head> 的直接子节点，DOMContentLoaded 后断开 ----
+      function dropAppMeta() {
+        var m = d.querySelectorAll('meta[name="apple-itunes-app"]');
+        for (var i = 0; i < m.length; i++) m[i].remove();
+      }
+      var headWatch = null, rootWatch = null;
+      function watchHead() {
+        if (headWatch || !d.head || typeof MutationObserver !== 'function') return;
+        headWatch = new MutationObserver(dropAppMeta);
+        headWatch.observe(d.head, { childList: true });
+      }
+      if (typeof MutationObserver === 'function') {
+        rootWatch = new MutationObserver(function () { if (d.head) { watchHead(); dropAppMeta(); } });
+        rootWatch.observe(root, { childList: true });
+      }
+      watchHead();
+      dropAppMeta();
+
+      // ---- 文本识别 Shorts 导航项（有些手机版底部栏的 Shorts 没有链接）----
+      function isShortsNav(el) {
+        if (/^\s*shorts\s*$/i.test(el.textContent || '')) return true;
+        var t = el.querySelector('[title], [aria-label]');
+        if (el.getAttribute && /^\s*shorts\s*$/i.test(el.getAttribute('aria-label') || '')) return true;
+        if (t && (/^\s*shorts\s*$/i.test(t.getAttribute('title') || '') || /^\s*shorts\s*$/i.test(t.getAttribute('aria-label') || ''))) return true;
+        return false;
+      }
+      function markNav(scope) {
+        var items = (scope || d).querySelectorAll(NAV_ITEMS);
+        for (var i = 0; i < items.length; i++) {
+          if (!items[i].hasAttribute('data-mio-shorts-nav') && isShortsNav(items[i])) items[i].setAttribute('data-mio-shorts-nav', '');
+        }
+      }
+      var observed = [];
+      var navTimer = 0;
+      function scheduleNav() {
+        if (navTimer) return;
+        navTimer = w.setTimeout(function () { navTimer = 0; markNav(d); }, 200);
+      }
+      function attachNavObservers() {
+        if (typeof MutationObserver !== 'function') return;
+        var cs = d.querySelectorAll(NAV_CONTAINERS);
+        for (var i = 0; i < cs.length; i++) {
+          if (observed.indexOf(cs[i]) >= 0) continue;
+          observed.push(cs[i]);
+          new MutationObserver(scheduleNav).observe(cs[i], { childList: true, subtree: true });
+        }
+      }
+      // 导航容器常常比路由事件晚出现：每次路由变化后再补查几次（有限次数，不常驻）
+      var retryTimers = [];
+      function scanNavSoon() {
+        for (var i = 0; i < retryTimers.length; i++) w.clearTimeout(retryTimers[i]);
+        retryTimers = [];
+        [0, 600, 2000, 5000].forEach(function (ms) {
+          retryTimers.push(w.setTimeout(function () { attachNavObservers(); markNav(d); }, ms));
+        });
+      }
+
+      // ---- Shorts 提醒 ----
+      var popup = null, hideTimer = 0;
+      function buildPopup() {
+        var p = d.createElement('div');
+        p.id = 'mio-shorts-reminder';
+        p.setAttribute('role', 'status');
+        p.setAttribute('aria-live', 'polite');
+        var title = d.createElement('div');
+        title.className = 'mio-r-title';
+        var NS = 'http://www.w3.org/2000/svg';
+        var svg = d.createElementNS(NS, 'svg');
+        svg.setAttribute('width', '18'); svg.setAttribute('height', '18'); svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', '#FF453A'); svg.setAttribute('stroke-width', '2.5');
+        svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.setAttribute('aria-hidden', 'true');
+        var c = d.createElementNS(NS, 'circle'); c.setAttribute('cx', '12'); c.setAttribute('cy', '12'); c.setAttribute('r', '10'); svg.appendChild(c);
+        [['12', '8', '12', '12'], ['12', '16', '12.01', '16']].forEach(function (a) {
+          var l = d.createElementNS(NS, 'line');
+          l.setAttribute('x1', a[0]); l.setAttribute('y1', a[1]); l.setAttribute('x2', a[2]); l.setAttribute('y2', a[3]);
+          svg.appendChild(l);
+        });
+        title.appendChild(svg);
+        title.appendChild(d.createTextNode('已进入 Shorts 短视频区'));
+        var sub = d.createElement('div');
+        sub.className = 'mio-r-sub';
+        var secs = Math.round(INTERVAL / 1000);
+        sub.textContent = '每 ' + (secs % 60 === 0 ? (secs / 60) + ' 分钟' : secs + ' 秒') + '提醒一次，注意时间！';
+        p.appendChild(title);
+        p.appendChild(sub);
+        return p;
+      }
+      function showPopup() {
+        addStyle();
+        if (!popup || !popup.isConnected) {
+          popup = buildPopup();
+          (d.body || root).appendChild(popup);
+        }
+        if (hideTimer) w.clearTimeout(hideTimer);
+        popup.classList.remove('mio-show');
+        void popup.offsetWidth;
+        popup.classList.add('mio-show');
+        hideTimer = w.setTimeout(function () { hideTimer = 0; if (popup) popup.classList.remove('mio-show'); }, SHOW_MS);
+        w.__mioYTReminderCount = (w.__mioYTReminderCount || 0) + 1;
+      }
+      function hidePopup() {
+        if (hideTimer) { w.clearTimeout(hideTimer); hideTimer = 0; }
+        if (popup) popup.classList.remove('mio-show');
+      }
+
+      // 真实可见性：后台播放脚本会把 document.hidden 改成恒 false，这里读原型上的 getter
+      var visDesc = null;
+      try {
+        var DP = w.Document && w.Document.prototype;
+        visDesc = DP && Object.getOwnPropertyDescriptor(DP, 'visibilityState');
+      } catch (e) {}
+      function visible() {
+        try { if (visDesc && visDesc.get) return visDesc.get.call(d) !== 'hidden'; } catch (e) {}
+        return d.visibilityState !== 'hidden';
+      }
+      function now() { return Date.now(); }
+
+      var onShorts = false;   // 当前在 /shorts/
+      var elapsed = 0;        // 本轮已累计的可见时长（ms）
+      var runningSince = 0;   // 正在计时的起点（0 = 暂停）
+      var tick = 0;
+      function pause() {
+        if (runningSince) { elapsed += now() - runningSince; runningSince = 0; }
+        if (tick) { w.clearTimeout(tick); tick = 0; }
+      }
+      function resume() {
+        if (!onShorts || runningSince || !visible()) return;
+        runningSince = now();
+        tick = w.setTimeout(function () {
+          tick = 0; runningSince = 0; elapsed = 0;
+          showPopup();
+          resume();
+        }, Math.max(0, INTERVAL - elapsed));
+      }
+      function setShorts(on) {
+        if (on === onShorts) return;
+        onShorts = on;
+        pause();
+        elapsed = 0;
+        if (on) { showPopup(); resume(); } else { hidePopup(); }
+      }
+
+      var lastPath = null;
+      function route() {
+        var p = location.pathname || '/';
+        dropAppMeta();
+        root.classList.toggle('mio-channel-page', /^\/(@|c\/|channel\/|user\/)/i.test(p));
+        setShorts(/^\/shorts(\/|$)/i.test(p));
+        if (p !== lastPath) { lastPath = p; scanNavSoon(); }
+      }
+
+      ['pushState', 'replaceState'].forEach(function (k) {
+        var orig = history[k];
+        if (typeof orig !== 'function') return;
+        history[k] = function () {
+          var r = orig.apply(this, arguments);
+          try { route(); } catch (e) {}
+          return r;
+        };
+      });
+      w.addEventListener('popstate', route);
+      ['yt-navigate-finish', 'yt-page-data-updated', 'state-navigateend'].forEach(function (t) {
+        d.addEventListener(t, route);
+      });
+      // window 捕获阶段：比后台播放脚本挂在 document 上的 stopImmediatePropagation 更早
+      w.addEventListener('visibilitychange', function () { if (visible()) resume(); else pause(); }, true);
+      w.addEventListener('pageshow', function () { route(); if (visible()) resume(); });
+      w.addEventListener('pagehide', pause);
+      d.addEventListener('DOMContentLoaded', function () {
+        addStyle(); watchHead(); dropAppMeta();
+        if (rootWatch) { rootWatch.disconnect(); rootWatch = null; }
+        if (headWatch) { headWatch.disconnect(); headWatch = null; }
+        route();
+        scanNavSoon();
+      });
+      route();
+    })();
+    """#
+    // MIO_JS_END youtubeFocus
+
+    /// Mac 冒烟测试：YouTube 页面里防沉迷脚本是否生效（pushState 到 /shorts/ 看提醒，再 replaceState 回来）
+    // MIO_JS_BEGIN youtubeFocusSmoke
+    static let youtubeFocusSmokeScript = #"""
+    (function () {
+      var r = { host: location.hostname, installed: !!window.__mioYTFocus, style: !!document.getElementById('mio-yt-focus-style') };
+      try { r.trustedTypes = !!(window.trustedTypes && window.trustedTypes.createPolicy); } catch (e) {}
+      var before = window.__mioYTReminderCount || 0;
+      try { history.pushState({}, '', '/shorts/mio-smoke'); } catch (e) { r.pushError = String(e); }
+      var p = document.getElementById('mio-shorts-reminder');
+      r.reminder = !!p;
+      r.count = (window.__mioYTReminderCount || 0) - before;
+      r.shown = !!(p && p.classList.contains('mio-show'));
+      r.text = p ? p.textContent : '';
+      try { history.replaceState({}, '', '/'); } catch (e) {}
+      r.hiddenAfterLeave = !!(p && !p.classList.contains('mio-show'));
+      return JSON.stringify(r);
+    })();
+    """#
+    // MIO_JS_END youtubeFocusSmoke
+}
+
+// MARK: - 内置浏览器：滚动时自动隐藏顶部 / 底部栏（纯逻辑，单测在 tools/MioAppTests）
+
+/// 方向 / 阈值状态机。坐标都是 UIScrollView 的 contentOffset.y（向下滚动变大）。
+/// - 只认用户手势驱动的滚动（拖动 / 惯性）；隐藏 / 显示引起的 contentInset 变化、页面自己 scrollTo 不计入，避免来回抖动。
+/// - 同方向累计超过阈值才切换；方向反转累计清零。
+/// - 顶部（含橡皮筋下拉区）：显示，且不会隐藏；底部橡皮筋区：不累计。滚动停在底部时显示（Safari 行为）。
+/// - 内容不够一屏：始终显示。
+struct MioToolbarAutoHide: Equatable {
+    enum Action: Equatable { case none, hide, show }
+
+    struct Metrics: Equatable {
+        /// contentOffset.y
+        var offsetY: Double
+        /// contentSize.height
+        var contentHeight: Double
+        /// scrollView.bounds.height
+        var viewportHeight: Double
+        /// 工具栏隐藏时的顶部 inset（极简域名条）；offsetY <= -hiddenTopInset 即「到顶」
+        var hiddenTopInset: Double
+        /// 当前的底部 inset
+        var bottomInset: Double
+
+        init(offsetY: Double, contentHeight: Double, viewportHeight: Double, hiddenTopInset: Double = 0, bottomInset: Double = 0) {
+            self.offsetY = offsetY
+            self.contentHeight = contentHeight
+            self.viewportHeight = viewportHeight
+            self.hiddenTopInset = hiddenTopInset
+            self.bottomInset = bottomInset
+        }
+
+        var topEdge: Double { -hiddenTopInset }
+        var maxOffsetY: Double { contentHeight - viewportHeight + bottomInset }
+        /// 内容比一屏长（还能往下滚）
+        var scrollable: Bool { maxOffsetY > topEdge + 1 }
+    }
+
+    var threshold: Double = 16
+    private(set) var hidden = false
+    private var lastY: Double?
+    private var accumulated: Double = 0
+
+    init(threshold: Double = 16) { self.threshold = threshold }
+
+    /// 开始拖动：以当前位置为起点重新累计
+    mutating func beginDrag(at y: Double) {
+        lastY = y
+        accumulated = 0
+    }
+
+    /// 每次 scrollViewDidScroll。userDriven = isTracking || isDragging || isDecelerating
+    mutating func scrolled(_ m: Metrics, userDriven: Bool) -> Action {
+        let y = m.offsetY
+        defer { lastY = y }
+        guard userDriven else { accumulated = 0; return .none }
+        guard m.scrollable else { accumulated = 0; return setHidden(false) }
+        if y <= m.topEdge + 1 {
+            accumulated = 0
+            return setHidden(false)
+        }
+        // 底部橡皮筋区：不累计（回弹时 offset 往回走，不能当成「向上滚动」）
+        if y >= m.maxOffsetY - 0.5 { accumulated = 0; return .none }
+        guard let last = lastY else { return .none }
+        let dy = y - last
+        if dy == 0 { return .none }
+        if (dy > 0) != (accumulated > 0) && accumulated != 0 { accumulated = 0 }
+        accumulated += dy
+        if accumulated > threshold, !hidden, y > m.topEdge + threshold {
+            accumulated = 0
+            return setHidden(true)
+        }
+        if accumulated < -threshold, hidden {
+            accumulated = 0
+            return setHidden(false)
+        }
+        return .none
+    }
+
+    /// 拖动结束且没有惯性 / 惯性结束：停在底部就显示
+    mutating func scrollEnded(_ m: Metrics) -> Action {
+        accumulated = 0
+        guard hidden else { return .none }
+        if !m.scrollable || m.offsetY >= m.maxOffsetY - 2 || m.offsetY <= m.topEdge + 1 { return setHidden(false) }
+        return .none
+    }
+
+    /// 点状态栏回到顶部、新导航、地址栏聚焦、关闭此功能、全屏退出……
+    mutating func forceShow() -> Action {
+        accumulated = 0
+        lastY = nil
+        return setHidden(false)
+    }
+
+    /// inset 改动后调用：下一次 didScroll 不和改动前的位置比较
+    mutating func resetTracking() {
+        lastY = nil
+        accumulated = 0
+    }
+
+    private mutating func setHidden(_ h: Bool) -> Action {
+        guard h != hidden else { return .none }
+        hidden = h
+        return h ? .hide : .show
+    }
 }

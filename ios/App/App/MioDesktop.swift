@@ -236,6 +236,7 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             case .failure(let e): report["pageError"] = "\(e)"
             }
             let started = Date()
+            var ytFocus: [String: Any]?
             func finish() {
                 let presented = MioBrowserViewController.topPresenter(self) is MioBrowserViewController
                 report["browserPresented"] = presented
@@ -261,8 +262,18 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                     report["browserProbe"] = MioBrowserViewController.lastMediaProbe ?? "none"
                 }
                 report["desktopOK"] = desktopOK
+                // YouTube 防沉迷：真实 WKWebView + YouTube（Trusted Types）里脚本已注入、样式在、进入 /shorts/ 能弹出提醒
+                var ytFocusOK = true
+                if MioBrowserSettings.youtubeFocus, let yt = ytFocus {
+                    report["youtubeFocus"] = yt
+                    ytFocusOK = (yt["installed"] as? Bool) == true && (yt["style"] as? Bool) == true
+                        && (yt["reminder"] as? Bool) == true && ((yt["count"] as? Int) ?? 0) >= 1
+                } else if MioBrowserSettings.youtubeFocus {
+                    report["youtubeFocus"] = "not checked (no YouTube page)"
+                }
+                report["youtubeFocusOK"] = ytFocusOK
                 let page = report["page"] as? [String: Any]
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
@@ -271,7 +282,14 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             }
             func waitProbe(_ deadline: Date) {
                 if MioBrowserViewController.lastMediaProbe != nil || Date() > deadline {
-                    finish()
+                    MioBrowserViewController.smokeEvaluate(MioWebCompat.youtubeFocusSmokeScript) { result, error in
+                        if let s = result as? String, let obj = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any] {
+                            ytFocus = obj
+                        } else if let e = error {
+                            NSLog("⚡️ Mio smoke: youtube focus check failed: %@", "\(e)")
+                        }
+                        finish()
+                    }
                 } else {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { waitProbe(deadline) }
                 }
