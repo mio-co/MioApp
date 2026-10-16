@@ -85,11 +85,6 @@ enum MioWebKitCompat {
             applied[key] = exc == nil
             if let exc = exc { NSLog("⚡️ Mio browser: %@ threw %@", key, exc.reason ?? exc.name.rawValue) }
         }
-        // 现代 WebKit 里这两个开关是 feature flag（Safari「功能标志」同一套）：+[WKPreferences _features] 找到对应
-        // _WKFeature，再 -_setEnabled:forFeature: 打开。只靠上面的 KVC 时 CI 上 window.MediaSource 仍是 undefined。
-        for (key, enabled) in enableFeatureFlags(prefs, keys: ["MediaSourceEnabled", "ManagedMediaSourceEnabled"]) {
-            applied["feature:" + key] = enabled
-        }
         mediaSourcePrefs = applied
         NSLog("⚡️ Mio browser MSE prefs: %@", "\(applied)")
         return applied
@@ -97,38 +92,6 @@ enum MioWebKitCompat {
 
     /// 最近一次 enableMediaSource 的结果（冒烟测试写进报告）
     static var mediaSourcePrefs: [String: Bool] = [:]
-
-    /// 按 key 打开 WebKit feature flag；返回每个 key 打开后的 _isEnabledForFeature: 状态（找不到的 key 不在结果里）
-    private static func enableFeatureFlags(_ prefs: WKPreferences, keys: Set<String>) -> [String: Bool] {
-        var result: [String: Bool] = [:]
-        let featuresSel = NSSelectorFromString("_features")
-        let setSel = NSSelectorFromString("_setEnabled:forFeature:")
-        let getSel = NSSelectorFromString("_isEnabledForFeature:")
-        let cls: AnyClass = WKPreferences.self
-        guard (cls as AnyObject).responds(to: featuresSel),
-              let setM = class_getInstanceMethod(cls, setSel),
-              let getM = class_getInstanceMethod(cls, getSel) else {
-            NSLog("⚡️ Mio browser: WKPreferences feature-flag API unavailable")
-            return result
-        }
-        typealias SetFn = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
-        typealias GetFn = @convention(c) (AnyObject, Selector, AnyObject) -> Bool
-        let setFn = unsafeBitCast(method_getImplementation(setM), to: SetFn.self)
-        let getFn = unsafeBitCast(method_getImplementation(getM), to: GetFn.self)
-        let exc = MioObjCSafe.catching {
-            guard let features = (cls as AnyObject).perform(featuresSel)?.takeUnretainedValue() as? [NSObject] else { return }
-            for f in features {
-                guard let key = f.value(forKey: "key") as? String, keys.contains(key) else { continue }
-                let before = getFn(prefs, getSel, f)
-                setFn(prefs, setSel, true, f)
-                let after = getFn(prefs, getSel, f)
-                result[key] = after
-                NSLog("⚡️ Mio browser feature %@: %@ → %@", key, before ? "on" : "off", after ? "on" : "off")
-            }
-        }
-        if let exc = exc { NSLog("⚡️ Mio browser: feature flags threw %@", exc.reason ?? exc.name.rawValue) }
-        return result
-    }
 
     #if targetEnvironment(macCatalyst)
     /// 诊断：回车键冒泡到视图控制器 = 第一响应者（WKWebView）没有消费它

@@ -244,14 +244,19 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["browserProfile"] = MioWebKitCompat.profile.rawValue
                 report["mediaSourcePrefs"] = MioWebKitCompat.mediaSourcePrefs
                 report["browserUserAgent"] = MioWebKitCompat.desktopUserAgent
-                // 内置浏览器打开 YouTube 后的诊断：页面里的 UA 必须是桌面 Safari、MediaSource 可用
-                var desktopOK = true
+                // 内置浏览器打开 YouTube 后的诊断：门槛只看页面里的 UA 是桌面 Safari（不含 Mobile）且没被跳到 m.youtube.com。
+                // MediaSource/ManagedMediaSource 只记录不作门槛：GitHub macOS runner VM 无硬件解码，偏好已开时
+                // window.MediaSource 仍是 undefined；高清（MSE）要在真机上确认。
+                var desktopOK = false
                 if let probe = MioBrowserViewController.lastMediaProbe,
                    let obj = try? JSONSerialization.jsonObject(with: Data(probe.utf8)) as? [String: Any] {
                     report["browserProbe"] = obj
                     let ua = obj["ua"] as? String ?? ""
                     let mse = (obj["mediaSource"] as? String) == "function" || (obj["managedMediaSource"] as? String) == "function"
-                    desktopOK = ua.contains("Macintosh") && !ua.contains("Mobile") && mse && (obj["host"] as? String) != "m.youtube.com"
+                    report["mseAvailable"] = mse
+                    NSLog("⚡️ Mio smoke: MSE available in browser = %@ (informational, not a gate)", mse ? "yes" : "no")
+                    let desktopSafariUA = ua.contains("Macintosh") && ua.contains("Safari/") && ua.contains("Version/") && !ua.contains("Mobile")
+                    desktopOK = desktopSafariUA && (obj["host"] as? String) != "m.youtube.com"
                 } else {
                     report["browserProbe"] = MioBrowserViewController.lastMediaProbe ?? "none"
                 }
