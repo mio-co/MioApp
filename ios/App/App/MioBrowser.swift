@@ -370,8 +370,9 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     private func activateAudioSession() {
         guard MioBrowserSettings.backgroundPlayback else { return }
         do {
+            // 只设类别不主动激活：网页真正开始播放时 WebKit 才激活会话（不会一打开浏览器就打断其他 App 的音乐）。
+            // .playback + UIBackgroundModes audio → 切到后台 / 锁屏后继续出声，锁屏和控制中心显示正在播放
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
-            try AVAudioSession.sharedInstance().setActive(true, options: [])
         } catch {
             NSLog("⚡️ Mio browser audio session: %@", "\(error)")
         }
