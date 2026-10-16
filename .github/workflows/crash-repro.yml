@@ -1,0 +1,55 @@
+name: iOS launch crash repro
+
+# 一次性诊断：把已发布的 tag 构建成模拟器版，冷启动 + 模拟侧载改 bundle id
+on:
+  push:
+    branches: ['fix/ios-launch-crash']
+  workflow_dispatch:
+
+jobs:
+  repro:
+    runs-on: macos-26
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [v0.1.2, v0.2.0, v0.3.0, fix]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ci
+      - uses: actions/checkout@v4
+        if: matrix.ref != 'fix'
+        with:
+          ref: ${{ matrix.ref }}
+          path: src
+      - name: use branch head as src
+        if: matrix.ref == 'fix'
+        run: cp -R ci src
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install + sync
+        working-directory: src
+        run: |
+          npm ci
+          if [ -f scripts/fetch-adblock-assets.mjs ]; then node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle; fi
+          npx cap sync ios
+      - name: Build (simulator)
+        working-directory: src
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-sim -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 30
+          ls build-sim/Build/Products/Release-iphonesimulator/App.app
+      - name: Launch smoke
+        run: |
+          xcrun simctl list runtimes
+          bash ci/scripts/sim-launch-smoke.sh src/build-sim/Build/Products/Release-iphonesimulator/App.app smoke-out ${{ matrix.ref }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repro-${{ matrix.ref }}
+          path: smoke-out
+          retention-days: 7
