@@ -432,17 +432,33 @@ jobs:
 
       - name: Smoke test (public site page → window.MioDesktop.browser.open → in-app browser + adblock ready)
         run: |
-          set -u
-          OUT="$RUNNER_TEMP/smoke-mac.json"
-          MIO_SMOKE_OUT="$OUT" dmgroot/Mio.app/Contents/MacOS/App > mac-smoke.log 2>&1 &
+          # 不用 -e：App 非 0 退出时 wait 会直接终止脚本，日志和 JSON 就看不到了
+          set +e -u
+          mkdir -p smoke-diag
+          OUT="$PWD/smoke-diag/smoke-mac.json"
+          MIO_SMOKE_OUT="$OUT" dmgroot/Mio.app/Contents/MacOS/App > smoke-diag/mac-smoke.log 2>&1 &
           PID=$!
           for i in $(seq 1 150); do kill -0 $PID 2>/dev/null || break; sleep 1; done
           if kill -0 $PID 2>/dev/null; then echo "still running after 150s"; kill $PID; fi
-          wait $PID; CODE=$?
-          tail -40 mac-smoke.log
-          cat "$OUT" || true
+          wait $PID
+          CODE=$?
+          echo "--- mac-smoke.log (Mio lines) ---"
+          grep -a 'Mio' smoke-diag/mac-smoke.log | tail -60
+          echo "--- mac-smoke.log (tail) ---"
+          tail -40 smoke-diag/mac-smoke.log
+          echo "--- smoke json ---"
+          cat "$OUT" 2>/dev/null || echo "(no smoke json: app crashed or timed out before writing it)"
+          ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i -E '^App|Mio' | head -3 | while read f; do echo "--- crash report $f ---"; head -80 ~/Library/Logs/DiagnosticReports/"$f"; done
           echo "exit $CODE"
           test "$CODE" = 0
+
+      - name: Upload smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-smoke-diag
+          path: smoke-diag
+          retention-days: 7
 
       - uses: actions/upload-artifact@v4
         with:
