@@ -213,9 +213,62 @@ jobs:
           path: out/*.apk
           retention-days: 14
 
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Fetch adblock assets (AdGuard lists, uBO syntax + resources.json)
+        run: node scripts/fetch-assets.mjs assets/adblock
+
+      - name: Unit tests (+ engine from real lists)
+        env:
+          MIO_ADBLOCK_REQUIRE: '1'
+        run: npm test
+
+      - name: electron-builder (NSIS + portable, unsigned)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Smoke test packaged app (engine, MioDesktop bridge, YouTube blocking, whitelist)
+        run: |
+          OUT="$RUNNER_TEMP/smoke-win.json"
+          set +e
+          MIO_SMOKE_OUT="$OUT" timeout 240 ./dist/win-unpacked/Mio.exe
+          CODE=$?
+          set -e
+          cat "$OUT" || true
+          echo "exit $CODE"
+          test "$CODE" = 0
+
+      - name: List artifacts
+        run: ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mio-windows
+          path: |
+            desktop/dist/*.exe
+          retention-days: 14
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [ios, android]
+    needs: [ios, android, windows]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4

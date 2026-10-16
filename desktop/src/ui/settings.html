@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>浏览器设置</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body class="settings">
+  <h1>内置浏览器设置</h1>
+
+  <h2>浏览</h2>
+  <div class="card">
+    <label class="row"><div class="label">外链默认用系统浏览器打开<div class="sub">打开后 MioCore 里的站外链接直接交给系统默认浏览器</div></div><span class="switch"><input type="checkbox" id="preferSystemBrowser"><span></span></span></label>
+    <label class="row"><div class="label">后台播放<div class="sub">窗口在后台 / 最小化时网页仍视为可见（视频、音乐不自动暂停）</div></div><span class="switch"><input type="checkbox" id="backgroundPlayback"><span></span></span></label>
+    <div class="row"><div class="label">浏览数据<div class="sub">内置浏览器有独立的 Cookie / 登录状态，与 MioCore 主窗口互不影响</div></div><button class="btn danger" id="clearData">清除浏览数据</button></div>
+  </div>
+
+  <h2>广告拦截</h2>
+  <div class="card">
+    <label class="row"><div class="label">广告拦截<div class="sub">网络请求、元素隐藏、Scriptlets（Ghostery 引擎）</div></div><span class="switch"><input type="checkbox" id="adblockEnabled"><span></span></span></label>
+    <label class="row" id="siteRow" hidden><div class="label">在 <b id="siteHost"></b> 上拦截</div><span class="switch"><input type="checkbox" id="siteEnabled"><span></span></span></label>
+  </div>
+
+  <h2>过滤列表</h2>
+  <div class="card" id="lists"></div>
+  <div class="card" style="margin-top:10px">
+    <div class="row"><div class="label">Scriptlets 资源<div class="sub" id="resources"></div></div></div>
+    <div class="row"><div class="label">引擎<div class="sub" id="engine"></div></div></div>
+    <div class="row"><div class="label">上次检查<div class="sub" id="lastCheck"></div></div><button class="btn" id="updateNow">立即更新</button></div>
+  </div>
+  <p class="note">每 24 小时自动检查一次规则更新（带 ETag / Last-Modified，没有变化不重新下载）；下载失败时继续使用现有规则。</p>
+
+  <h2>白名单</h2>
+  <div class="card">
+    <form class="row" id="wlForm" autocomplete="off"><input class="text" id="wlInput" placeholder="域名或网址，如 example.com（含子域名）"><button class="btn" type="submit">添加</button></form>
+    <div id="wlList"></div>
+  </div>
+  <p class="note" id="wlError"></p>
+
+  <p class="note" id="about"></p>
+<script src="settings.js"></script>
+</body>
+</html>
