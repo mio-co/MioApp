@@ -11,7 +11,7 @@
       "github.com"
     ],
     "cleartext": false,
-    "appStartPath": "mio/nav"
+    "appStartPath": "/mio/nav"
   },
   "ios": {
     "contentInset": "never",

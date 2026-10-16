@@ -106,23 +106,77 @@ public class MioBrowserPlugin: CAPPlugin, CAPBridgedPlugin {
 // MARK: - Background refresh (BGAppRefreshTask)
 
 enum MioAdblockBackground {
-    static let taskID = "xyz.mio.app.adblock-refresh"
+    /// 任务名后缀；完整 identifier 从 Info.plist 的 BGTaskSchedulerPermittedIdentifiers 里找，不在代码里写死。
+    /// 侧载工具（iloader / isideload、SideStore…）会把 CFBundleIdentifier 改成 xyz.mio.app.<TEAMID>，
+    /// 但不改 BGTaskSchedulerPermittedIdentifiers；identifier 和 plist / bundle id 对不上时
+    /// BGTaskScheduler.register 抛 NSInternalInconsistencyException → 启动即闪退（v0.2.0 / v0.3.0）。
+    static let taskSuffix = "adblock-refresh"
 
-    /// 必须在 didFinishLaunching 结束前注册
+    /// 实际注册成功的 identifier；nil = 后台刷新不可用（降级为前台超过 24h 检查更新）
+    private(set) static var registeredID: String?
+    private static var attempted = false
+
+    /// 候选：Info.plist 里声明的、以 adblock-refresh 结尾的 identifier；优先「当前 bundle id + 后缀」
+    static func candidateIDs(permitted: [String], bundleID: String?) -> [String] {
+        let matching = permitted.filter { $0.hasSuffix("." + taskSuffix) }
+        guard let bid = bundleID, !bid.isEmpty else { return matching }
+        let preferred = "\(bid).\(taskSuffix)"
+        return matching.sorted { a, b in (a == preferred ? 0 : 1) < (b == preferred ? 0 : 1) }
+    }
+
+    /// 必须在 didFinishLaunching 结束前调用。任何失败都只记录日志，不影响启动。
     static func register() {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: taskID, using: nil) { task in
-            guard let task = task as? BGAppRefreshTask else { return }
-            handle(task)
+        guard !attempted else { return }
+        attempted = true
+        let info = Bundle.main.infoDictionary ?? [:]
+        let permitted = info["BGTaskSchedulerPermittedIdentifiers"] as? [String] ?? []
+        let modes = info["UIBackgroundModes"] as? [String] ?? []
+        guard modes.contains("fetch") || modes.contains("processing") else {
+            NSLog("⚡️ Mio adblock BG: UIBackgroundModes 没有 fetch，跳过后台刷新")
+            return
         }
+        for id in candidateIDs(permitted: permitted, bundleID: Bundle.main.bundleIdentifier) {
+            var ok = false
+            let exc = MioObjCSafe.catching {
+                ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { task in
+                    guard let task = task as? BGAppRefreshTask else {
+                        task.setTaskCompleted(success: false)
+                        return
+                    }
+                    handle(task)
+                }
+            }
+            if let exc = exc {
+                NSLog("⚡️ Mio adblock BG register %@ threw %@: %@", id, exc.name.rawValue, exc.reason ?? "")
+                continue
+            }
+            if ok {
+                registeredID = id
+                NSLog("⚡️ Mio adblock BG registered %@", id)
+                return
+            }
+            NSLog("⚡️ Mio adblock BG register %@ returned false", id)
+        }
+        NSLog("⚡️ Mio adblock BG: 没有可用的 identifier（permitted=%@, bundle=%@），只在前台检查更新",
+              permitted.joined(separator: ","), Bundle.main.bundleIdentifier ?? "?")
     }
 
     static func schedule() {
-        let req = BGAppRefreshTaskRequest(identifier: taskID)
+        guard let id = registeredID else { return }
+        let req = BGAppRefreshTaskRequest(identifier: id)
         req.earliestBeginDate = Date(timeIntervalSinceNow: 6 * 3600)
-        do {
-            try BGTaskScheduler.shared.submit(req)
-        } catch {
-            NSLog("⚡️ Mio adblock BG schedule failed: %@", "\(error)")
+        var submitError: Error?
+        let exc = MioObjCSafe.catching {
+            do {
+                try BGTaskScheduler.shared.submit(req)
+            } catch {
+                submitError = error
+            }
+        }
+        if let exc = exc {
+            NSLog("⚡️ Mio adblock BG schedule threw %@: %@", exc.name.rawValue, exc.reason ?? "")
+        } else if let e = submitError {
+            NSLog("⚡️ Mio adblock BG schedule failed: %@", "\(e)")
         }
     }
 
