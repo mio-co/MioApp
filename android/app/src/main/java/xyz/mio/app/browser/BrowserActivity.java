@@ -132,6 +132,7 @@ public class BrowserActivity extends Activity {
         setupWebView();
         rtcGuard.install(this, webView);
         userScripts = new UserScripts(this, webView);
+        userScripts.setCookieManager(() -> xyz.mio.app.containers.ContainerManager.get(this).cookieManager(containerId));
         userScripts.install();
 
         String url = getIntent().getStringExtra(EXTRA_URL);

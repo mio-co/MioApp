@@ -95,6 +95,10 @@ public final class UserScripts implements WebViewCompat.WebMessageListener {
     private String runtime;
     private boolean supported;
     private String lastOffered;
+    /** GM_xmlhttpRequest 用的 Cookie：当前 WebView 容器（Profile）的 CookieManager，由 BrowserActivity 设置 */
+    private java.util.function.Supplier<CookieManager> cookies = CookieManager::getInstance;
+
+    public void setCookieManager(java.util.function.Supplier<CookieManager> s) { if (s != null) cookies = s; }
 
     static final class Entry {
         String id, code, sourceURL;
@@ -512,7 +516,7 @@ public final class UserScripts implements WebViewCompat.WebMessageListener {
             }
             boolean anonymous = m.optBoolean("anonymous");
             if (!anonymous) {
-                String ck = CookieManager.getInstance().getCookie(url);
+                String ck = cookies.get().getCookie(url);
                 if (ck != null && !ck.isEmpty()) c.setRequestProperty("Cookie", ck);
             }
             JSONObject body = m.optJSONObject("body");
@@ -532,7 +536,7 @@ public final class UserScripts implements WebViewCompat.WebMessageListener {
                 for (String v : e.getValue()) {
                     if (hs.length() > 0) hs.append("\r\n");
                     hs.append(e.getKey().toLowerCase(Locale.ROOT)).append(": ").append(v);
-                    if (!anonymous && e.getKey().equalsIgnoreCase("set-cookie")) CookieManager.getInstance().setCookie(c.getURL().toString(), v);
+                    if (!anonymous && e.getKey().equalsIgnoreCase("set-cookie")) cookies.get().setCookie(c.getURL().toString(), v);
                 }
             }
             out.put("headers", hs.toString());
