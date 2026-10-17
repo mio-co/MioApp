@@ -8,22 +8,22 @@
 "New Tab" = "Nova aba";
 
 /* Privacy - Camera Usage Description */
-"NSCameraUsageDescription" = "O Firefox pode usar sua câmera para capturar códigos QR ou tirar fotos e gravar vídeos.";
+"NSCameraUsageDescription" = "O Mio pode usar sua câmera para capturar códigos QR ou tirar fotos e gravar vídeos.";
 
 /* Privacy - Face ID Usage Description */
-"NSFaceIDUsageDescription" = "O Firefox requer Face ID para acessar suas senhas e métodos de pagamento salvos.";
+"NSFaceIDUsageDescription" = "O Mio requer Face ID para acessar suas senhas e métodos de pagamento salvos.";
 
 /* Privacy - Location When In Use Usage Description */
 "NSLocationWhenInUseUsageDescription" = "Sites que você visita podem solicitar sua localização.";
 
 /* Privacy - Microphone Usage Description */
-"NSMicrophoneUsageDescription" = "O Firefox usa seu microfone para gravar e enviar áudio.";
+"NSMicrophoneUsageDescription" = "O Mio usa seu microfone para gravar e enviar áudio.";
 
 /* Privacy - Photo Library Additions Usage Description */
 "NSPhotoLibraryAddUsageDescription" = "Permite salvar fotos.";
 
 /* Privacy - Speech Recognition Usage Description */
-"NSSpeechRecognitionUsageDescription" = "Isto permite que o Firefox transcreva seu áudio.";
+"NSSpeechRecognitionUsageDescription" = "Isto permite que o Mio transcreva seu áudio.";
 
 /* (No Comment) */
 "Scan QR Code" = "Digitalizar código QR";

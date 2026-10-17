@@ -1021,7 +1021,7 @@ extension String {
                 public static let HomeTabBannerDescription = MZLocalizedString(
                     key: "DefaultBrowserCard.Description",
                     tableName: "Default Browser",
-                    value: "Set links from websites, emails, and Messages to open automatically in Firefox.",
+                    value: "Set links from websites, emails, and Messages to open automatically in Mio.",
                     comment: "Description for small home tab banner that allows the user to switch their default browser to Firefox.")
                 public static let HomeTabBannerCloseAccessibility = MZLocalizedString(
                     key: "DefaultBrowserCloseButtonAccessibility.v102",
@@ -2657,7 +2657,7 @@ extension String {
         public static let SuggestSectionTitle = MZLocalizedString(
             key: "Search.SuggestSectionTitle.v102",
             tableName: nil,
-            value: "Firefox Suggest",
+            value: "Mio Suggest",
             comment: "When making a new search from the awesome bar, suggestions appear to the user as they write new letters in their search. Different types of suggestions can appear. This string will be used as a header to separate Firefox suggestions from normal suggestions.")
         public static let SponsoredSuggestionDescription = MZLocalizedString(
             key: "Search.SponsoredSuggestionDescription.v119",
@@ -3271,7 +3271,7 @@ extension String {
                 public static let Description = MZLocalizedString(
                     key: "Settings.Home.Option.Description.v101",
                     tableName: nil,
-                    value: "Choose what’s included on the Firefox homepage.",
+                    value: "Choose what’s included on the Mio homepage.",
                     comment: "In the settings menu, on the Firefox homepage customization section, this is the description below the section, describing what the options in the section are for.")
                 public static let Wallpaper = MZLocalizedString(
                     key: "Settings.Home.Option.Wallpaper",
@@ -3332,7 +3332,7 @@ extension String {
                 public static let SectionDescription = MZLocalizedString(
                     key: "Settings.Home.Option.StartAtHome.Description",
                     tableName: nil,
-                    value: "Choose what you see when you return to Firefox.",
+                    value: "Choose what you see when you return to Mio.",
                     comment: "In the settings menu, in the Start at Home customization options, this is text that appears below the section, describing what the section settings do.")
                 public static let AfterFourHours = MZLocalizedString(
                     key: "Settings.Home.Option.StartAtHome.AfterFourHours",
@@ -3355,7 +3355,7 @@ extension String {
                 public static let SwitchTitle = MZLocalizedString(
                     key: "Settings.Home.Option.Wallpaper.SwitchTitle.v99",
                     tableName: nil,
-                    value: "Change wallpaper by tapping Firefox homepage logo",
+                    value: "Change wallpaper by tapping Mio homepage logo",
                     comment: "In the settings menu, on the Firefox wallpaper customization screen, this is the string titling the switch button's function, which allows a user to toggle wallpaper switching from the homepage logo on or off.")
                 public static let WallpaperUpdatedToastLabel = MZLocalizedString(
                     key: "Settings.Home.Option.Wallpaper.UpdatedToast",
@@ -4329,7 +4329,7 @@ extension String {
                 public static let LearnAboutSuggestions = MZLocalizedString(
                     key: "Settings.Search.Accessibility.LearnAboutSuggestions.v124",
                     tableName: "Settings",
-                    value: "Learn more about Firefox Suggest",
+                    value: "Learn more about Mio Suggest",
                     comment: "Accessibility label for Learn more about Firefox Suggest.")
             }
 
@@ -4372,7 +4372,7 @@ extension String {
                 public static let AddressBarSettingsTitle = MZLocalizedString(
                     key: "Settings.Search.Suggest.AddressBarSetting.Title.v124",
                     tableName: "Settings",
-                    value: "Address bar - Firefox Suggest",
+                    value: "Address bar - Mio Suggest",
                     comment: "In the Search page of the Settings menu, the title for the Firefox Suggest settings section.")
                 public static let ShowNonSponsoredSuggestionsTitle = MZLocalizedString(
                     key: "Settings.Search.Suggest.ShowNonSponsoredSuggestions.Title.v124.v2",
@@ -4412,12 +4412,12 @@ extension String {
                 public static let PrivateSessionDescription = MZLocalizedString(
                     key: "Settings.Search.Suggest.PrivateSession.Description.v125",
                     tableName: "Settings",
-                    value: "Show suggestions from Firefox Suggest in private sessions",
+                    value: "Show suggestions from Mio Suggest in private sessions",
                     comment: "Description for `Show in Private Sessions` toggle, located in `Address Bar - Firefox Suggest` section in the Search page in the Settings menu.")
                 public static let LearnAboutSuggestions = MZLocalizedString(
                     key: "Settings.Search.Suggest.LearnAboutSuggestions.v124",
                     tableName: "Settings",
-                    value: "Learn more about Firefox Suggest",
+                    value: "Learn more about Mio Suggest",
                     comment: "In the search page of the Settings menu, the title for the link to the SUMO Page about Firefox Suggest."
                 )
             }
@@ -5360,7 +5360,7 @@ extension String {
     public static let SettingsDisconnectSyncAlertBody = MZLocalizedString(
         key: "Settings.Disconnect.Body",
         tableName: nil,
-        value: "Firefox will stop syncing with your account, but won’t delete any of your browsing data on this device.",
+        value: "Mio will stop syncing with your account, but won’t delete any of your browsing data on this device.",
         comment: "Body of the alert when prompting the user asking to disconnect.")
     public static let SettingsDisconnectSyncButton = MZLocalizedString(
         key: "Settings.Disconnect.Button",
@@ -5424,7 +5424,7 @@ extension String {
     public static let ErrorPagesCertWarningDescription = MZLocalizedString(
         key: "ErrorPages.CertWarning.Description",
         tableName: nil,
-        value: "The owner of %@ has configured their website improperly. To protect your information from being stolen, Firefox has not connected to this website.",
+        value: "The owner of %@ has configured their website improperly. To protect your information from being stolen, Mio has not connected to this website.",
         comment: "Warning text on the certificate error page. %@ is the domain of the website.")
     public static let ErrorPagesCertWarningTitle = MZLocalizedString(
         key: "ErrorPages.CertWarning.Title",
@@ -5472,7 +5472,7 @@ extension String {
     public static let EmptySyncedTabsPanelStateTitle = MZLocalizedString(
         key: "HistoryPanel.EmptySyncedTabsState.Title",
         tableName: nil,
-        value: "Firefox Sync",
+        value: "Mio Sync",
         comment: "Title for the empty synced tabs state in the History Panel")
     public static let EmptySyncedTabsPanelNotSignedInStateDescription = MZLocalizedString(
         key: "HistoryPanel.EmptySyncedTabsPanelNotSignedInState.Description",
@@ -5497,7 +5497,7 @@ extension String {
     public static let FirefoxHomePage = MZLocalizedString(
         key: "Firefox.HomePage.Title",
         tableName: nil,
-        value: "Firefox Home Page",
+        value: "Mio Home Page",
         comment: "Title for firefox about:home page in tab history list")
     public static let HistoryPanelDelete = MZLocalizedString(
         key: "Delete",
@@ -5728,7 +5728,7 @@ extension String {
     public static let SettingsNewTabTopSites = MZLocalizedString(
         key: "Settings.NewTab.Option.FirefoxHome",
         tableName: nil,
-        value: "Firefox Home",
+        value: "Mio Home",
         comment: "Option in settings to show Firefox Home when you open a new tab")
     public static let SettingsNewTabBlankPage = MZLocalizedString(
         key: "Settings.NewTab.Option.BlankPage",
@@ -6169,7 +6169,7 @@ extension String {
         public static let DisabledAlertMessage = MZLocalizedString(
             key: "CameraAccess.DisabledAlertMessage.v153",
             tableName: "Camera",
-            value: "Go to Settings > %@ on your device to allow Firefox to use your camera.",
+            value: "Go to Settings > %@ on your device to allow Mio to use your camera.",
             comment: "Message shown in an alert when camera access is disabled in iOS Settings. The %@ is replaced with the app name. This is used by features that require camera access, such as QR code scanning and Google Lens.")
     }
 }
@@ -6179,7 +6179,7 @@ extension String {
     public static let PhotoLibraryFirefoxWouldLikeAccessTitle = MZLocalizedString(
         key: "PhotoLibrary.FirefoxWouldLikeAccessTitle",
         tableName: nil,
-        value: "Firefox would like to access your Photos",
+        value: "Mio would like to access your Photos",
         comment: "See http://mzl.la/1G7uHo7")
     public static let PhotoLibraryFirefoxWouldLikeAccessMessage = MZLocalizedString(
         key: "PhotoLibrary.FirefoxWouldLikeAccessMessage",
@@ -6195,7 +6195,7 @@ extension String {
     public static let SentTab_NoTabArrivingNotification_title = MZLocalizedString(
         key: "SentTab.NoTabArrivingNotification.title",
         tableName: nil,
-        value: "Firefox Sync",
+        value: "Mio Sync",
         comment: "Title of notification received after a spurious message from FxA has been received.")
     public static let SentTab_NoTabArrivingNotification_body =
     MZLocalizedString(
@@ -6270,7 +6270,7 @@ extension String {
     public static let FxAPush_DeviceDisconnected_ThisDevice_body = MZLocalizedString(
         key: "FxAPush_DeviceDisconnected_ThisDevice_body",
         tableName: nil,
-        value: "This device has been successfully disconnected from Firefox Sync.",
+        value: "This device has been successfully disconnected from Mio Sync.",
         comment: "Body of a notification displayed when this device has been disconnected from FxA by another device.")
     public static let FxAPush_DeviceDisconnected_title = MZLocalizedString(
         key: "FxAPush_DeviceDisconnected_title",
@@ -6281,7 +6281,7 @@ extension String {
     public static let FxAPush_DeviceDisconnected_UnknownDevice_body = MZLocalizedString(
         key: "FxAPush_DeviceDisconnected_UnknownDevice_body",
         tableName: nil,
-        value: "A device has disconnected from Firefox Sync",
+        value: "A device has disconnected from Mio Sync",
         comment: "Body of a notification displayed when unnamed device has been disconnected from FxA.")
 
     public static let FxAPush_DeviceConnected_title = MZLocalizedString(
@@ -6292,7 +6292,7 @@ extension String {
     public static let FxAPush_DeviceConnected_body = MZLocalizedString(
         key: "FxAPush_DeviceConnected_body",
         tableName: nil,
-        value: "Firefox Sync has connected to %@",
+        value: "Mio Sync has connected to %@",
         comment: "Title of a notification displayed when another device has connected to FxA. %@ refers to the name of the newly connected device.")
 }
 
@@ -6325,7 +6325,7 @@ extension String {
     public static let ScanQRCodePermissionErrorMessage = MZLocalizedString(
         key: "ScanQRCode.PermissionError.Message.v100",
         tableName: nil,
-        value: "Go to device ‘Settings’ > ‘Firefox’. Allow Firefox to access camera.",
+        value: "Go to device ‘Settings’ > ‘Mio’. Allow Mio to access camera.",
         comment: "Text of the prompt to setup the camera authorization for the Scan QR Code feature.")
     public static let ScanQRCodeErrorOKButton = MZLocalizedString(
         key: "ScanQRCode.Error.OK.Button",
@@ -7590,7 +7590,7 @@ extension String {
     public static let SettingsSiriSectionDescription = MZLocalizedString(
         key: "Settings.Siri.SectionDescription",
         tableName: nil,
-        value: "Use Siri shortcuts to quickly open Firefox via Siri",
+        value: "Use Siri shortcuts to quickly open Mio via Siri",
         comment: "The description that describes what siri shortcuts are")
     public static let SettingsSiriOpenURL = MZLocalizedString(
         key: "Settings.Siri.OpenTabShortcut",
@@ -7629,7 +7629,7 @@ extension String {
     public static let SendToNotSignedInMessage = MZLocalizedString(
         key: "SendTo.NotSignedIn.Message",
         tableName: nil,
-        value: "Please open Firefox, go to Settings and sign in to continue.",
+        value: "Please open Mio, go to Settings and sign in to continue.",
         comment: "See http://mzl.la/1ISlXnU")
     public static let SendToNoDevicesFound = MZLocalizedString(
         key: "SendTo.NoDevicesFound.Message.v119",
@@ -7684,12 +7684,12 @@ extension String {
     public static let ShareOpenInFirefox = MZLocalizedString(
         key: "ShareExtension.OpenInFirefoxAction.Title",
         tableName: nil,
-        value: "Open in Firefox",
+        value: "Open in Mio",
         comment: "Action label on share extension to immediately open page in Firefox.")
     public static let ShareSearchInFirefox = MZLocalizedString(
         key: "ShareExtension.SeachInFirefoxAction.Title",
         tableName: nil,
-        value: "Search in Firefox",
+        value: "Search in Mio",
         comment: "Action label on share extension to search for the selected text in Firefox.")
 
     public static let ShareLoadInBackground = MZLocalizedString(
@@ -7700,7 +7700,7 @@ extension String {
     public static let ShareLoadInBackgroundDone = MZLocalizedString(
         key: "ShareExtension.LoadInBackgroundActionDone.Title",
         tableName: nil,
-        value: "Loading in Firefox",
+        value: "Loading in Mio",
         comment: "Share extension label shown after user has performed 'Load in Background' action.")
 }
 
@@ -7840,7 +7840,7 @@ extension String {
     public static let FxASignin_QRInstructions = MZLocalizedString(
         key: "fxa.signin.qr-link-instruction",
         tableName: nil,
-        value: "On your computer open Firefox and go to firefox.com/pair",
+        value: "On your computer open Mio and go to firefox.com/pair",
         comment: "FxA sign in view qr code instructions")
     public static let FxASignin_QRScanSignin = MZLocalizedString(
         key: "fxa.signin.ready-to-scan",
@@ -7866,7 +7866,7 @@ extension String {
     public static let QuickActionsGalleryTitlev2 = MZLocalizedString(
         key: "TodayWidget.QuickActionsGalleryTitleV2",
         tableName: "Today",
-        value: "Firefox Shortcuts",
+        value: "Mio Shortcuts",
         comment: "Firefox shortcuts title when widget enters edit mode. Do not translate the word Firefox.")
 
     // Quick Action - Medium Size Quick Action
@@ -7890,7 +7890,7 @@ extension String {
     public static let FirefoxShortcutGalleryDescription = MZLocalizedString(
         key: "TodayWidget.FirefoxShortcutGalleryDescription",
         tableName: "Today",
-        value: "Add Firefox shortcuts to your Home screen.",
+        value: "Add Mio shortcuts to your Home screen.",
         comment: "Description for medium size widget to add Firefox Shortcut to home screen")
 
     // Quick Action - Small Size Widget
@@ -7902,7 +7902,7 @@ extension String {
     public static let SearchInFirefoxV2 = MZLocalizedString(
         key: "TodayWidget.SearchInFirefoxV2",
         tableName: "Today",
-        value: "Search in\nFirefox",
+        value: "Search in\nMio",
         comment: "Search in Firefox. Do not translate the word Firefox")
     public static let ClosePrivateTabsLabelV2 = MZLocalizedString(
         key: "TodayWidget.ClosePrivateTabsLabelV2",
@@ -7914,7 +7914,7 @@ extension String {
     public static let QuickActionGalleryDescription = MZLocalizedString(
         key: "TodayWidget.QuickActionGalleryDescription",
         tableName: "Today",
-        value: "Add a Firefox shortcut to your Home screen. After adding the widget, touch and hold to edit it and select a different shortcut.",
+        value: "Add a Mio shortcut to your Home screen. After adding the widget, touch and hold to edit it and select a different shortcut.",
         comment: "Description for small size widget to add it to home screen")
 
     // Top Sites - Medium Size - Gallery View
@@ -7943,7 +7943,7 @@ extension String {
     public static let OpenFirefoxLabel = MZLocalizedString(
         key: "TodayWidget.OpenFirefoxLabel",
         tableName: "Today",
-        value: "Open Firefox",
+        value: "Open Mio",
         comment: "Open Firefox when there are no tabs opened in tab tray i.e. Empty State")
     public static let NoOpenTabsLabel = MZLocalizedString(
         key: "TodayWidget.NoOpenTabsLabel",
@@ -7989,7 +7989,7 @@ extension String {
     public static let DefaultBrowserOnboardingDescriptionStep3 = MZLocalizedString(
         key: "DefaultBrowserOnboarding.Description3",
         tableName: "Default Browser",
-        value: "3. Select Firefox",
+        value: "3. Select Mio",
         comment: "Description for default browser onboarding card.")
     public static let DefaultBrowserOnboardingButton = MZLocalizedString(
         key: "DefaultBrowserOnboarding.Button",
@@ -8924,7 +8924,7 @@ extension String {
     public static let MenuHelperSearchWithFirefox = MZLocalizedString(
         key: "UIMenuItem.SearchWithFirefox",
         tableName: nil,
-        value: "Search with Firefox",
+        value: "Search with Mio",
         comment: "Search in New Tab Text selection menu item")
 }
 
@@ -9005,7 +9005,7 @@ extension String {
     public static let LoginsWelcomeViewTitle2 = MZLocalizedString(
         key: "Logins.WelcomeView.Title2",
         tableName: nil,
-        value: "AutoFill Firefox Passwords",
+        value: "AutoFill Mio Passwords",
         comment: "Label displaying welcome view title")
     public static let LoginsWelcomeViewTagline = MZLocalizedString(
         key: "Logins.WelcomeView.Tagline",
@@ -9055,7 +9055,7 @@ extension String {
     public static let LoginsPasscodeRequirementWarning = MZLocalizedString(
         key: "Logins.PasscodeRequirement.Warning",
         tableName: nil,
-        value: "To use the AutoFill feature for Firefox, you must have a device passcode enabled.",
+        value: "To use the AutoFill feature for Mio, you must have a device passcode enabled.",
         comment: "Warning message shown when you try to enable or use native AutoFill without a device passcode setup")
     public static let CredentialProviderRetryAlertTitle = MZLocalizedString(
         key: "CredentialProvider.RetryAllert.Title.v137",

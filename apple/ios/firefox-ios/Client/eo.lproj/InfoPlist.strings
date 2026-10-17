@@ -8,10 +8,10 @@
 "New Tab" = "Nova langeto";
 
 /* Privacy - Camera Usage Description */
-"NSCameraUsageDescription" = "Firefox povas uzi vian filmilon por skani kodojn QR, foti aŭ filmi.";
+"NSCameraUsageDescription" = "Mio povas uzi vian filmilon por skani kodojn QR, foti aŭ filmi.";
 
 /* Privacy - Face ID Usage Description */
-"NSFaceIDUsageDescription" = "Firefox postulas Face ID por aliri viajn konservitajn legitimilojn kaj pagmetodojn.";
+"NSFaceIDUsageDescription" = "Mio postulas Face ID por aliri viajn konservitajn legitimilojn kaj pagmetodojn.";
 
 /* Privacy - Location When In Use Usage Description */
 "NSLocationWhenInUseUsageDescription" = "Retejoj vizititaj de vi povas peti vian lokon.";
@@ -23,7 +23,7 @@
 "NSPhotoLibraryAddUsageDescription" = "Tio ĉi permesas al vi konservi fotojn.";
 
 /* Privacy - Speech Recognition Usage Description */
-"NSSpeechRecognitionUsageDescription" = "Tio permesas al Firefox transskribi vian voĉon.";
+"NSSpeechRecognitionUsageDescription" = "Tio permesas al Mio transskribi vian voĉon.";
 
 /* (No Comment) */
 "Scan QR Code" = "Skani kodon QR";

@@ -8,10 +8,10 @@
 "New Tab" = "ᱱᱟᱶᱟ ᱴᱮᱵ";
 
 /* Privacy - Camera Usage Description */
-"NSCameraUsageDescription" = "Firefox ᱟᱢᱟᱜ ᱠᱮᱢᱨᱟ QR ᱠᱳᱰ ᱥᱠᱮᱱ ᱞᱟᱹᱜᱤᱫ ᱟᱨ ᱵᱟᱝ ᱪᱤᱛᱟᱹᱨ ᱟᱨ ᱵᱷᱤᱰᱤᱭᱳ ᱦᱟᱛᱟᱣ ᱞᱟᱹᱜᱤᱫ ᱵᱮᱵᱷᱟᱨ ᱫᱟᱲᱮᱭᱟᱜᱼᱟᱭ ᱾";
+"NSCameraUsageDescription" = "Mio ᱟᱢᱟᱜ ᱠᱮᱢᱨᱟ QR ᱠᱳᱰ ᱥᱠᱮᱱ ᱞᱟᱹᱜᱤᱫ ᱟᱨ ᱵᱟᱝ ᱪᱤᱛᱟᱹᱨ ᱟᱨ ᱵᱷᱤᱰᱤᱭᱳ ᱦᱟᱛᱟᱣ ᱞᱟᱹᱜᱤᱫ ᱵᱮᱵᱷᱟᱨ ᱫᱟᱲᱮᱭᱟᱜᱼᱟᱭ ᱾";
 
 /* Privacy - Face ID Usage Description */
-"NSFaceIDUsageDescription" = "ᱟᱢᱟᱜ ᱥᱟᱧᱪᱟᱣ ᱨᱩᱠᱷᱭᱟᱹ ᱞᱳᱜᱤᱱ ᱨᱮ ᱵᱚᱞᱚᱱ ᱞᱟᱹᱜᱤᱱ Firefox ᱟᱢᱟᱜ ᱢᱮᱫᱦᱟᱸ ID ᱞᱟᱹᱠᱛᱤᱜ ᱠᱟᱱᱟᱭ ᱾";
+"NSFaceIDUsageDescription" = "ᱟᱢᱟᱜ ᱥᱟᱧᱪᱟᱣ ᱨᱩᱠᱷᱭᱟᱹ ᱞᱳᱜᱤᱱ ᱨᱮ ᱵᱚᱞᱚᱱ ᱞᱟᱹᱜᱤᱱ Mio ᱟᱢᱟᱜ ᱢᱮᱫᱦᱟᱸ ID ᱞᱟᱹᱠᱛᱤᱜ ᱠᱟᱱᱟᱭ ᱾";
 
 /* Privacy - Location When In Use Usage Description */
 "NSLocationWhenInUseUsageDescription" = "ᱦᱤᱨᱤᱟᱠᱟᱱ ᱣᱮᱵᱥᱟᱭᱤᱴ ᱟᱢᱟᱜ ᱡᱟᱭᱜᱟ ᱠᱚ ᱠᱷᱚᱡ ᱫᱟᱲᱮᱟᱜᱼᱟ᱾";

@@ -995,7 +995,7 @@
 "ScanQRCode.InvalidDataError.Message" = "ഈ ഡാറ്റ അസാധുവാണ്";
 
 /* Text of the prompt to setup the camera authorization for the Scan QR Code feature. */
-"ScanQRCode.PermissionError.Message.v100" = "ഉപകരണ 'ക്രമീകരണങ്ങൾ' > 'ഫയർഫോക്സ്' എന്നതിലേക്ക് പോകുക. ക്യാമറ ഉപയോഗിക്കാൻ Firefox-നെ അനുവാദം കൊടുക്കുക.";
+"ScanQRCode.PermissionError.Message.v100" = "ഉപകരണ 'ക്രമീകരണങ്ങൾ' > 'ഫയർഫോക്സ്' എന്നതിലേക്ക് പോകുക. ക്യാമറ ഉപയോഗിക്കാൻ Mio-നെ അനുവാദം കൊടുക്കുക.";
 
 /* Title for the QR code scanner view. */
 "ScanQRCode.View.Title" = "QR സങ്കേതം പരിശോധിക്കുക";

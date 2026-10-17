@@ -308,7 +308,7 @@
 "ErrorPages.AdvancedWarning2.Text" = "این موضوع ممکن است به دلیل پیکربندی نادرست یا دستکاری توسط یک مهاجم باشد. اگر خطرات احتمالی را می‌پذیرید، ادامه دهید.";
 
 /* Warning text on the certificate error page. %@ is the domain of the website. */
-"ErrorPages.CertWarning.Description" = "مالک %@ وب‌گاه خود را به نادرستی پیکربندی کرده است. برای جلوگیری از سرقت اطلاعات شما، Firefox به این وب‌گاه متصل نشده است.";
+"ErrorPages.CertWarning.Description" = "مالک %@ وب‌گاه خود را به نادرستی پیکربندی کرده است. برای جلوگیری از سرقت اطلاعات شما، Mio به این وب‌گاه متصل نشده است.";
 
 /* Title on the certificate error page */
 "ErrorPages.CertWarning.Title" = "این اتصال غیرقابل اعتماد است";
@@ -329,7 +329,7 @@
 "Facebook" = "فیس‌بوک";
 
 /* Title for firefox about:home page in tab history list */
-"Firefox.HomePage.Title" = "صفحه اصلی Firefox";
+"Firefox.HomePage.Title" = "صفحه اصلی Mio";
 
 /* A button at bottom of the Firefox homepage that, when clicked, takes users straight to the settings options, where they can customize the Firefox Home page */
 "FirefoxHome.CustomizeHomeButton.Title" = "سفارشی‌سازی صفحه اصلی";
@@ -380,7 +380,7 @@
 "Forward" = "جلو";
 
 /* Settings section title for Firefox Account */
-"FxA.FirefoxAccount" = "حساب کاربری Firefox";
+"FxA.FirefoxAccount" = "حساب کاربری Mio";
 
 /* Button label to go to Firefox Account settings */
 "FxA.ManageAccount" = "مدیریت حساب و دستگاه‌ها";
@@ -392,7 +392,7 @@
 "fxa.signin.camera-signin" = "با دوربین خود وارد شوید";
 
 /* FxA sign in view qr code instructions */
-"fxa.signin.qr-link-instruction" = "بر روی کامپیوتر خود Firefox را باز کرده و به firefox.com/pair بروید";
+"fxa.signin.qr-link-instruction" = "بر روی کامپیوتر خود Mio را باز کرده و به firefox.com/pair بروید";
 
 /* FxA sign in view qr code scan button */
 "fxa.signin.ready-to-scan" = "آماده برای اسکن";
@@ -404,7 +404,7 @@
 "FxA.SyncNow" = "هم‌اکنون همگام‌سازی کنید";
 
 /* Title of a notification displayed when another device has connected to FxA. %@ refers to the name of the newly connected device. */
-"FxAPush_DeviceConnected_body" = "همگام‌سازی Firefox به %@ متصل شد";
+"FxAPush_DeviceConnected_body" = "همگام‌سازی Mio به %@ متصل شد";
 
 /* Title of a notification displayed when another device has connected to FxA. */
 "FxAPush_DeviceConnected_title" = "همگام‌سازی متصل شد";
@@ -413,7 +413,7 @@
 "FxAPush_DeviceDisconnected_body" = "اتصال %@ با موفقیت قطع شد.";
 
 /* Body of a notification displayed when this device has been disconnected from FxA by another device. */
-"FxAPush_DeviceDisconnected_ThisDevice_body" = "اتصال این دستگاه با موفقیت از همگام‌‌سازی Firefox قطع شد.";
+"FxAPush_DeviceDisconnected_ThisDevice_body" = "اتصال این دستگاه با موفقیت از همگام‌‌سازی Mio قطع شد.";
 
 /* Title of a notification displayed when this device has been disconnected by another device. */
 "FxAPush_DeviceDisconnected_ThisDevice_title" = "همگام‌سازی قطع شد";
@@ -422,10 +422,10 @@
 "FxAPush_DeviceDisconnected_title" = "همگام‌سازی قطع شد";
 
 /* Body of a notification displayed when unnamed device has been disconnected from FxA. */
-"FxAPush_DeviceDisconnected_UnknownDevice_body" = "یک دستگاه از همگام‌‌سازی Firefox قطع شد";
+"FxAPush_DeviceDisconnected_UnknownDevice_body" = "یک دستگاه از همگام‌‌سازی Mio قطع شد";
 
 /* On the firefox homepage, the string read by the voice over prompt for accessibility, for the button which changes the wallpaper */
-"FxHomepage.Wallpaper.ButtonLabel.v99" = "نشان‌واره Firefox، تغییر تصویر پس‌زمینه.";
+"FxHomepage.Wallpaper.ButtonLabel.v99" = "نشان‌واره Mio، تغییر تصویر پس‌زمینه.";
 
 /* Show the SUMO support page from the Support section in the settings. see http://mzl.la/1dmM8tZ */
 "Help" = "راهنما";
@@ -458,7 +458,7 @@
 "HistoryPanel.EmptySyncedTabsPanelNotSignedInState.Description" = "برای مشاهده فهرست زبانه‌های دستگاه‌های دیگر خود، وارد شوید.";
 
 /* Title for the empty synced tabs state in the History Panel */
-"HistoryPanel.EmptySyncedTabsState.Title" = "همگام‌سازی Firefox";
+"HistoryPanel.EmptySyncedTabsState.Title" = "همگام‌سازی Mio";
 
 /* Title for the Back to History button in the History Panel */
 "HistoryPanel.HistoryBackButton.Title" = "تاریخچه";
@@ -656,13 +656,13 @@
 "Logins.Onboarding.LearnMoreButtonTitle" = "بیشتر بدانید";
 
 /* Warning message shown when you try to enable or use native AutoFill without a device passcode setup */
-"Logins.PasscodeRequirement.Warning" = "برای استفاده از ویژگی تکمیل خودکار در Firefox، باید رمز عبور دستگاه را فعال کرده باشید.";
+"Logins.PasscodeRequirement.Warning" = "برای استفاده از ویژگی تکمیل خودکار در Mio، باید رمز عبور دستگاه را فعال کرده باشید.";
 
 /* Label displaying welcome view tagline under the title */
 "Logins.WelcomeView.Tagline" = "گذرواژه‌های خود را همه‌جا همراه داشته باشید";
 
 /* Label displaying welcome view title */
-"Logins.WelcomeView.Title2" = "تکمیل خودکار گذرواژه‌های Firefox";
+"Logins.WelcomeView.Title2" = "تکمیل خودکار گذرواژه‌های Mio";
 
 /* Title of the big blue button to enable AutoFill */
 "Logins.WelcomeView.TurnOnAutoFill" = "روشن کردن تکمیل خودکار";
@@ -695,7 +695,7 @@
 "LoginsList.Title" = "ورودهای ذخیره‌شده";
 
 /* Restore Tabs Prompt Description */
-"Looks like Firefox crashed previously. Would you like to restore your tabs?" = "به نظر می‌رسد Firefox قبلا دچار خرابی شده است. مایل هستید زبانه‌های خود را بازیابی کنید؟";
+"Looks like Firefox crashed previously. Would you like to restore your tabs?" = "به نظر می‌رسد Mio قبلا دچار خرابی شده است. مایل هستید زبانه‌های خود را بازیابی کنید؟";
 
 /* Title for the button that marks a reading list item as read */
 "Mark as Read" = "علامت‌گذاری به عنوان خوانده‌شده";
@@ -884,7 +884,7 @@
 "Onboarding.WhatsNew.Button.Title" = "آغاز وب‌‌گردی";
 
 /* Title for prompt displayed to user after the app crashes */
-"Oops! Firefox crashed" = "اوخ! Firefox دچارخرابی شد";
+"Oops! Firefox crashed" = "اوخ! Mio دچارخرابی شد";
 
 /* See http://mzl.la/1LXbDOL */
 "Open articles in Reader View by tapping the book icon when it appears in the title bar." = "با ضربه زدن روی نقشک کتاب هنگام نمایش در نوار عنوان، مقالات را در نمای مطالعه باز کنید.";
@@ -896,7 +896,7 @@
 "Open Tabs" = "زبانه‌های باز";
 
 /* The message displayed to a user when they try to open a URL that cannot be handled by Firefox, or any external app. */
-"OpenURL.Error.Message" = "Firefox به دلیل نامعتبر بودن آدرس قادر به بازکردن این صفحه نمی‌باشد.";
+"OpenURL.Error.Message" = "Mio به دلیل نامعتبر بودن آدرس قادر به بازکردن این صفحه نمی‌باشد.";
 
 /* Title of the message shown when the user attempts to navigate to an invalid link. */
 "OpenURL.Error.Title" = "امکان بازکردن این صفحه مقدور نمی باشد";
@@ -908,7 +908,7 @@
 "PhotoLibrary.FirefoxWouldLikeAccessMessage" = "این به شما این اجازه رو می‌دهد تا تصاویر را در داخل فهرست تصاویر خود ذخیره کنید.";
 
 /* See http://mzl.la/1G7uHo7 */
-"PhotoLibrary.FirefoxWouldLikeAccessTitle" = "Firefox تمایل دارد به تصاویر شما دسترسی داشته باشد";
+"PhotoLibrary.FirefoxWouldLikeAccessTitle" = "Mio تمایل دارد به تصاویر شما دسترسی داشته باشد";
 
 /* Button for closing the menu action sheet */
 "PhotonMenu.close" = "بسته";
@@ -995,7 +995,7 @@
 "ScanQRCode.InvalidDataError.Message" = "اطلاعات معتبر نیست";
 
 /* Text of the prompt to setup the camera authorization for the Scan QR Code feature. */
-"ScanQRCode.PermissionError.Message.v100" = "در دستگاه به «تنظیمات» > «Firefox» بروید و اجازه دهید Firefox به دوربین دسترسی داشته باشد.";
+"ScanQRCode.PermissionError.Message.v100" = "در دستگاه به «تنظیمات» > «Mio» بروید و اجازه دهید Mio به دوربین دسترسی داشته باشد.";
 
 /* Title for the QR code scanner view. */
 "ScanQRCode.View.Title" = "اسکن کد QR";
@@ -1010,7 +1010,7 @@
 "Search.Awesomebar.SwitchToTab" = "تغییر به زبانه";
 
 /* When making a new search from the awesome bar, suggestions appear to the user as they write new letters in their search. Different types of suggestions can appear. This string will be used as a header to separate Firefox suggestions from normal suggestions. */
-"Search.SuggestSectionTitle.v102" = "پیشنهاد Firefox";
+"Search.SuggestSectionTitle.v102" = "پیشنهاد Mio";
 
 /* The message that asks the user to Add the search provider explaining where the search engine will appear */
 "Search.ThirdPartyEngines.AddMessage" = "موتور جدید جست‌وجو در نوار جست‌وجو سریع ظاهر خواهد شد.";
@@ -1076,13 +1076,13 @@
 "SendTo.NavBar.Title" = "ارسال زبانه";
 
 /* Error message shown in the remote tabs panel */
-"SendTo.NoDevicesFound.Message" = "شما هیچ‌گونه دستگاه دیگری متصل به Firefox برای همگام‌سازی ندارید.";
+"SendTo.NoDevicesFound.Message" = "شما هیچ‌گونه دستگاه دیگری متصل به Mio برای همگام‌سازی ندارید.";
 
 /* See http://mzl.la/1ISlXnU */
-"SendTo.NotSignedIn.Message" = "لطفا Firefox را باز کنید،‌ به بخش تنظیمات بروید و برای ادامه وارد شوید.";
+"SendTo.NotSignedIn.Message" = "لطفا Mio را باز کنید،‌ به بخش تنظیمات بروید و برای ادامه وارد شوید.";
 
 /* See http://mzl.la/1ISlXnU */
-"SendTo.NotSignedIn.Title" = "شما به حساب کاربری Firefox خود وارد نشده‌اید.";
+"SendTo.NotSignedIn.Title" = "شما به حساب کاربری Mio خود وارد نشده‌اید.";
 
 /* Navigation bar button to Send the current page to a device */
 "SendTo.SendAction.Text" = "ارسال";
@@ -1103,7 +1103,7 @@
 "SentTab.NoTabArrivingNotification.body" = "جهت آغاز ضربه بزنید";
 
 /* Title of notification received after a spurious message from FxA has been received. */
-"SentTab.NoTabArrivingNotification.title" = "همگام‌سازی Firefox";
+"SentTab.NoTabArrivingNotification.title" = "همگام‌سازی Mio";
 
 /* Label for an action used to view one or more tabs from a notification. */
 "SentTab.ViewAction.title" = "نمایش";
@@ -1193,7 +1193,7 @@
 "Settings.DataManagement.Title" = "مدیریت داده";
 
 /* Body of the alert when prompting the user asking to disconnect. */
-"Settings.Disconnect.Body" = "Firefox همگام‌ سازی از حساب شما را متوقف خواهد کرد اما هیچ گونه اطلاعاتی از روی دستگاه شما پاک نخواهد کرد.";
+"Settings.Disconnect.Body" = "Mio همگام‌ سازی از حساب شما را متوقف خواهد کرد اما هیچ گونه اطلاعاتی از روی دستگاه شما پاک نخواهد کرد.";
 
 /* Button displayed at the bottom of settings page allowing users to Disconnect from FxA */
 "Settings.Disconnect.Button" = "قطع همگام‌سازی";
@@ -1259,7 +1259,7 @@
 "Settings.FxA.Sync.SectionName" = "تنظیمات همگام سازی";
 
 /* Title displayed in header of the FxA settings panel. */
-"Settings.FxA.Title" = "حساب کاربری Firefox";
+"Settings.FxA.Title" = "حساب کاربری Mio";
 
 /* General settings section title */
 "Settings.General.SectionName" = "عمومی";
@@ -1268,7 +1268,7 @@
 "Settings.Home.Current.Description.v101" = "انتخاب کنید چه چیزی به‌عنوان صفحهٔ اصلی نمایش داده شود.";
 
 /* In the settings menu, on the Firefox homepage customization section, this is the description below the section, describing what the options in the section are for. */
-"Settings.Home.Option.Description.v101" = "انتخاب کنید چه چیزهایی در صفحهٔ اصلی Firefox نمایش داده شوند.";
+"Settings.Home.Option.Description.v101" = "انتخاب کنید چه چیزهایی در صفحهٔ اصلی Mio نمایش داده شوند.";
 
 /* In the settings menu, in the Firefox homepage customization section, this is the title for the option that allows users to toggle the Jump Back In section on homepage on or off */
 "Settings.Home.Option.JumpBackIn" = "بازگشت سریع";
@@ -1292,7 +1292,7 @@
 "Settings.Home.Option.StartAtHome.Always" = "صفحهٔ اصلی";
 
 /* In the settings menu, in the Start at Home customization options, this is text that appears below the section, describing what the section settings do. */
-"Settings.Home.Option.StartAtHome.Description" = "انتخاب کنید هنگام بازگشت به Firefox چه چیزی ببینید.";
+"Settings.Home.Option.StartAtHome.Description" = "انتخاب کنید هنگام بازگشت به Mio چه چیزی ببینید.";
 
 /* In the settings menu, on the Start at Home homepage customization option, this allows users to set this setting to return to the last tab they were on, every time they open up Firefox */
 "Settings.Home.Option.StartAtHome.Never" = "آخرین زبانه";
@@ -1307,25 +1307,25 @@
 "Settings.Home.Option.Wallpaper" = "تصویر زمینه";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the accessibility string for the amethyst firefox wallpaper. */
-"Settings.Home.Option.Wallpaper.Accessibility.AmethystWallpaper.v99" = "تصویر زمینهٔ Firefox، طرح آمتیست.";
+"Settings.Home.Option.Wallpaper.Accessibility.AmethystWallpaper.v99" = "تصویر زمینهٔ Mio، طرح آمتیست.";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the title accessibility string for the beach hills firefox wallpaper. */
-"Settings.Home.Option.Wallpaper.Accessibility.BeachHillsWallpaper.v100" = "تصویر زمینهٔ Firefox، طرح تپه‌های ساحلی.";
+"Settings.Home.Option.Wallpaper.Accessibility.BeachHillsWallpaper.v100" = "تصویر زمینهٔ Mio، طرح تپه‌های ساحلی.";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the title accessibility string for the cerulean firefox wallpaper. */
-"Settings.Home.Option.Wallpaper.Accessibility.CeruleanWallpaper.v99" = "تصویر زمینهٔ Firefox، طرح آبی لاجوردی.";
+"Settings.Home.Option.Wallpaper.Accessibility.CeruleanWallpaper.v99" = "تصویر زمینهٔ Mio، طرح آبی لاجوردی.";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the accessibility string for the default wallpaper. */
 "Settings.Home.Option.Wallpaper.Accessibility.DefaultWallpaper.v99" = "تصویر زمینهٔ شفاف پیش‌فرض.";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the title accessibility string for the sunrise firefox wallpaper. */
-"Settings.Home.Option.Wallpaper.Accessibility.SunriseWallpaper.v99" = "تصویر زمینهٔ Firefox، طرح طلوع آفتاب.";
+"Settings.Home.Option.Wallpaper.Accessibility.SunriseWallpaper.v99" = "تصویر زمینهٔ Mio، طرح طلوع آفتاب.";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the accessibility string of the toggle for turning wallpaper cycling shortcut on or off on the homepage. */
 "Settings.Home.Option.Wallpaper.Accessibility.ToggleButton" = "گزینهٔ چرخش تصویر زمینهٔ صفحهٔ اصلی";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the title accessibility string for the twilight hills firefox wallpaper. */
-"Settings.Home.Option.Wallpaper.Accessibility.TwilightHillsWallpaper.v100" = "تصویر زمینهٔ Firefox، طرح تپه‌های گرگ‌ومیش.";
+"Settings.Home.Option.Wallpaper.Accessibility.TwilightHillsWallpaper.v100" = "تصویر زمینهٔ Mio، طرح تپه‌های گرگ‌ومیش.";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the title of the group of wallpapers that are always available to the user. The %@ will be replaced by the app name and thus doesn't need translation. */
 "Settings.Home.Option.Wallpaper.Classic.Title.v106" = "کلاسیک %@";
@@ -1346,7 +1346,7 @@
 "Settings.Home.Option.Wallpaper.LimitedEdition.Title.v106" = "نسخهٔ محدود";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the string titling the switch button's function, which allows a user to toggle wallpaper switching from the homepage logo on or off. */
-"Settings.Home.Option.Wallpaper.SwitchTitle.v99" = "با ضربه روی نشان Firefox در صفحهٔ اصلی، تصویر زمینه را تغییر دهید.";
+"Settings.Home.Option.Wallpaper.SwitchTitle.v99" = "با ضربه روی نشان Mio در صفحهٔ اصلی، تصویر زمینه را تغییر دهید.";
 
 /* In the settings menu, on the Firefox wallpaper customization screen, this is the title of that screen, which allows users to change the wallpaper settings for the application. */
 "Settings.Home.Option.Wallpaper.Title" = "تصویر زمینه";
@@ -1400,7 +1400,7 @@
 "Settings.NewTab.Option.Custom" = "سفارشی";
 
 /* Option in settings to show Firefox Home when you open a new tab */
-"Settings.NewTab.Option.FirefoxHome" = "صفحه اصلی Firefox";
+"Settings.NewTab.Option.FirefoxHome" = "صفحه اصلی Mio";
 
 /* Option in settings to show your homepage when you open a new tab */
 "Settings.NewTab.Option.HomePage" = "صفحه خانگی";
@@ -1421,7 +1421,7 @@
 "Settings.NoImageModeBlockImages.Label.v99" = "مسدود کردن تصاویر";
 
 /* Description displayed under the ”Offer to Open Copied Link” option. See https://bug1223660.bmoattachments.org/attachment.cgi?id=8898349 */
-"Settings.OfferClipboardBar.Status" = "هنگام باز کردن Firefox";
+"Settings.OfferClipboardBar.Status" = "هنگام باز کردن Mio";
 
 /* Description displayed under the ”Offer to Open Copied Link” option. See https://bug1223660.bmoattachments.org/attachment.cgi?id=8898349. %@ is for the app name. */
 "Settings.OfferClipboardBar.Status.v128" = "هنگام باز کردن %@";
@@ -1460,7 +1460,7 @@
 "Settings.SendUsage.Link" = "اطلاعات بیشتر.";
 
 /* A short description that explains why mozilla collects usage data. */
-"Settings.SendUsage.Message" = "Mozilla تنها اطلاعاتی که به بهینه‌سازی Firefox برای همه کمک می‌کند را جمع‌آوری می‌کند.";
+"Settings.SendUsage.Message" = "Mozilla تنها اطلاعاتی که به بهینه‌سازی Mio برای همه کمک می‌کند را جمع‌آوری می‌کند.";
 
 /* The title for the setting to send usage data. */
 "Settings.SendUsage.Title" = "ارسال اطلاعات استفاده";
@@ -1481,7 +1481,7 @@
 "Settings.Siri.OpenTabShortcut" = "بازکردن زبانه جدید";
 
 /* The description that describes what siri shortcuts are */
-"Settings.Siri.SectionDescription" = "استفاده از میانبرهای سیری برای بازکردن سریع Firefox به وسیله سیری";
+"Settings.Siri.SectionDescription" = "استفاده از میانبرهای سیری برای بازکردن سریع Mio به وسیله سیری";
 
 /* The option that takes you to the siri shortcuts settings page */
 "Settings.Siri.SectionName" = "میانبرهای سیری";
@@ -1490,7 +1490,7 @@
 "Settings.Studies.Toggle.Link" = "اطلاعات بیشتر.";
 
 /* A short description that explains that Mozilla is running studies */
-"Settings.Studies.Toggle.Message" = "Firefox ممکن است هر از گاهی مطالعاتی را نصب و اجرا کند.";
+"Settings.Studies.Toggle.Message" = "Mio ممکن است هر از گاهی مطالعاتی را نصب و اجرا کند.";
 
 /* Label used as a toggle item in Settings. When this is off, the user is opting out of all studies. */
 "Settings.Studies.Toggle.Title" = "مطالعات";
@@ -1610,13 +1610,13 @@
 "ShareExtension.LoadInBackgroundAction.Title" = "بارگذاری در پس زمینه";
 
 /* Share extension label shown after user has performed 'Load in Background' action. */
-"ShareExtension.LoadInBackgroundActionDone.Title" = "بارگذاری در Firefox";
+"ShareExtension.LoadInBackgroundActionDone.Title" = "بارگذاری در Mio";
 
 /* Action label on share extension to immediately open page in Firefox. */
-"ShareExtension.OpenInFirefoxAction.Title" = "بازکردن در Firefox";
+"ShareExtension.OpenInFirefoxAction.Title" = "بازکردن در Mio";
 
 /* Action label on share extension to search for the selected text in Firefox. */
-"ShareExtension.SeachInFirefoxAction.Title" = "جست‌وجو این Firefox";
+"ShareExtension.SeachInFirefoxAction.Title" = "جست‌وجو این Mio";
 
 /* Button in share sheet to copy the url of the current tab. */
 "ShareSheet.Copy.Title.v108" = "نسخه‌برداری";
@@ -1760,7 +1760,7 @@
 "UIMenuItem.PasteGo" = "جای‌گذاری و ثبت";
 
 /* Search in New Tab Text selection menu item */
-"UIMenuItem.SearchWithFirefox" = "جست‌وجو با Firefox";
+"UIMenuItem.SearchWithFirefox" = "جست‌وجو با Mio";
 
 /* Accessibility label for unread article in reading list. It's a past participle - functions as an adjective. */
 "unread" = "خوانده‌ نشده";
@@ -1808,7 +1808,7 @@
 "Yesterday" = "دیروز";
 
 /* Error message in the remote tabs panel */
-"You don’t have any tabs open in Firefox on your other devices." = "شما هیچ‌گونه زبانه باز دیگری در Firefox در دستگاه‌های دیگر ندارید.";
+"You don’t have any tabs open in Firefox on your other devices." = "شما هیچ‌گونه زبانه باز دیگری در Mio در دستگاه‌های دیگر ندارید.";
 
 /* Your Rights settings section title */
 "Your Rights" = "حقوق شما";

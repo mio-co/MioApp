@@ -1,5 +1,5 @@
 /* Description for small home tab banner that allows the user to switch their default browser to Firefox. */
-"DefaultBrowserCard.BetterInternet.Description.v108" = "تنظیم Firefox به عنوان مرورگر پیش‌فرض، رای دادن به اینترنتی آزاد و در دسترس است.";
+"DefaultBrowserCard.BetterInternet.Description.v108" = "تنظیم Mio به عنوان مرورگر پیش‌فرض، رای دادن به اینترنتی آزاد و در دسترس است.";
 
 /* Title for small home tab banner that allows the user to switch their default browser to Firefox. */
 "DefaultBrowserCard.BetterInternet.Title.v108" = "استفاده از مرورگر پیش‌فرض برای اینترنتی بهتر";
@@ -8,19 +8,19 @@
 "DefaultBrowserCard.Button.v2" = "آموزش نحوه انجام";
 
 /* Description for small home tab banner that allows the user to switch their default browser to Firefox. */
-"DefaultBrowserCard.Description" = "پیوندهای وبگاه‌ها، رایانامه‌ها و پیام‌ها را طوری تنظیم کنید که به طور خودکار در Firefox باز شوند.";
+"DefaultBrowserCard.Description" = "پیوندهای وبگاه‌ها، رایانامه‌ها و پیام‌ها را طوری تنظیم کنید که به طور خودکار در Mio باز شوند.";
 
 /* Description for small home tab banner that allows the user to switch their default browser to Firefox. */
-"DefaultBrowserCard.NextLevel.Description.v108" = "Firefox را به عنوان مرورگر پیش‌فرض انتخاب کنید تا سرعت، امنیت و حریم خصوصی خودکار شوند.";
+"DefaultBrowserCard.NextLevel.Description.v108" = "Mio را به عنوان مرورگر پیش‌فرض انتخاب کنید تا سرعت، امنیت و حریم خصوصی خودکار شوند.";
 
 /* Title for small home tab banner that allows the user to switch their default browser to Firefox. */
 "DefaultBrowserCard.NextLevel.Title.v108" = "ارتقای تجربه وب‌گردی روزمره";
 
 /* Description for small home tab banner that allows the user to switch their default browser to Firefox. */
-"DefaultBrowserCard.PeaceOfMind.Description.v108" = "Firefox به طور متوسط بیش از ۳,۰۰۰ ردیاب را در ماه برای هر کاربر مسدود می‌کند. ما را برای آسودگی خاطر در حریم خصوصی، مرورگر پیش‌فرض خود قرار دهید.";
+"DefaultBrowserCard.PeaceOfMind.Description.v108" = "Mio به طور متوسط بیش از ۳,۰۰۰ ردیاب را در ماه برای هر کاربر مسدود می‌کند. ما را برای آسودگی خاطر در حریم خصوصی، مرورگر پیش‌فرض خود قرار دهید.";
 
 /* Title for small home tab banner that allows the user to switch their default browser to Firefox. */
-"DefaultBrowserCard.PeaceOfMind.Title.v108" = "Firefox حریم خصوصی شما را کاملاً پوشش می‌دهد";
+"DefaultBrowserCard.PeaceOfMind.Title.v108" = "Mio حریم خصوصی شما را کاملاً پوشش می‌دهد";
 
 /* Title for small home tab banner that allows the user to switch their default browser to Firefox. */
 "DefaultBrowserCard.Title" = "مرورگر پیش‌فرض خود را تغییر دهید";
@@ -35,7 +35,7 @@
 "DefaultBrowserOnboarding.Description2" = "۲. برنامه مرورگر پیش‌فرض را لمس کنید";
 
 /* Description for default browser onboarding card. */
-"DefaultBrowserOnboarding.Description3" = "۳. Firefox را انتخاب کنید";
+"DefaultBrowserOnboarding.Description3" = "۳. Mio را انتخاب کنید";
 
 /* Text for the screenshot of the iOS system settings page for Firefox. */
 "DefaultBrowserOnboarding.Screenshot" = "برنامه مرورگر پیش‌فرض";

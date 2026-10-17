@@ -59,7 +59,7 @@
 "Settings.Rollouts.Link.v148" = "Uzzināt vairāk";
 
 /* Accessibility label for Learn more about Firefox Suggest. */
-"Settings.Search.Accessibility.LearnAboutSuggestions.v124" = "Uzzināt vairāk par Firefox Suggest";
+"Settings.Search.Accessibility.LearnAboutSuggestions.v124" = "Uzzināt vairāk par Mio Suggest";
 
 /* Title for the `Suggestions from Search Engines` settings section in the Search page in the Settings menu. */
 "Settings.Search.EnginesSuggestions.Title.v124" = "Ieteikumi no meklētājiem";
@@ -68,7 +68,7 @@
 "Settings.Search.PrivateSession.Description.v125" = "Rādīt meklētāju ieteikumus privātajās sesijās";
 
 /* In the search page of the Settings menu, the title for the link to the SUMO Page about Firefox Suggest. */
-"Settings.Search.Suggest.LearnAboutSuggestions.v124" = "Uzzināt vairāk par Firefox Suggest";
+"Settings.Search.Suggest.LearnAboutSuggestions.v124" = "Uzzināt vairāk par Mio Suggest";
 
 /* In the Search page of the Settings menu, the title for the setting to enable synced tabs. */
 "Settings.Search.Suggest.SearchSyncedTabs.Title.v124" = "Meklēt vienādotajās cilnēs";

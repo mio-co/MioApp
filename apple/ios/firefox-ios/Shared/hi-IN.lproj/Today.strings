@@ -5,7 +5,7 @@
 "TodayWidget.ClosePrivateTabsLabelV2" = "प्राइवेट टैब\nबंद करें";
 
 /* Description for medium size widget to add Firefox Shortcut to home screen */
-"TodayWidget.FirefoxShortcutGalleryDescription" = "अपनी होम स्क्रीन पर Firefox शॉर्टकट जोड़ें।";
+"TodayWidget.FirefoxShortcutGalleryDescription" = "अपनी होम स्क्रीन पर Mio शॉर्टकट जोड़ें।";
 
 /* Go to link pasted on the clipboard */
 "TodayWidget.GoToCopiedLinkLabelV1" = "कॉपी किए गए लिंक पर जाएं";
@@ -23,19 +23,19 @@
 "TodayWidget.NoOpenTabsLabel" = "कोई खुला टैब नहीं।";
 
 /* Open Firefox when there are no tabs opened in tab tray i.e. Empty State */
-"TodayWidget.OpenFirefoxLabel" = "Firefox खोलें";
+"TodayWidget.OpenFirefoxLabel" = "Mio खोलें";
 
 /* Open New Private Tab button label */
 "TodayWidget.PrivateTabButtonLabelV1" = "प्राइवेट सर्च";
 
 /* Description for small size widget to add it to home screen */
-"TodayWidget.QuickActionGalleryDescription" = "अपनी होम स्क्रीन पर Firefox शॉर्टकट जोड़ें। विजेट जोड़ने के बाद, उसे एडिट करने और कोई दूसरा शॉर्टकट चुनने के लिए दबाकर रखें।";
+"TodayWidget.QuickActionGalleryDescription" = "अपनी होम स्क्रीन पर Mio शॉर्टकट जोड़ें। विजेट जोड़ने के बाद, उसे एडिट करने और कोई दूसरा शॉर्टकट चुनने के लिए दबाकर रखें।";
 
 /* Quick Actions title when widget enters edit mode */
 "TodayWidget.QuickActionsGalleryTitle" = "क्विक ऐक्शन";
 
 /* Firefox shortcuts title when widget enters edit mode. Do not translate the word Firefox. */
-"TodayWidget.QuickActionsGalleryTitleV2" = "Firefox शॉर्टकट";
+"TodayWidget.QuickActionsGalleryTitleV2" = "Mio शॉर्टकट";
 
 /* Description for Quick View widget in Gallery View where user can add it to home screen */
 "TodayWidget.QuickViewGalleryDescriptionV2" = "अपने खुले टैब के शॉर्टकट जोड़ें।";
@@ -44,7 +44,7 @@
 "TodayWidget.QuickViewGalleryTitle" = "क्विक व्यू";
 
 /* Search in Firefox. Do not translate the word Firefox */
-"TodayWidget.SearchInFirefoxV2" = "Firefox में\nसर्च करें";
+"TodayWidget.SearchInFirefoxV2" = "Mio में\nसर्च करें";
 
 /* Search in private tab */
 "TodayWidget.SearchInPrivateTabLabelV2" = "प्राइवेट टैब में\nसर्च करें";
