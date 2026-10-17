@@ -132,12 +132,12 @@ for k in ("homeOK", "bridgeOK", "blockOK", "settingsOK", "newTabOK"):
     v = r.get(k)
     # homeOK == "access-login": MioCore is behind Cloudflare Access and CI is not signed in (login page reached = OK)
     print(f"kit-smoke {k} {v if isinstance(v, str) else ('OK' if v else 'FAIL')}")
-for name, c in sorted((r.get("newTab", {}).get("cases") or {}).items()):
-    if isinstance(c, dict):
-        print(f"kit-smoke newTab {name} {'OK' if c.get('ok') else 'FAIL'} new={c.get('newTabs')} urls={c.get('newURLs')} same={c.get('sameTabAfter')}")
 h = r.get("home", {})
 if h.get("landing") == "access-login":
     print(f"kit-smoke access-login host={h.get('loginHost')} ruleLists={len(h.get('loginRuleLists') or [])} ua={h.get('loginUserAgent')}")
+for name, c in sorted((r.get("newTab", {}).get("cases") or {}).items()):
+    if isinstance(c, dict):
+        print(f"kit-smoke newTab {name} {'OK' if c.get('ok') else 'FAIL'} new={c.get('newTabs')} urls={c.get('newURLs')} same={c.get('sameTabAfter')}")
 PY
   if [ "$(python3 -c 'import json,sys; print(1 if json.load(open(sys.argv[1])).get("pass") else 0)' "$OUT/kit-smoke.json")" != 1 ]; then
     FAIL=1; return 1

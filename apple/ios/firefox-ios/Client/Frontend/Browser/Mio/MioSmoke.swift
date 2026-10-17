@@ -14,13 +14,13 @@
 //   homeOK    mio://home starts a main-frame navigation to the MioCore origin (https://mio.300031.xyz) and lands on
 //             MioCore (true), or on the Cloudflare Access login page ("access-login": CI is not signed in; not a
 //             failure as long as the login page gets no ad-block rule lists and Safari's UA)
-//   bridgeOK  example.com: window.Mio undefined and the bridge answers forbidden; mio://about: ping → pong
-//   blockOK   example.com: Mio ad-block rule lists attached, doubleclick request blocked, same-origin request loads
-//   settingsOK  Settings → "Mio 扩展" page (MioExtensionsView) renders with module rows
 //   newTabOK  local fixture pages (MioNewTabFixture, loadHTMLString + baseURL to fake the origin): plain-site target=_blank /
 //             window.open → new selected tab (window.open returns a window), same-tab link navigates in place; MioCore origin
 //             (appShell → MioDesktop.browser.open({url}) → bridge openTab) tile / window.open / identity-provider tile → new
 //             selected tab; MioCore popup to its Access page and Access login page popup to Google → stay in the opener tab
+//   bridgeOK  example.com: window.Mio undefined and the bridge answers forbidden; mio://about: ping → pong
+//   blockOK   example.com: Mio ad-block rule lists attached, doubleclick request blocked, same-origin request loads
+//   settingsOK  Settings → "Mio 扩展" page (MioExtensionsView) renders with module rows
 //   (recorded only) tab overview via the app's own deep link
 
 import Foundation
@@ -67,6 +67,94 @@ final class MioSmoke {
     const control = await hit(location.origin + '/?mio-control=' + Date.now());
     return JSON.stringify({ ad: ad, control: control });
     """
+
+    // MARK: - Links → new tabs
+
+    private func newTabSmoke() async -> [String: Any] {
+        var r: [String: Any] = [:]
+        var cases: [String: Any] = [:]
+        guard let manager = tabManager(), let base = openTab(URL(string: "about:blank")!, select: true),
+              let wv = await webView(of: base) else {
+            r["error"] = "no tab"; r["ok"] = false; return r
+        }
+        await waitLoad(wv, timeout: 10)
+
+        func loadPage(_ html: String, _ baseURL: String) async {
+            manager.selectTab(base, previous: manager.selectedTab)
+            wv.loadHTMLString(html, baseURL: URL(string: baseURL))
+            var waited = 0
+            while waited < 75 {
+                try? await Task.sleep(nanoseconds: 200_000_000); waited += 1
+                if !wv.isLoading, wv.url?.absoluteString == baseURL { break }
+            }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+
+        func tryCase(_ name: String, _ js: String, expectNew: Int, expectURL: String? = nil, expectSameTabHost: String? = nil,
+                 expectSameTabAccess: Bool = false, expectReturn: String? = nil) async -> Bool {
+            // Firefox throttles popups per tab (2 within 2 s)
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            let before = Set(manager.tabs.map { $0.tabUUID })
+            let urlBefore = wv.url?.absoluteString
+            let ret = await callJS(wv, js)
+            var newTabs: [Tab] = []
+            var waited = 0
+            while waited < 40 {
+                try? await Task.sleep(nanoseconds: 250_000_000); waited += 1
+                newTabs = manager.tabs.filter { !before.contains($0.tabUUID) }
+                let urlsReady = newTabs.allSatisfy { ($0.webView?.url ?? $0.url).map { $0.scheme == "https" } ?? false }
+                if expectNew > 0 && newTabs.count >= expectNew && urlsReady { break }
+                if expectNew == 0, let h = expectSameTabHost, wv.url?.host == h, !wv.isLoading { break }
+                if expectNew == 0, expectSameTabAccess, MioAccessAuth.isAccessURL(wv.url, prefs: MioKitHost.shared.kit.prefs), !wv.isLoading { break }
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            newTabs = manager.tabs.filter { !before.contains($0.tabUUID) }
+            let newURLs = newTabs.map { ($0.webView?.url ?? $0.url)?.absoluteString ?? "" }
+            let selected = manager.selectedTab
+            let foreground = newTabs.first.map { $0.tabUUID == selected?.tabUUID } ?? false
+            var ok = newTabs.count == expectNew
+            if expectNew > 0 { ok = ok && foreground }
+            if let u = expectURL { ok = ok && newURLs.contains(where: { MioNewTabFixture.landed($0, on: u) }) }
+            if let h = expectSameTabHost { ok = ok && wv.url?.host == h }
+            if expectSameTabAccess { ok = ok && MioAccessAuth.isAccessURL(wv.url, prefs: MioKitHost.shared.kit.prefs) }
+            if let e = expectReturn { ok = ok && ret == e }
+            cases[name] = ["ok": ok, "newTabs": newTabs.count, "newURLs": newURLs, "foreground": foreground, "returned": ret,
+                           "sameTabBefore": orNull(urlBefore), "sameTabAfter": orNull(wv.url?.absoluteString)] as [String: Any]
+            if !newTabs.isEmpty { manager.removeTabs(newTabs) }
+            manager.selectTab(base, previous: manager.selectedTab)
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            return ok
+        }
+
+        typealias F = MioNewTabFixture
+        var gate: [Bool] = []
+        await loadPage(F.plainPage, F.plainBase)
+        gate.append(await tryCase("plainBlank", F.clickJS("blank"), expectNew: 1, expectURL: F.blankTarget))
+        gate.append(await tryCase("plainWindowOpen", F.windowOpenJS(F.openTarget), expectNew: 1, expectURL: F.openTarget, expectReturn: "window"))
+        gate.append(await tryCase("plainSameTab", F.clickJS("same"), expectNew: 0, expectSameTabHost: "example.org"))
+
+        await loadPage(F.mioCorePage, F.mioCoreBase)
+        let shell = await callJS(wv, "return String(window.__appShell) + '/' + typeof window.MioDesktop")
+        cases["mioCoreAppShell"] = shell
+        gate.append(shell == "true/object")
+        gate.append(await tryCase("mioCoreTile", F.clickJS("tile"), expectNew: 1, expectURL: F.coreTileTarget))
+        gate.append(await tryCase("mioCoreWindowOpen", F.windowOpenJS(F.coreOpenTarget), expectNew: 1, expectURL: F.coreOpenTarget))
+        gate.append(await tryCase("mioCoreIdPTile", F.clickJS("idp"), expectNew: 1, expectURL: F.coreIdPTarget))
+        gate.append(await tryCase("mioCoreRawOpenIdP", F.windowOpenJS(F.coreIdPTarget, raw: true), expectNew: 1, expectURL: F.coreIdPTarget,
+                              expectReturn: "window"))
+        gate.append(await tryCase("mioCoreRawOpenAccess", F.windowOpenJS(F.coreAccessTarget, raw: true), expectNew: 0,
+                              expectSameTabAccess: true))
+        cases["mioCoreBridgeLog"] = await callJS(wv, "return (window.__opened || []).join(',')")
+
+        await loadPage(F.accessPage, F.accessBase)
+        gate.append(await tryCase("accessIdPPopup", F.windowOpenJS(F.accessIdPTarget), expectNew: 0, expectSameTabHost: "accounts.google.com"))
+
+        manager.removeTabs([base])
+        r["cases"] = cases
+        r["gate"] = gate
+        r["ok"] = !gate.isEmpty && gate.allSatisfy { $0 }
+        return r
+    }
 
     // MARK: - Run
 
@@ -223,94 +311,6 @@ final class MioSmoke {
         report["seconds"] = Int(Date().timeIntervalSince(started))
         write()
         log("MIO_IOS_SMOKE " + (pass ? "PASS" : "FAIL"))
-    }
-
-    // MARK: - Links → new tabs
-
-    private func newTabSmoke() async -> [String: Any] {
-        var r: [String: Any] = [:]
-        var cases: [String: Any] = [:]
-        guard let manager = tabManager(), let base = openTab(URL(string: "about:blank")!, select: true),
-              let wv = await webView(of: base) else {
-            r["error"] = "no tab"; r["ok"] = false; return r
-        }
-        await waitLoad(wv, timeout: 10)
-
-        func loadPage(_ html: String, _ baseURL: String) async {
-            manager.selectTab(base, previous: manager.selectedTab)
-            wv.loadHTMLString(html, baseURL: URL(string: baseURL))
-            var waited = 0
-            while waited < 75 {
-                try? await Task.sleep(nanoseconds: 200_000_000); waited += 1
-                if !wv.isLoading, wv.url?.absoluteString == baseURL { break }
-            }
-            try? await Task.sleep(nanoseconds: 300_000_000)
-        }
-
-        func tryCase(_ name: String, _ js: String, expectNew: Int, expectURL: String? = nil, expectSameTabHost: String? = nil,
-                 expectSameTabAccess: Bool = false, expectReturn: String? = nil) async -> Bool {
-            // Firefox throttles popups per tab (2 within 2 s)
-            try? await Task.sleep(nanoseconds: 2_200_000_000)
-            let before = Set(manager.tabs.map { $0.tabUUID })
-            let urlBefore = wv.url?.absoluteString
-            let ret = await callJS(wv, js)
-            var newTabs: [Tab] = []
-            var waited = 0
-            while waited < 40 {
-                try? await Task.sleep(nanoseconds: 250_000_000); waited += 1
-                newTabs = manager.tabs.filter { !before.contains($0.tabUUID) }
-                let urlsReady = newTabs.allSatisfy { ($0.webView?.url ?? $0.url).map { $0.scheme == "https" } ?? false }
-                if expectNew > 0 && newTabs.count >= expectNew && urlsReady { break }
-                if expectNew == 0, let h = expectSameTabHost, wv.url?.host == h, !wv.isLoading { break }
-                if expectNew == 0, expectSameTabAccess, MioAccessAuth.isAccessURL(wv.url, prefs: MioKitHost.shared.kit.prefs), !wv.isLoading { break }
-            }
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            newTabs = manager.tabs.filter { !before.contains($0.tabUUID) }
-            let newURLs = newTabs.map { ($0.webView?.url ?? $0.url)?.absoluteString ?? "" }
-            let selected = manager.selectedTab
-            let foreground = newTabs.first.map { $0.tabUUID == selected?.tabUUID } ?? false
-            var ok = newTabs.count == expectNew
-            if expectNew > 0 { ok = ok && foreground }
-            if let u = expectURL { ok = ok && newURLs.contains(where: { MioNewTabFixture.landed($0, on: u) }) }
-            if let h = expectSameTabHost { ok = ok && wv.url?.host == h }
-            if expectSameTabAccess { ok = ok && MioAccessAuth.isAccessURL(wv.url, prefs: MioKitHost.shared.kit.prefs) }
-            if let e = expectReturn { ok = ok && ret == e }
-            cases[name] = ["ok": ok, "newTabs": newTabs.count, "newURLs": newURLs, "foreground": foreground, "returned": ret,
-                           "sameTabBefore": orNull(urlBefore), "sameTabAfter": orNull(wv.url?.absoluteString)] as [String: Any]
-            if !newTabs.isEmpty { manager.removeTabs(newTabs) }
-            manager.selectTab(base, previous: manager.selectedTab)
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            return ok
-        }
-
-        typealias F = MioNewTabFixture
-        var gate: [Bool] = []
-        await loadPage(F.plainPage, F.plainBase)
-        gate.append(await tryCase("plainBlank", F.clickJS("blank"), expectNew: 1, expectURL: F.blankTarget))
-        gate.append(await tryCase("plainWindowOpen", F.windowOpenJS(F.openTarget), expectNew: 1, expectURL: F.openTarget, expectReturn: "window"))
-        gate.append(await tryCase("plainSameTab", F.clickJS("same"), expectNew: 0, expectSameTabHost: "example.org"))
-
-        await loadPage(F.mioCorePage, F.mioCoreBase)
-        let shell = await callJS(wv, "return String(window.__appShell) + '/' + typeof window.MioDesktop")
-        cases["mioCoreAppShell"] = shell
-        gate.append(shell == "true/object")
-        gate.append(await tryCase("mioCoreTile", F.clickJS("tile"), expectNew: 1, expectURL: F.coreTileTarget))
-        gate.append(await tryCase("mioCoreWindowOpen", F.windowOpenJS(F.coreOpenTarget), expectNew: 1, expectURL: F.coreOpenTarget))
-        gate.append(await tryCase("mioCoreIdPTile", F.clickJS("idp"), expectNew: 1, expectURL: F.coreIdPTarget))
-        gate.append(await tryCase("mioCoreRawOpenIdP", F.windowOpenJS(F.coreIdPTarget, raw: true), expectNew: 1, expectURL: F.coreIdPTarget,
-                              expectReturn: "window"))
-        gate.append(await tryCase("mioCoreRawOpenAccess", F.windowOpenJS(F.coreAccessTarget, raw: true), expectNew: 0,
-                              expectSameTabAccess: true))
-        cases["mioCoreBridgeLog"] = await callJS(wv, "return (window.__opened || []).join(',')")
-
-        await loadPage(F.accessPage, F.accessBase)
-        gate.append(await tryCase("accessIdPPopup", F.windowOpenJS(F.accessIdPTarget), expectNew: 0, expectSameTabHost: "accounts.google.com"))
-
-        manager.removeTabs([base])
-        r["cases"] = cases
-        r["gate"] = gate
-        r["ok"] = !gate.isEmpty && gate.allSatisfy { $0 }
-        return r
     }
 
     // MARK: - Helpers
