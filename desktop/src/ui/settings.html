@@ -19,6 +19,11 @@
     <div class="row"><div class="label">浏览数据<div class="sub">内置浏览器有独立的 Cookie / 登录状态，与 MioCore 主窗口互不影响</div></div><button class="btn danger" id="clearData">清除浏览数据</button></div>
   </div>
 
+  <h2>页面缩放</h2>
+  <div class="card">
+    <div class="row"><div class="label">默认页面缩放<div class="sub">与 Safari 相同：Ctrl + = 放大、Ctrl + - 缩小、Ctrl + 0 恢复，Ctrl + 滚轮 / 触控板捏合也可缩放；每个网站单独记住，地址栏里的百分比点一下恢复</div></div><select id="defaultZoom" class="text" style="flex:none;width:96px"></select></div>
+  </div>
+
   <h2>标签页</h2>
   <div class="card">
     <div class="row"><div class="label">新标签页地址<div class="sub">留空 = MioCore 导航（https://mio.300031.xyz/mio/nav，沿用主窗口的登录状态）</div></div></div>
@@ -84,6 +89,7 @@
 <script src="settings.js"></script>
 <script src="update-settings.js"></script>
 <script src="tabs-settings.js"></script>
+<script src="zoom-settings.js"></script>
 <script src="containers-settings.js"></script>
 </body>
 </html>

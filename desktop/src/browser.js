@@ -15,9 +15,10 @@ const config = require('./config');
 const { hostOf, isHttpUrl, addressToUrl } = require('./util');
 const closeAfterExternal = require('./close-after-external');
 const { TabStore, DEFAULT_CONTAINER, DEFAULT_NEW_TAB_URL, displayHost, normalizeNewTabUrl } = require('./tabs-core');
+const zoom = require('./zoom'); // 页面缩放（Safari 档位、按站点记住）
 
 const ROW_HEIGHT = 44; // 按钮 + 地址栏
-const TABSTRIP_HEIGHT = 34; // 标签条
+const TABSTRIP_HEIGHT = 30; // 标签条（v0.3.4 跟 Safari：更矮的标签）
 const TOOLBAR_HEIGHT = ROW_HEIGHT + TABSTRIP_HEIGHT;
 const MAX_LOADED_TABS = 16; // 同时保留网页进程的标签数，超过时卸载最久没用的后台标签
 const UI_PARTITION = 'mio-ui'; // 工具栏 / 设置页：内存会话，不带拦截 preload
@@ -55,6 +56,15 @@ class BrowserManager extends EventEmitter {
     this.saveTimer = null;
     adblock.onChange(() => this.pushState());
     settings.on('change', () => this.pushState());
+    // 页面缩放：按站点记在 userData/zoom.json，默认值在设置里（defaultZoom）
+    this.zoom = new zoom.ZoomStore(path.join(app.getPath('userData'), 'zoom.json'), () => settings.get('defaultZoom'));
+    let lastDefault = settings.get('defaultZoom');
+    settings.on('change', () => {
+      if (settings.get('defaultZoom') !== lastDefault) {
+        lastDefault = settings.get('defaultZoom');
+        this.zoom.emit('change', null);
+      }
+    });
     if (this.containers) {
       // 删除容器：在清理数据之前发出 → 关掉该容器的所有标签（释放 webContents），最近关闭里它的条目也去掉
       this.containers.store.on('removed', ({ container }) => this.closeContainerTabs(container && container.id));
@@ -295,6 +305,7 @@ class BrowserManager extends EventEmitter {
     // 每个标签各自注册（per-tab setup）：拦截计数、按 webContents 挂的功能（阅读模式 / 翻译 / 媒体…）、右键菜单、快捷键
     this.wireTab(tab.id, wc);
     this.wireContent(wc);
+    zoom.attach(this.zoom, wc, () => this.pushState());
     this.wireShortcuts(wc);
     this.emit('tab-created', { tabId: tab.id, webContents: wc, containerId: tab.containerId });
     this.enforceLoadedLimit();
@@ -664,6 +675,9 @@ class BrowserManager extends EventEmitter {
         arg = key;
       } else if (key === 'f12' || (mod && input.shift && key === 'i')) cmd = 'devtools';
       else if (key === 'f9') cmd = 'reader';
+      else if (mod && (key === '=' || key === '+')) cmd = 'zoomIn';
+      else if (mod && (key === '-' || key === '_')) cmd = 'zoomOut';
+      else if (mod && key === '0') cmd = 'zoomReset';
       else if (key === 'escape' && this.content && wc === this.content.webContents) cmd = 'stop';
       if (cmd) {
         event.preventDefault();
@@ -676,6 +690,14 @@ class BrowserManager extends EventEmitter {
     if (!this.isOpen()) return;
     // 标签 / 窗口相关：不需要当前网页
     switch (cmd) {
+      case 'zoomIn':
+      case 'zoomOut':
+      case 'zoomReset': {
+        const c = this.content;
+        if (c) zoom.step(this.zoom, c.webContents, cmd === 'zoomIn' ? 'in' : cmd === 'zoomOut' ? 'out' : 'reset');
+        this.pushState();
+        return;
+      }
       case 'newTab':
         this.newTab(null, { activate: true, containerId: arg || undefined });
         this.command('focusAddress');
@@ -935,6 +957,9 @@ class BrowserManager extends EventEmitter {
     const host = hostOf(url);
     return {
       ...base,
+      zoom: this.zoom.levelFor(url),
+      zoomDefault: this.zoom.defaultZoom,
+      zoomLabel: zoom.core.label(this.zoom.levelFor(url)),
       url,
       host,
       displayHost: displayHost(url),

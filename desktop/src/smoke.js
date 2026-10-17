@@ -249,6 +249,31 @@ async function runSmoke({ out, adblock, browser, containers, getMainWindow }) {
       result.steps.userscripts = { page, stored, ok: page.iso === 'undefined:function:object' && page.page === 'number' && page.bridge === 'undefined' && stored === '42' };
     }
 
+    // 页面缩放（zoom.js，v0.3.4）：Ctrl+= 后 zoomFactor 变成 1.15、重载后保持、地址栏出现「115%」、Ctrl+0 复位
+    {
+      browser.open('https://example.com/');
+      const zwc = browser.content.webContents;
+      await waitLoad(zwc, 30000);
+      const z = { before: zwc.getZoomFactor() };
+      zwc.sendInputEvent({ type: 'keyDown', keyCode: '=', modifiers: [process.platform === 'darwin' ? 'meta' : 'control'] });
+      await wait(500);
+      z.afterKey = zwc.getZoomFactor();
+      if (Math.abs(z.afterKey - 1.15) > 0.001) browser.command('zoomIn'); // 合成按键没走 before-input-event 时直接发命令
+      z.afterIn = zwc.getZoomFactor();
+      await wait(400);
+      z.badge = await browser.toolbar.webContents.executeJavaScript("(() => { const b = document.getElementById('zoomBadge'); return b && !b.hidden ? b.textContent : ''; })()");
+      zwc.reload();
+      await waitLoad(zwc, 30000);
+      await wait(500);
+      z.afterReload = zwc.getZoomFactor();
+      browser.command('zoomReset');
+      z.afterReset = zwc.getZoomFactor();
+      z.stored = browser.zoom.table.size;
+      z.ok = Math.abs(z.afterIn - 1.15) < 0.001 && Math.abs(z.afterReload - 1.15) < 0.001 && Math.abs(z.afterReset - 1) < 0.001 && z.badge === '115%' && z.stored === 0;
+      browser.closeTab();
+      result.steps.zoom = z;
+    }
+
     // 白名单后同一页面不再拦截（MioCore 打开外链 = 新标签：speedtest 在第二个标签里）
     browser.open('https://www.speedtest.net/');
     const wc2 = browser.content.webContents;
@@ -288,6 +313,7 @@ async function runSmoke({ out, adblock, browser, containers, getMainWindow }) {
       s.webrtc.allowed === 'function' &&
       (!s.userscripts || s.userscripts.ok === true) &&
       s.tabs.ok === true &&
+      s.zoom.ok === true &&
       (!containers || (s.containers && s.containers.ok === true)) &&
       (!containers || (s.tabsContainers && s.tabsContainers.ok === true));
     clearTimeout(guard);

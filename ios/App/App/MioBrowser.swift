@@ -112,8 +112,10 @@ enum MioWebKitCompat {
 
     static var desktopUserAgent: String { MioWebCompat.desktopUserAgent(safariVersion: safariVersion) }
 
-    /// Mac 上确保 MediaSource（MSE）开启：没有 MSE 时 YouTube 只能给渐进式 mp4（最高 360p）。
-    /// iPad 布局的 Catalyst 默认应已开启；这里用 WKPreferences 的私有开关兜底（先 responds(to:) 检查，ObjC 异常也接住）。
+    /// Mac 上打开 MediaSource（MSE）偏好：没有 MSE 时 YouTube 只能给渐进式 mp4（最高 360p）。
+    /// 注意（v0.3.4 CI 诊断）：Mac Catalyst 的 WebKit 编译时就没有 ENABLE(MEDIA_SOURCE)（PlatformEnableCocoa.h 排除了 MACCATALYST），
+    /// 这个偏好能设成 true，但 window.MediaSource / ManagedMediaSource 仍不存在；保留它只为将来系统放开时自动生效。
+    /// 私有开关：先 responds(to:) 检查，ObjC 异常也接住。
     /// 免签名包不经 App Review，私有开关只在 Mac 上设置，iPhone 不动。
     @discardableResult
     static func enableMediaSource(_ prefs: WKPreferences) -> [String: Bool] {
@@ -1007,7 +1009,9 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             decisionHandler(.cancel, preferences)
             return
         }
-        if isMain, profile == .desktop, let desktop = MioWebCompat.desktopURL(for: url), allowDesktopRewrite() {
+        // Mac 跟 Safari 对齐（MioDesktopParity.swift）：YouTube 用 v0.3.0 的 UA（HLS 高清）、按站点缩放
+        if parityDecide(navigationAction, url: url, isMain: isMain, preferences: preferences) { decisionHandler(.cancel, preferences); return }
+        if isMain, profile == .desktop, !MioDesktopParity.keepsYouTubeLegacy(url), let desktop = MioWebCompat.desktopURL(for: url), allowDesktopRewrite() {
             // m.youtube.com → www.youtube.com（旧链接 / 历史记录 / 旧 Cookie 触发的重定向）
             decisionHandler(.cancel, preferences)
             DispatchQueue.main.async { [weak self] in self?.webView.load(URLRequest(url: desktop)) }
@@ -1058,6 +1062,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageTools.didFinish()
+        parityDidFinish()
         // 诊断：YouTube 上记录 UA / MediaSource / 播放器拿到的最高清晰度（Mac 或 Debug）
         guard let host = webView.url?.host?.lowercased(), host == "youtube.com" || host.hasSuffix(".youtube.com") else { return }
         #if !DEBUG
@@ -1169,6 +1174,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case containers // 容器管理（MioContainerStore.swift）
         case translate
         case userScripts, webrtc
+        case desktopParity // Mac：页面缩放 / YouTube（MioDesktopParity.swift）
     }
 
     private let currentHost: String?
@@ -1233,6 +1239,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
         browse.append(.media)
         s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留），可选屏蔽首页的游戏大本营（Playables，直接打开 /playables 不受影响）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
         s.append(("翻译", "网页双语对照 / 仅译文、划词翻译、YouTube 双语字幕；引擎可选微软、谷歌或自定义 OpenAI 兼容 API。", [.translate]))
+        if MioDesktopParity.enabled { s.append(("页面缩放与 YouTube", nil, [.desktopParity])) }
         s.append(("用户脚本与隐私", "用户脚本：安装 Tampermonkey / Greasemonkey 格式的 .user.js。WebRTC 控制：防止网页借 WebRTC 获取你的真实 IP。", [.userScripts, .webrtc]))
         s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的「用 Safari 打开」（\(Self.safariHint)）改用 Safari。", [.preferSafari, .backgroundPlayback]))
         s.append((nil, "开启后，「用 Safari 打开」成功跳转后自动关闭当前标签页（最后一个标签关闭时收起浏览器回到 Mio 主界面）；打开失败则保留。", [.closeAfterExternal]))
@@ -1401,6 +1408,11 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.detailTextLabel?.text = MioWebRTCSettings.enabled ? (n > 0 ? "已屏蔽 · 放行 \(n) 个网站" : "已屏蔽（防 IP 泄露）") : "未开启"
             cell.accessoryType = .disclosureIndicator
             cell.selectionStyle = .default
+        case .desktopParity:
+            cell.textLabel?.text = "页面缩放与 YouTube"
+            cell.detailTextLabel?.text = "默认缩放 " + MioZoomCore.label(MioDesktopParitySettings.defaultZoom) + (MioDesktopParitySettings.youtubeAlwaysSafari ? " · YouTube 用 Safari" : "")
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
         }
         return cell
     }
@@ -1467,6 +1479,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
             navigationController?.pushViewController(MioUserScriptsViewController(), animated: true)
         case .webrtc:
             navigationController?.pushViewController(MioWebRTCSettingsViewController(currentHost: currentHost), animated: true)
+        case .desktopParity:
+            navigationController?.pushViewController(MioDesktopParitySettingsViewController(), animated: true)
         case .youtubeInterval:
             let current = MioBrowserSettings.youtubeFocusInterval
             let a = MioActionList(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒")
