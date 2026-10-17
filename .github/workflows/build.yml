@@ -344,6 +344,7 @@ jobs:
             bash scripts/android-ytfocus-smoke.sh android-smoke/ytfocus
             bash scripts/android-containers-smoke.sh android-smoke/containers
             bash scripts/android-tabs-smoke.sh android-smoke/tabs
+            bash scripts/android-layout-smoke.sh android-smoke/layout
 
       - uses: actions/upload-artifact@v4
         if: always()
