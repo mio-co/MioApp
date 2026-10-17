@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // 共享注入脚本的单一来源：shared/scripts/*.js
-// - Android：app/build.gradle 把 shared/ 加进 assets（APK 里是 assets/scripts/<name>.js），不复制
-// - Windows / Electron：开发时直接读 ../shared/scripts，打包时 electron-builder extraResources → resources/mio-scripts
 // - iOS / Mac：Swift 里内嵌同一份（MioWebCompat.swift 的 MIO_JS_BEGIN/END 段，WKUserScript 需要字符串常量）。
 //   本脚本把共享文件写回 Swift 段；`--check` 只校验一致（CI unit job 跑），不一致时退出 1。
 // 用法：node scripts/sync-shared-scripts.mjs [--check]

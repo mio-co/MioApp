@@ -1,7 +1,6 @@
 // MioMediaScripts.swift — 内置浏览器的媒体功能（v0.3.3）：后台播放 / 自动续播、锁屏 Now Playing、画中画按钮、SponsorBlock。
 // 只依赖 Foundation（不 import UIKit / WebKit）：tools/MioAppTests 通过符号链接直接 swift test；
-// 注入页面的 JS 放在 MIO_JS_BEGIN/END 段里，由 tools/MioAppTests/js/media-*.test.mjs 抽出来用 node 跑，
-// Android / Windows 用的是 scripts/sync-media-js.mjs 从这里生成的同一份 JS（单测会检查生成文件没过期）。
+// 注入页面的 JS 放在 MIO_JS_BEGIN/END 段里，由 tools/MioAppTests/js/media-*.test.mjs 抽出来用 node 跑。
 //
 // SponsorBlock 数据来自 https://sponsor.ajay.app（CC BY-NC-SA 4.0，署名见 README / NOTICE）。
 // 隐私方式：只发 videoID 的 SHA-256 前 4 位，在本地按 videoID 匹配。

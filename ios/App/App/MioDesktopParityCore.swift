@@ -2,7 +2,6 @@
 //   1. 页面缩放：Safari 的缩放档位、⌘+ / ⌘- / ⌘0、按站点（host）记住缩放
 //   2. YouTube on Mac：恢复 v0.3.0 的 UA（YouTube 下发 HLS → 原生播放高清，不需要 MSE），其他站点仍是桌面 Safari UA
 //   3. 「在 Safari 中看高清」兜底：当前 URL + 播放进度 t=
-// Windows（Electron）用 desktop/src/zoom-core.js 的同一套档位与规则。
 
 import Foundation
 

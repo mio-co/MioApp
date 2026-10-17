@@ -1,24 +1,25 @@
 # MioApp
 
-MioCore（https://mio.300031.xyz）的壳 App：iOS / Android（Capacitor 8）、Mac（Mac Catalyst）、Windows（Electron）。
+MioCore（https://mio.300031.xyz）的壳 App：iPhone / iPad（Capacitor 8）、Mac（Mac Catalyst）。只做 Apple 平台。
+
+> Android / Windows 已停止开发，**v0.3.4 是最后一版**（[tag v0.3.4](https://github.com/mio-co/MioApp/tree/v0.3.4) 和 Release 保留存档，代码可在该 tag 查看）。
 
 - App 直接加载线上站点（启动页 `/mio/nav`，见 `server.appStartPath`），MioCore 部署新版后 App 自动生效，无需重新打包。
 - 只有改壳本身（图标、原生能力、权限说明）才需要重新出 ipa。
 
 ## 出包
 
-GitHub Actions **Build**（`.github/workflows/build.yml`）：PR / 推送 `main` / 手动运行都构建全部平台，运行页面下载产物（保留 14 天）。
+GitHub Actions **Build**（`.github/workflows/build.yml`）：PR / 推送 `main` / 手动运行都构建 iOS 和 Mac，运行页面下载产物（保留 14 天）。
 
 | job | runner | 产物 |
 |---|---|---|
 | `ios` | macos-26 | `Mio.ipa`（未签名） |
 | `mac` | macos-26 | `Mio-<版本>-mac.dmg` / `.zip`（Mac Catalyst，arm64 + x86_64，ad-hoc 签名） |
-| `android` | ubuntu-24.04 | `Mio-<版本>-android-unsigned.apk`（release，未签名）、`Mio-<版本>-android-debug.apk`（debug 签名） |
-| `windows` | windows-latest | `Mio-Setup-<版本>-x64.exe`（NSIS 安装版）、`Mio-Portable-<版本>-x64.exe`（便携版），未签名 |
+| `ios-sim-smoke` | macos-26 | iOS 模拟器冷启动 + 布局截图冒烟 |
+| `unit` | ubuntu-24.04 | Swift 纯逻辑单测 + 注入 JS 单测（node --test / jsdom） |
 | `adblock-check` | macos-26 | iOS 拦截规则编译 / YouTube 查询 / WKWebView 对比报告 |
 
-打 `v*` 标签：所有平台成功后 `release` job 把以上产物挂到 Releases。Android 正式包 `Mio.apk` 不在 CI 里签名：
-发布后在本地用固定 keystore 对 release APK 做 v2/v3 签名，`apksigner verify` 通过后上传到同一个 Release（keystore 不进仓库、不进 Actions secrets）。
+打 `v*` 标签：`unit` / `ios` / `ios-sim-smoke` / `mac` 都成功后 `release` job 把产物挂到 Releases。
 
 ## 安装
 
@@ -27,35 +28,20 @@ GitHub Actions **Build**（`.github/workflows/build.yml`）：PR / 推送 `main`
 ipa 未签名。用电脑上的 [iloader](https://iloader.app) → Import IPA，用自己的 Apple ID 签名后装到 iPhone。
 免费 Apple ID 签名 7 天有效，到期前重新装一次（数据保留），或交给 SideStore 自动续签。
 
-### Android
-
-- 装 Release 里的 **`Mio.apk`**（固定 keystore 签名，以后的版本同一签名，可直接覆盖升级、数据保留）。需要允许「安装未知应用」。
-- `-android-debug.apk`：CI 的 debug 签名（每次构建临时生成密钥），只用于临时测试；和 `Mio.apk` 签名不同，互相覆盖前要先卸载。
-- `-android-unsigned.apk`：未签名原包，不能直接安装。
-- arm64-v8a（手机）+ x86_64（模拟器 / Chromebook），最低 Android 7.0（API 24）。
-
 ### Mac
 
 - 打开 dmg，把 Mio 拖进「应用程序」。ad-hoc 签名、未公证：第一次打开在 Finder 里 **右键 → 打开**（或 系统设置 → 隐私与安全性 → 仍要打开；
   或 `xattr -dr com.apple.quarantine /Applications/Mio.app`）。macOS 12+，Apple 芯片 / Intel 通用。
 
-### Windows
-
-- `Mio-Setup-…exe` 装到当前用户（可选目录，不需要管理员）；`Mio-Portable-…exe` 免安装（数据在 `%APPDATA%\Mio`）。
-- 未签名：SmartScreen 提示「Windows 已保护你的电脑」→ **更多信息 → 仍要运行**。Windows 10 / 11 x64。
-
 ## 软件内更新（0.3.3 起）
 
-各平台启动 / 回到前台时，如果「自动检查更新」开着、距上次检查超过 24 小时，就查一次
+启动 / 回到前台时，如果「自动检查更新」开着、距上次检查超过 24 小时，就查一次
 [GitHub Releases latest](https://api.github.com/repos/mio-co/MioApp/releases/latest)（公开仓库，不需要 token）。
-设置里有「自动检查更新」开关和「立即检查」（iOS / Mac：内置浏览器设置 › 软件更新；Android：浏览器设置；Windows：文件 › 浏览器设置…）。
+设置里有「自动检查更新」开关和「立即检查」（内置浏览器设置 › 软件更新）。
 发现新版本时弹窗显示更新说明，可以「稍后」或「跳过此版本」。
 
 | 平台 | 怎么更新 | 校验 |
 |---|---|---|
-| Android | App 内下载 `Mio.apk` 到私有目录 → PackageInstaller 安装（第一次要允许 Mio「安装未知应用」） | `Mio.apk.sha256` + GitHub 资产 digest；安装前比对 APK 签名证书与当前 App 一致（调试包签名不同，不能覆盖） |
-| Windows 安装版 | electron-updater 下载 `Mio-Setup-…exe`（差分 blockmap），重启安装或退出时安装 | `latest.yml` 里的 sha512；安装包未做代码签名，可能出现「未知发布者」提示 |
-| Windows 便携版 | 只提示，打开下载页 | — |
 | Mac | App 内下载 `Mio-<版本>-mac.zip` → Mio 退出 → 辅助脚本替换当前 `Mio.app`、去掉 quarantine、重新打开（日志 `~/Library/Logs/Mio-update.log`）。从 dmg 里直接运行 / 目录不可写时改为打开下载页 | `SHA256SUMS.txt`（CI 生成）+ GitHub 资产 digest，Info.plist 的 bundle id 必须一致 |
 | iPhone / iPad | 侧载版不能自己装 ipa：弹窗「在 SideStore 中更新」添加 Mio 源，然后在 SideStore「我的 App」里更新 | SideStore / AltStore 按源里的版本和大小下载 Release 的 `Mio.ipa` |
 
@@ -78,9 +64,6 @@ https://github.com/mio-co/MioApp/releases/latest/download/altstore-source.json
 - `SHA256SUMS.txt`：本次 Release 全部 CI 产物的 sha256（`sha256sum -c` 格式）。
 - `altstore-source.json`：AltStore 源 v2 格式（`bundleIdentifier` = `xyz.mio.app`，`versions[0]` = 本次 `Mio.ipa` 的版本 / buildVersion / 日期 / 大小 / minOSVersion，
   `appPermissions.privacy` 取自 Info.plist）。生成脚本 `scripts/release-manifests.mjs`，单测 `tools/MioAppTests/js/release-manifests.test.mjs`，PR 的 `unit` job 里会对假产物跑一遍。
-- `latest.yml` + `Mio-Setup-…exe.blockmap`：electron-builder 按 `desktop/package.json` 的 `build.publish`（GitHub）生成，electron-updater 用。
-- `Mio.apk` + `Mio.apk.sha256`：发布后由本地签名脚本（固定 keystore）上传。Release 里还没有 `Mio.apk` 时 Android 不提示更新（1 小时后再查）；
-  校验值优先用 `Mio.apk.sha256`，没有时用 GitHub 记录的资产 digest，两者都有时必须一致。
 
 ## 结构
 
@@ -89,11 +72,13 @@ https://github.com/mio-co/MioApp/releases/latest/download/altstore-source.json
 | `capacitor.config.json` | 站点地址、允许跳转的域名（Cloudflare Access / Google / GitHub 登录） |
 | `www/index.html` | 离线兜底页 |
 | `ios/App` | Xcode 工程（SPM，无 CocoaPods）；同一个 target 也出 Mac Catalyst |
-| `android/` | Android 工程（Capacitor 8）：`MioBrowserPlugin`、`BrowserActivity`（独立进程 `:browser`）、`AdblockStore` / `AdblockUpdateWorker` |
-| `native/mioadblock` | Android 拦截引擎（Rust：Brave adblock-rust 0.13.3 + AdGuard 高级规则 / Scriptlets，JNI），`cargo ndk` 交叉编译 |
-| `desktop/` | Windows（Electron）壳：主窗口 + 内置浏览器（Ghostery 拦截） |
-| `scripts/fetch-adblock-assets.mjs` | iOS / Mac / Android 内置拦截资源 |
-| `.github/workflows/build.yml` | 全平台构建 + 发布 |
+| `shared/` | 注入脚本单一来源（YouTube 防沉迷、翻译），iOS / Mac 共用 |
+| `www/mio-browser/` | 阅读模式 / 强制深色 / 存到 Mio 页面脚本 |
+| `scripts/fetch-adblock-assets.mjs` | iOS / Mac 内置拦截资源 |
+| `scripts/release-manifests.mjs` | 发版清单（SHA256SUMS.txt、altstore-source.json） |
+| `assets/icon.png` | 1024×1024 图标（SideStore / AltStore 源用） |
+| `tools/` | `MioAppTests`（单测）、`AdblockCheck`（macOS 拦截核心体检） |
+| `.github/workflows/build.yml` | iOS / Mac 构建 + 发布 |
 
 ## 冷启动（0.1.2 起）
 
@@ -161,33 +146,28 @@ YouTube 视频广告靠 AdGuard Base 里的 `set-constant ytInitialPlayerRespons
 
 ## 媒体：后台播放 / 画中画 / 锁屏控制 / SponsorBlock / DRM（0.3.3 起）
 
-源码：`ios/App/App/MioMediaScripts.swift`（纯逻辑 + 注入 JS，唯一源）、`ios/App/App/MioMedia.swift`（iOS / Mac 原生部分、设置页）；
-Android / Windows 用 `node scripts/sync-media-js.mjs` 从同一份 JS 生成的 `android/app/src/main/assets/mio/youtube-media.js`、`desktop/src/inject/youtube-media.js`（单测检查没过期）。
-设置：iOS / Mac 浏览器设置 › 浏览体验 › **媒体与 SponsorBlock**；Android 浏览器设置对话框；Windows 设置窗口「浏览」。
+源码：`ios/App/App/MioMediaScripts.swift`（纯逻辑 + 注入 JS，唯一源）、`ios/App/App/MioMedia.swift`（iOS / Mac 原生部分、设置页）。
+设置：浏览器设置 › 浏览体验 › **媒体与 SponsorBlock**。
 
 - **后台播放**（沿用 v0.3.2 的「后台 / 锁屏继续播放」开关，默认开）：可见性伪造从 `MioBrowser.backgroundPlaybackScripts` 移到 `MioMediaScripts.visibilityScript`，
   现在在 window 捕获阶段就拦掉 `visibilitychange`（之前只拦 document）。iOS 上 WebKit 切后台会停掉有画面的 `<video>`：
   原生在 `didEnterBackground` 时通知页面（`__mioMedia.appState('background')`，0 / 0.5 / 1.5 秒，带后台任务），页面脚本在**真的不可见或刚切后台**、
   暂停前确实在播放、不是用户暂停时自动 `play()`。锁屏 / 控制中心的暂停（MediaSession）、耳机拔出（`routeChange oldDeviceUnavailable`）、
   来电 / 其他 App 抢占音频（`interruption began`）、画中画窗口里的暂停都算用户意图，不续播。`AVAudioSession .playback` + `UIBackgroundModes audio` 已有。
-  Android：从不调用 `webView.onPause`，播放中启动前台服务 `MioMediaService`（mediaPlayback 类型，媒体通知 + MediaSession：上一个 / 播放暂停 / 下一个；
-  Android 13+ 首次播放时请求一次通知权限）。Mac / Windows：窗口失焦本来不暂停（Windows `backgroundThrottling: false` + 同样的可见性伪造）。
+  Mac：窗口失焦本来不暂停。
 - **锁屏 Now Playing**：页面脚本设置 `navigator.mediaSession` 元数据（标题 / 频道 / 封面 `i.ytimg.com/vi/<id>/hqdefault.jpg`）、位置，
   并包一层 `setActionHandler`：YouTube 自己的处理器照常调用，只是先记一下「用户要暂停」。页面没有 MediaSession 时，iOS 原生用
   `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`（播放 / 暂停 / 切换 / 上一个 / 下一个 / 拖动进度）兜底，映射到 `__mioMedia.command(...)`。
-- **画中画**：YouTube 播放器左上角加一个按钮（点视频显示 3 秒），iOS / Mac 用 `video.webkitSetPresentationMode('picture-in-picture')`，
-  Windows 用 `requestPictureInPicture()`；Android WebView 不支持画中画，不显示。`allowsPictureInPictureMediaPlayback = true` 已有。
+- **画中画**：YouTube 播放器左上角加一个按钮（点视频显示 3 秒），用 `video.webkitSetPresentationMode('picture-in-picture')`。`allowsPictureInPictureMediaPlayback = true` 已有。
 - **SponsorBlock**（默认开，默认只跳 赞助 / 自我推广 / 互动提醒，片头 / 片尾可选）：`GET https://sponsor.ajay.app/api/skipSegments/<SHA-256(videoID) 前 4 位>?categories=[…]&actionTypes=["skip"]`，
   只发哈希前缀，本地按 videoID 精确匹配。YouTube 的 CSP 没有 `connect-src`、API 返回 `Access-Control-Allow-Origin: *`，所以页面直接 `fetch`（`credentials: omit`）；
   iOS 上 fetch 失败时经原生代取（只允许 `https://sponsor.ajay.app/api/skipSegments/<十六进制前缀>`）。播放进入片段自动跳到结尾，底部提示「已跳过…」+「撤销」
   （回到跳过前的位置，本次不再自动跳）；用户手动拖进片段内部也不再跳；进度条上按分类颜色标出片段。全部 DOM API 构建（Trusted Types）。
-- **Spotify / DRM**（不改 UA）：Android `onPermissionRequest` 只放行 `RESOURCE_PROTECTED_MEDIA_ID`（Widevine），其它资源和以前一样拒绝；WebSettings 没有阻止 EME 的项。
-  iOS / Mac 的 WKWebView 只有 FairPlay（`com.apple.fps`），没有 Widevine；Mac CI 冒烟会记录 YouTube 和 open.spotify.com 上
+- **Spotify / DRM**（不改 UA）：iOS / Mac 的 WKWebView 只有 FairPlay（`com.apple.fps`），没有 Widevine；Mac CI 冒烟会记录 YouTube 和 open.spotify.com 上
   `requestMediaKeySystemAccess`（Widevine / FairPlay / ClearKey）的结果（`smoke-mac.json` 的 `media.emeYouTube` / `media.emeSpotify`，不作门槛）。
-  Windows：官方 Electron 不带 Widevine CDM（只有 castlabs 的 Electron for Content Security 带），Spotify 网页播放器的 DRM 内容放不了；没有换 Electron，冒烟里记录 `widevine` 结果。
 - 测试：`tools/MioAppTests/js/media-youtube.test.mjs`（videoID 解析、哈希前缀匹配、跳过 / 撤销 / 手动 seek、续播判定、MediaSession、画中画、Trusted Types）、
-  `media-visibility.test.mjs`（可见性伪造 + 与防沉迷共存 + 生成文件没过期）、`MioMediaScriptsTests.swift`、Android `MioMediaTest`、`desktop/test/media.test.js`；
-  Mac 冒烟门槛 `mediaOK`（真实 YouTube 页面里脚本已注入、`crypto.subtle` 哈希前缀正确），Windows 冒烟门槛 `media`。
+  `media-visibility.test.mjs`（可见性伪造 + 与防沉迷共存）、`MioMediaScriptsTests.swift`；
+  Mac 冒烟门槛 `mediaOK`（真实 YouTube 页面里脚本已注入、`crypto.subtle` 哈希前缀正确）。
 
 SponsorBlock 数据由社区提交，来自 [SponsorBlock](https://sponsor.ajay.app)（作者 Ajay Ramachandran），按 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) 授权使用；
 Mio 只在播放时实时查询，不缓存到磁盘、不再分发数据。
@@ -196,16 +176,6 @@ Mio 只在播放时实时查询，不缓存到磁盘、不再分发数据。
 
 - WKWebView 不支持网页里的文件下载，快传取件下载可能无效（后续可加原生下载插件）。
 - 不能后台运行，也不能自动读取相册。
-
-## Android（0.3.0 起）
-
-- Capacitor 8 Android 工程，主界面同 iOS（`/mio/nav`），注册同名插件 `MioBrowser`（`open` / `openSettings` / `getInfo`），MioCore 无需区分平台。
-- 内置浏览器 `BrowserActivity` 跑在独立进程 `:browser`（WebView 数据目录与主界面分开）：地址栏、前进后退刷新、分享、用系统浏览器打开、拦截开关 / 设置。
-- 拦截：`native/mioadblock`（Rust）—— Brave [adblock-rust](https://github.com/brave/adblock-rust) 网络请求 + 元素隐藏；AdGuard 高级规则（scriptlet / CSS / JS / ExtendedCss）自建索引，
-  用 AdGuard Scriptlets 生成页面脚本注入。列表与 iOS 相同（同一份 `fetch-adblock-assets.mjs` 输出，含 filter-0）。
-- 自动更新：WorkManager 每天 + 启动时距上次超过 24 小时，逐个列表条件请求；Scriptlets 同 iOS（npm 同主版本 latest → jsDelivr + SHA-256 校验）。
-- CI：`cargo test`（真实列表）→ `cargo ndk -t arm64-v8a -t x86_64 --platform 24` → `cap sync android` → `assembleRelease assembleDebug`，检查 APK 内两个架构的 `libmioadblock.so` 和拦截资源。
-- 签名：`android/app/build.gradle` 从环境变量读取（`MIO_KEYSTORE_FILE` 等），缺失时跳过；CI 不配置，release 保持未签名。
 
 ## Mac（Mac Catalyst，0.3.0 起）
 
@@ -226,18 +196,3 @@ Mio 只在播放时实时查询，不缓存到磁盘、不再分发数据。
   且内置浏览器里 YouTube 页面的 `navigator.userAgent` 是桌面 Safari、MediaSource 可用（`browserProbe`）。
 - 单测（`unit` job，不需要 Xcode）：`swift test --package-path tools/MioAppTests`（UA、桌面版改写、过滤列表里会删 YouTube `streamingData` 的规则体检），
   `node --test tools/MioAppTests/js/*.test.mjs`（回车键兜底、通行密钥提示脚本，从 Swift 文件里抽出 JS 跑）。
-
-## Windows（Electron，0.3.0 起）
-
-`desktop/`：Electron 44 + electron-builder（NSIS + portable）。
-
-- 主窗口（会话 `persist:mio`）加载 `/mio/nav`，preload 暴露 `window.MioDesktop.browser`（只接受 MioCore 站点主框架的调用）。主窗口只允许 MioCore / Cloudflare Access / Google / GitHub 登录的跳转，其余站外地址交给内置浏览器。
-- 内置浏览器：独立窗口，会话 `persist:mio-browser`（与主窗口分开，可在设置里清除）；地址栏（网址或 Google 搜索）、前进后退刷新、用系统浏览器打开、盾牌（本页拦截数、当前站点开关）、设置；
-  Ctrl+L / F5 / Alt+← → / Ctrl+W / F12；后台播放（`document.hidden` 恒为 false + `backgroundThrottling: false`）。
-- 拦截：[@ghostery/adblocker-electron](https://github.com/ghostery/adblocker) 2.20.1 —— 网络（含 `$redirect` / `$csp`）、元素隐藏（generic、扩展选择器、DOM 变化补充）、Scriptlets（`##+js()`，uBO resources.json）。
-  Scriptlets 由 Mio 的 frame preload 在页面脚本之前同步取到并注入主世界（Ghostery 默认的异步注入太晚），iframe 里也生效。
-  列表：与 iOS / Android 相同的 6 个 AdGuard 列表的 **uBlock Origin 语法版本**（`filters.adtidy.org/extension/ublock/filters/<id>.txt`），加 `desktop/filters/mio-youtube.txt`（filter-0 的 uBO 版）。
-- 引擎在 `utilityProcess` 里构建（约 55 万条网络规则，几秒），序列化缓存到 `%APPDATA%\Mio\adblock\engine.bin`，之后启动直接反序列化（约 50 ms）。
-- 自动更新：启动 15 秒后 + 每小时检查是否满 24 小时，逐个列表 / resources.json 条件请求；有变化后台重建并原子替换；失败继续用现有版本，首装用安装包内置版本。
-- 设置窗口：总开关、当前站点开关、外链默认用系统浏览器、后台播放、清除浏览数据、列表规则数 / 版本 / 下载时间、Scriptlets 数、引擎规模、上次检查结果、立即更新、白名单（含子域名）。
-- 测试：`cd desktop && npm test`；CI 还启动打包后的 exe 冒烟（引擎就绪、主窗口有 `MioDesktop.browser`、YouTube 有请求被拦截、白名单后不拦截）。本地运行：`npm ci && npm run fetch-assets && npm start`。

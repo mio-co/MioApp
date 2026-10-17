@@ -1,12 +1,9 @@
-// 后台播放的可见性伪造（MioMediaScripts.visibilityScript）+ 与 YouTube 防沉迷脚本共存；Android / Windows 生成文件没过期。
+// 后台播放的可见性伪造（MioMediaScripts.visibilityScript）+ 与 YouTube 防沉迷脚本共存。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { extractMediaScript } from './media-harness.mjs';
 import { extractScript } from './harness.mjs';
-import { generated, TARGETS } from '../../../scripts/sync-media-js.mjs';
 
 const VIS = extractMediaScript('visibility');
 
@@ -54,13 +51,4 @@ test('coexists with YouTube focus script injected before it (its window-capture 
   flip(false);
   assert.ok(timers.size >= before, 'focus timer resumed on real show');
   assert.equal(d.hidden, false);
-});
-
-test('generated Android / Windows copies match the Swift source (run node scripts/sync-media-js.mjs)', () => {
-  const want = generated();
-  assert.equal(want.split('__MIO_MEDIA_CONFIG__').length, 2, 'exactly one config placeholder (header comment must not contain it)');
-  for (const rel of TARGETS) {
-    const p = fileURLToPath(new URL('../../../' + rel, import.meta.url));
-    assert.equal(readFileSync(p, 'utf8'), want, `${rel} is stale`);
-  }
 });
