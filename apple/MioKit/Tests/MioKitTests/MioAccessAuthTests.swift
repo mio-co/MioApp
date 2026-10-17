@@ -57,6 +57,7 @@ final class MioAccessAuthTests: XCTestCase {
         XCTAssertEqual(MioAccessAuth.homeStatus(landedOn: URL(string: "https://accounts.google.com/o/oauth2/auth"), home: home), "access-login")
         XCTAssertEqual(MioAccessAuth.homeStatus(landedOn: URL(string: "https://example.com/"), home: home), "other")
         XCTAssertEqual(MioAccessAuth.homeStatus(landedOn: nil, home: home), "none")
+        XCTAssertEqual(MioAccessAuth.homeStatus(landedOn: URL(string: "mio://home"), home: home), "internal", "跳转还没提交，不算到了 MioCore")
     }
 
     func testCookieBackupSelection() {

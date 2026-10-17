@@ -111,9 +111,11 @@ public enum MioAccessAuth {
 
     // MARK: - 冒烟
 
-    /// 打开 mio://home 后落地页的分类：ok（MioCore 首页）/ access-login（Access 登录页，CI 上没登录，不算失败）/ other
+    /// 打开 mio://home 后落地页的分类：ok（MioCore 首页）/ access-login（Access 登录页，CI 上没登录，不算失败）/
+    /// internal（还停在 mio:// 内置页，跳转没提交）/ other
     public static func homeStatus(landedOn url: URL?, home: MioHomeModel) -> String {
         guard let u = url else { return "none" }
+        if MioHomeModel.isInternal(u) { return "internal" }
         if home.isHome(u) || (MioCoreOrigin.isMioCore(u, prefs: home.prefs) && !u.path.hasPrefix("/cdn-cgi/")) { return "ok" }
         if isAccessURL(u, prefs: home.prefs) || isIdentityProviderURL(u) { return "access-login" }
         return "other"

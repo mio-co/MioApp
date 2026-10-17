@@ -92,6 +92,13 @@ final class MioSmoke {
         var homeOK: Any = false
         if let tab = openTab(MioBuild.homeDisplayURL, select: true), let wv = await webView(of: tab) {
             await waitLoad(wv, timeout: 30)
+            // mio://home → location.replace(MioCore) → (Access) 302 → login page: wait until the web view has left mio://
+            var leave = 0
+            while (MioBuild.isMioScheme(wv.url) || wv.isLoading) && leave < 60 {
+                try? await Task.sleep(nanoseconds: 500_000_000); leave += 1
+            }
+            await waitLoad(wv, timeout: 20)
+            home["waitedForRedirectMs"] = leave * 500
             let navs = host.mainFrameLog(for: wv)
             home["mainFrameNavigations"] = navs
             home["webViewURL"] = orNull(wv.url?.absoluteString)
