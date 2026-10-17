@@ -322,6 +322,9 @@ final class MioMobileChrome: NSObject, UIGestureRecognizerDelegate {
         field.translatesAutoresizingMaskIntoConstraints = false
         field.alpha = editing ? 1 : 0
         field.isUserInteractionEnabled = editing
+        // 完整网址很长：编辑框不能把胶囊撑出屏幕
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         address.addSubview(field)
         cs += [
             field.leadingAnchor.constraint(equalTo: address.leadingAnchor, constant: 4),
@@ -436,6 +439,8 @@ final class MioMobileChrome: NSObject, UIGestureRecognizerDelegate {
             bar.centerXAnchor.constraint(equalTo: safe.centerXAnchor),
             width,
             bar.widthAnchor.constraint(lessThanOrEqualToConstant: 640),
+            bar.leadingAnchor.constraint(greaterThanOrEqualTo: safe.leadingAnchor, constant: 10),
+            bar.trailingAnchor.constraint(lessThanOrEqualTo: safe.trailingAnchor, constant: -10),
             bar.heightAnchor.constraint(equalToConstant: Self.barHeight),
             editing ? kb : safeBottom,
             stack.leadingAnchor.constraint(equalTo: bar.contentView.leadingAnchor, constant: 4),
@@ -1251,6 +1256,10 @@ enum MioMobileChromeSmoke {
         let r = m.smokeReport()
         check("legacy bars hidden", b.topBar.isHidden && b.toolbar.isHidden && b.miniBar.isHidden)
         check("webView full screen", abs(b.webView.frame.minY) < 0.5)
+        if let bc = r["frames"] as? [String: String], let f = bc["bottomChrome"], f != "null" {
+            let rect = NSCoder.cgRect(for: f)
+            check("bottom chrome inside screen", rect.minX >= -0.5 && rect.maxX <= b.view.bounds.width + 0.5)
+        }
         if m.layout != .top {
             check("no bar under status bar (expanded)", (r["topIntruders"] as? [String])?.isEmpty ?? false)
             check("content inset top == safe top", abs(b.webView.scrollView.contentInset.top - b.view.safeAreaInsets.top) < 0.5)
