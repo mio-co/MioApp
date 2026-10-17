@@ -973,10 +973,14 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
             NSWorkspace.shared.open(url) // mailto: / tel: / 其他 App 的 scheme 交给系统
             return .cancel
         }
-        // ⌘点链接 → 后台新标签（Firefox / Safari 行为）；⇧⌘点 → 前台
-        if navigationAction.navigationType == .linkActivated, navigationAction.modifierFlags.contains(.command), scheme == "http" || scheme == "https" {
+        // ⌘点 / 中键点链接 → 后台新标签（Firefox 行为）；⇧⌘ / ⇧中键 → 前台（MioLinkOpening）
+        let placement = MioLinkOpening.linkActivation(platform: .mac, isLinkActivated: navigationAction.navigationType == .linkActivated,
+                                                      isHTTP: scheme == "http" || scheme == "https",
+                                                      modifiers: Self.linkModifiers(navigationAction.modifierFlags),
+                                                      buttonNumber: navigationAction.buttonNumber)
+        if placement != .currentTab {
             let container = tabID(of: webView).flatMap { store.tab($0)?.containerID }
-            newTab(url: url.absoluteString, containerID: container, activate: navigationAction.modifierFlags.contains(.shift), fromActive: true)
+            newTab(url: url.absoluteString, containerID: container, activate: placement == .foregroundTab, fromActive: true)
             return .cancel
         }
         // 用户脚本安装：打开 .user.js 时问是否安装（Tampermonkey 行为）
@@ -990,6 +994,15 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         return .allow
     }
 
+    static func linkModifiers(_ f: NSEvent.ModifierFlags) -> MioLinkOpening.Modifiers {
+        var m: MioLinkOpening.Modifiers = []
+        if f.contains(.command) { m.insert(.command) }
+        if f.contains(.shift) { m.insert(.shift) }
+        if f.contains(.option) { m.insert(.option) }
+        if f.contains(.control) { m.insert(.control) }
+        return m
+    }
+
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()
     }
@@ -998,14 +1011,18 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // Cloudflare Access 登录（MioCore 在 Access 后面）：登录页 / MioCore 弹出的登录地址在当前标签继续，不开新标签
+        // Cloudflare Access 登录（MioCore 在 Access 后面）：Access 登录页弹出的登录地址 / MioCore 弹出的 Access 页面在当前标签继续。
+        // 只有这一种（MioAccessAuth.popupDisposition）；MioCore 导航页和普通网站的 target=_blank / window.open 都开新标签
         if host.shouldOpenPopupInOpener(opener: webView.url, target: navigationAction.request.url) {
             webView.load(navigationAction.request)
             return nil
         }
+        // 新标签：普通点击 / window.open → 前台；⌘ / 中键 → 后台（⇧ 前台）。返回新 WKWebView：保留 window.opener（rel=noopener 时 WebKit 自己断开）
+        let placement = MioLinkOpening.newWindow(platform: .mac, modifiers: Self.linkModifiers(navigationAction.modifierFlags),
+                                                 buttonNumber: navigationAction.buttonNumber)
         let container = tabID(of: webView).flatMap { store.tab($0)?.containerID }
         let url = navigationAction.request.url?.absoluteString ?? "about:blank"
-        return newTab(url: url, containerID: container, activate: true, fromActive: true, configuration: configuration)?.webView
+        return newTab(url: url, containerID: container, activate: placement == .foregroundTab, fromActive: true, configuration: configuration)?.webView
     }
 
     func webViewDidClose(_ webView: WKWebView) {
