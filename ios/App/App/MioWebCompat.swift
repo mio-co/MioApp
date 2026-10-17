@@ -375,6 +375,7 @@ enum MioWebCompat {
           r.adaptiveFormats = af.length;
           r.maxHeight = af.reduce(function (m, f) { return Math.max(m, f.height || 0); }, 0);
           r.progressiveFormats = (sd.formats || []).length;
+          r.hlsManifest = !!sd.hlsManifestUrl;
         } else if (pr) {
           r.streamingData = 'missing';
         }

@@ -364,14 +364,13 @@ enum MioTranslate {
         pageState(webView) { state in
             let host = webView.url?.host
             let target = MioTranslateCore.languageName(MioTranslateSettings.target)
-            let a = UIAlertController(title: "翻译 → \(target)", message: nil, preferredStyle: .actionSheet)
+            let a = MioActionList(title: "翻译 → \(target)")
             let mode = state?["mode"] as? String ?? "off"
             if state != nil {
-                let mark: (String) -> String = { m in mode == m ? " ✓" : "" }
-                a.addAction(UIAlertAction(title: "双语对照" + mark("bilingual"), style: .default) { _ in MioTranslate.setMode(webView, "bilingual") })
-                a.addAction(UIAlertAction(title: "仅显示译文" + mark("translation"), style: .default) { _ in MioTranslate.setMode(webView, "translation") })
+                a.add("双语对照", checked: mode == "bilingual") { MioTranslate.setMode(webView, "bilingual") }
+                a.add("仅显示译文", checked: mode == "translation") { MioTranslate.setMode(webView, "translation") }
                 if mode != "off" {
-                    a.addAction(UIAlertAction(title: "显示原文", style: .default) { _ in MioTranslate.setMode(webView, "off") })
+                    a.add("显示原文") { MioTranslate.setMode(webView, "off") }
                 }
                 if let err = state?["lastError"] as? String, !err.isEmpty { a.message = "上次失败：\(err)" }
             } else {
@@ -379,54 +378,36 @@ enum MioTranslate {
             }
             if let h = host, let norm = MioTranslateCore.normalizeHost(h) {
                 if MioTranslateSettings.isAuto(h) {
-                    a.addAction(UIAlertAction(title: "不再自动翻译 \(norm)", style: .default) { _ in MioTranslateSettings.setAuto(h, false) })
+                    a.add("不再自动翻译 \(norm)") { MioTranslateSettings.setAuto(h, false) }
                 } else {
-                    a.addAction(UIAlertAction(title: "总是翻译 \(norm)", style: .default) { _ in
+                    a.add("总是翻译 \(norm)") {
                         MioTranslateSettings.setAuto(h, true)
                         if mode == "off" { MioTranslate.setMode(webView, MioTranslateSettings.display) }
-                    })
+                    }
                 }
             }
-            a.addAction(UIAlertAction(title: "译为…（\(target)）", style: .default) { _ in
+            a.add("译为…（\(target)）") {
                 MioTranslate.presentLanguagePicker(from: vc, sourceItem: barItem, sourceView: nil) { webView.reload() }
-            })
-            a.addAction(UIAlertAction(title: "翻译设置…", style: .default) { _ in MioTranslate.presentSettings(from: vc, host: host) })
-            a.addAction(UIAlertAction(title: "取消", style: .cancel))
-            if let pop = a.popoverPresentationController {
-                if let item = barItem {
-                    pop.barButtonItem = item
-                } else {
-                    pop.sourceView = vc.view
-                    pop.sourceRect = CGRect(x: vc.view.bounds.midX, y: vc.view.bounds.maxY - 40, width: 1, height: 1)
-                }
             }
-            vc.present(a, animated: true)
+            a.add("翻译设置…") { MioTranslate.presentSettings(from: vc, host: host) }
+            a.present(from: vc, barItem: barItem)
         }
     }
 
+    /// 最近一次弹出的「翻译成」列表（冒烟测试检查是纵向列表）
+    static weak var lastLanguagePicker: UIViewController?
+
     static func presentLanguagePicker(from vc: UIViewController, sourceItem: UIBarButtonItem?, sourceView: UIView?, done: (() -> Void)?) {
-        let a = UIAlertController(title: "翻译成", message: nil, preferredStyle: .actionSheet)
+        let a = MioActionList(title: "翻译成")
         let cur = MioTranslateSettings.target
         for l in MioTranslateCore.languages {
-            a.addAction(UIAlertAction(title: l.name + (l.code == cur ? " ✓" : ""), style: .default) { _ in
+            a.add(l.name, checked: l.code == cur) {
                 guard l.code != cur else { return }
                 MioTranslateSettings.target = l.code
                 done?()
-            })
-        }
-        a.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let pop = a.popoverPresentationController {
-            if let item = sourceItem {
-                pop.barButtonItem = item
-            } else if let v = sourceView {
-                pop.sourceView = v
-                pop.sourceRect = v.bounds
-            } else {
-                pop.sourceView = vc.view
-                pop.sourceRect = CGRect(x: vc.view.bounds.midX, y: vc.view.bounds.midY, width: 1, height: 1)
             }
         }
-        vc.present(a, animated: true)
+        lastLanguagePicker = a.present(from: vc, barItem: sourceItem, sourceView: sourceView)
     }
 
     static func presentSettings(from vc: UIViewController, host: String?) {
@@ -628,16 +609,11 @@ final class MioTranslateSettingsViewController: UITableViewController {
         case .target:
             MioTranslate.presentLanguagePicker(from: self, sourceItem: nil, sourceView: cell, done: nil)
         case .display:
-            let a = UIAlertController(title: "显示方式", message: nil, preferredStyle: .actionSheet)
+            let a = MioActionList(title: "显示方式")
             for (v, name) in [("bilingual", "双语对照（原文下方显示淡色译文）"), ("translation", "仅译文（隐藏原文）")] {
-                a.addAction(UIAlertAction(title: name + (MioTranslateSettings.display == v ? " ✓" : ""), style: .default) { _ in MioTranslateSettings.display = v })
+                a.add(name, checked: MioTranslateSettings.display == v) { MioTranslateSettings.display = v }
             }
-            a.addAction(UIAlertAction(title: "取消", style: .cancel))
-            if let pop = a.popoverPresentationController, let c = cell {
-                pop.sourceView = c
-                pop.sourceRect = c.bounds
-            }
-            present(a, animated: true)
+            a.present(from: self, sourceView: cell)
         case .addSite:
             let prefill = currentHost.flatMap { MioTranslateCore.normalizeHost($0) }
             ask("自动翻译网站", message: "输入域名，例如 example.com（含子域名）", text: prefill, placeholder: "example.com", secure: false, keyboard: .URL, extra: nil) { t in

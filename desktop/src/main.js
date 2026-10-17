@@ -170,6 +170,15 @@ if (!app.requestSingleInstanceLock()) {
     });
   }
 
+  function zoomMenu(win, dir) {
+    if (browser && browser.win && win === browser.win) return browser.command(dir === 'in' ? 'zoomIn' : dir === 'out' ? 'zoomOut' : 'zoomReset');
+    const wc = win && !win.isDestroyed() && win.webContents;
+    if (!wc) return;
+    const zc = require('./zoom-core');
+    const cur = wc.getZoomFactor();
+    wc.setZoomFactor(dir === 'in' ? zc.zoomIn(cur) : dir === 'out' ? zc.zoomOut(cur) : 1);
+  }
+
   function buildMenu() {
     const isMac = process.platform === 'darwin';
     const template = [
@@ -186,9 +195,11 @@ if (!app.requestSingleInstanceLock()) {
       {
         label: '视图',
         submenu: [
-          { role: 'resetZoom', label: '实际大小' },
-          { role: 'zoomIn', label: '放大' },
-          { role: 'zoomOut', label: '缩小' },
+          // 内置浏览器窗口：Safari 档位 + 按站点记住（zoom.js）；主窗口：同样的档位，不记
+          { label: '实际大小', accelerator: 'CmdOrCtrl+0', click: (_i, w) => zoomMenu(w, 'reset') },
+          { label: '放大', accelerator: 'CmdOrCtrl+Plus', click: (_i, w) => zoomMenu(w, 'in') },
+          { label: '放大', accelerator: 'CmdOrCtrl+=', visible: false, acceleratorWorksWhenHidden: true, click: (_i, w) => zoomMenu(w, 'in') },
+          { label: '缩小', accelerator: 'CmdOrCtrl+-', click: (_i, w) => zoomMenu(w, 'out') },
           { type: 'separator' },
           { role: 'togglefullscreen', label: '全屏' },
         ],

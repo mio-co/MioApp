@@ -129,6 +129,11 @@ function render(s) {
   $('count').textContent = active && s.blocked ? (s.blocked > 99 ? '99+' : String(s.blocked)) : '';
   $('reader').hidden = !s.readerable;
   $('mio').hidden = !s.pageTools;
+  // 页面缩放百分比（非 100% 时显示；点按恢复默认）
+  const zb = $('zoomBadge');
+  const z = typeof s.zoom === 'number' ? s.zoom : 1;
+  zb.hidden = !s.url || Math.abs(z - 1) < 0.001;
+  zb.textContent = s.zoomLabel || '';
   shield.title = !s.adblockEnabled ? '广告拦截已关闭' : s.siteWhitelisted ? `已在 ${s.host} 停用拦截` : !s.adblockReady ? '正在准备拦截规则…' : `已拦截 ${s.blocked} 个请求`;
   renderTabs(s);
 }
@@ -159,6 +164,7 @@ $('tabstrip').addEventListener('dblclick', (e) => {
 });
 $('mio').onclick = () => window.mioToolbar.cmd('pageMenu');
 $('reader').onclick = () => window.mioToolbar.cmd('reader');
+$('zoomBadge').onclick = () => window.mioToolbar.cmd('zoomReset');
 
 addr.addEventListener('focus', () => {
   editing = true;

@@ -248,6 +248,8 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             var translate: [String: Any]?
             // 用户脚本 + WebRTC 控制（MioUserScripts.swift 的 MioUserScriptSmoke）
             var extrasOK = false
+            var actionListOK = false
+            var parityOK = false
             func finish() {
                 let top = MioBrowserViewController.topPresenter(self)
                 let presented = top is MioBrowserViewController || top is MioTabsViewController
@@ -258,8 +260,8 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["mediaSourcePrefs"] = MioWebKitCompat.mediaSourcePrefs
                 report["browserUserAgent"] = MioWebKitCompat.desktopUserAgent
                 // 内置浏览器打开 YouTube 后的诊断：门槛只看页面里的 UA 是桌面 Safari（不含 Mobile）且没被跳到 m.youtube.com。
-                // MediaSource/ManagedMediaSource 只记录不作门槛：GitHub macOS runner VM 无硬件解码，偏好已开时
-                // window.MediaSource 仍是 undefined；高清（MSE）要在真机上确认。
+                // MediaSource/ManagedMediaSource 只记录不作门槛：Mac Catalyst 版 WebKit 编译时就关掉了 ENABLE(MEDIA_SOURCE)
+                // （WTF/PlatformEnableCocoa.h：!PLATFORM(MACCATALYST)），偏好开了也没有 window.MediaSource，真机同样如此。
                 var desktopOK = false
                 if let probe = MioBrowserViewController.lastMediaProbe,
                    let obj = try? JSONSerialization.jsonObject(with: Data(probe.utf8)) as? [String: Any] {
@@ -268,8 +270,9 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                     let mse = (obj["mediaSource"] as? String) == "function" || (obj["managedMediaSource"] as? String) == "function"
                     report["mseAvailable"] = mse
                     NSLog("⚡️ Mio smoke: MSE available in browser = %@ (informational, not a gate)", mse ? "yes" : "no")
-                    let desktopSafariUA = ua.contains("Macintosh") && ua.contains("Safari/") && ua.contains("Version/") && !ua.contains("Mobile")
-                    desktopOK = desktopSafariUA && (obj["host"] as? String) != "m.youtube.com"
+                    // v0.3.4：Mac 上 YouTube 恢复 v0.3.0 的 UA（Mobile Safari 标识 → YouTube 下发 HLS 高清，MioDesktopParity.swift）；
+                    // 其他站点仍是桌面 Safari UA（下面 parity 冒烟另查）
+                    desktopOK = ua == MioDesktopParity.legacyYouTubeUA
                 } else {
                     report["browserProbe"] = MioBrowserViewController.lastMediaProbe ?? "none"
                 }
@@ -293,7 +296,9 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["translateOK"] = translateOK
                 let page = report["page"] as? [String: Any]
                 report["tabsOK"] = tabsOK
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK && tabsOK
+                report["parityOK"] = parityOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK && tabsOK && actionListOK && parityOK
+                report["actionListOK"] = actionListOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
@@ -321,7 +326,23 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                                         report["tabs"] = r
                                         tabsOK = ok
                                         NSLog("⚡️ Mio smoke: tabs %@ %@", ok ? "OK" : "FAILED", "\(r)")
-                                        finish()
+                                        // YouTube 高清（MioYouTubeHD.swift）：MSE / 可用画质
+                                        MioYouTubeHDSmoke.run { r, ok in
+                                            report["youtubeHD"] = r
+                                            report["youtubeHDOK"] = ok
+                                            // 翻译「翻译成」等选项列表（MioActionList.swift）：纵向 popover，不再是横向一排
+                                            MioActionListSmoke.run { r, ok in
+                                                report["actionList"] = r
+                                                actionListOK = ok
+                                                // Mac 跟 Safari 对齐（MioDesktopParity.swift）：⌘+ 后 pageZoom 变、重载后保持、⌘0 复位；YouTube UA / HLS 记录
+                                                MioDesktopParitySmoke.run { r, ok in
+                                                    report["parity"] = r
+                                                    parityOK = ok
+                                                    NSLog("⚡️ Mio smoke: parity %@ %@", ok ? "OK" : "FAILED", "\(r)")
+                                                    finish()
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

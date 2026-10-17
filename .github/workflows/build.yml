@@ -167,6 +167,9 @@ jobs:
           SMOKE_WAIT: '20'
         run: bash scripts/sim-launch-smoke.sh build-sim/Build/Products/Release-iphonesimulator/App.app sim-smoke ios-sim
 
+      - name: iPhone Safari-style browser layout (compact / bottom / top screenshots)
+        run: bash scripts/sim-layout-smoke.sh build-sim/Build/Products/Release-iphonesimulator/App.app sim-smoke/layout
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -341,6 +344,7 @@ jobs:
             bash scripts/android-ytfocus-smoke.sh android-smoke/ytfocus
             bash scripts/android-containers-smoke.sh android-smoke/containers
             bash scripts/android-tabs-smoke.sh android-smoke/tabs
+            bash scripts/android-layout-smoke.sh android-smoke/layout
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -515,6 +519,12 @@ jobs:
           if run wrongid "xyz.example.other"; then echo "expected failure for wrong bundle id"; exit 1; fi
           grep -q 'unexpected bundle id' "$T/wrongid/update.log"
           test -e "$T/wrongid/apps/Mio.app/Contents/old-marker"
+
+      - name: WebKit MSE baseline (AppKit WKWebView on this runner, informational)
+        continue-on-error: true
+        run: |
+          # macOS 没有 timeout 命令；脚本自己 40 秒超时退出
+          swift scripts/mac-appkit-mse-probe.swift https://example.com/ || true
 
       - name: Smoke test (public site page → window.MioDesktop.browser.open → in-app browser + adblock ready)
         run: |

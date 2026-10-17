@@ -112,8 +112,10 @@ enum MioWebKitCompat {
 
     static var desktopUserAgent: String { MioWebCompat.desktopUserAgent(safariVersion: safariVersion) }
 
-    /// Mac 上确保 MediaSource（MSE）开启：没有 MSE 时 YouTube 只能给渐进式 mp4（最高 360p）。
-    /// iPad 布局的 Catalyst 默认应已开启；这里用 WKPreferences 的私有开关兜底（先 responds(to:) 检查，ObjC 异常也接住）。
+    /// Mac 上打开 MediaSource（MSE）偏好：没有 MSE 时 YouTube 只能给渐进式 mp4（最高 360p）。
+    /// 注意（v0.3.4 CI 诊断）：Mac Catalyst 的 WebKit 编译时就没有 ENABLE(MEDIA_SOURCE)（PlatformEnableCocoa.h 排除了 MACCATALYST），
+    /// 这个偏好能设成 true，但 window.MediaSource / ManagedMediaSource 仍不存在；保留它只为将来系统放开时自动生效。
+    /// 私有开关：先 responds(to:) 检查，ObjC 异常也接住。
     /// 免签名包不经 App Review，私有开关只在 Mac 上设置，iPhone 不动。
     @discardableResult
     static func enableMediaSource(_ prefs: WKPreferences) -> [String: Bool] {
@@ -369,7 +371,9 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     /// 媒体（后台续播 / 锁屏控制兜底 / SponsorBlock 请求兜底），MioMedia.swift
     private var media: MioMediaController?
     /// 阅读模式 / 强制深色 / 存到 Mio（MioPageTools.swift）
-    private var pageTools: MioPageTools!
+    var pageTools: MioPageTools!
+    /// iPhone：Safari 式布局（MioMobileChrome.swift）；iPad / Mac 为 nil
+    var mobileChrome: MioMobileChrome?
     /// 这个浏览器 WebView 用的容器（登录状态隔离，MioContainerStore.swift）。必须在 viewDidLoad 之前设置；默认 = 原来的浏览数据
     var containerId: String = MioContainerCore.defaultId
 
@@ -777,6 +781,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     /// 顶 / 底栏让出的位置：显示时 = 地址栏高度（不含状态栏）/ 工具栏高度；隐藏时 = 域名条 / 0
     private func desiredInsets() -> UIEdgeInsets {
         // 顶部工具栏（Mac / iPad）：网页从标签条下面开始，不用 inset 让位
+        if let m = mobileChrome { return m.insets(hidden: chromeHidden) }
         if tabChrome?.isTop == true { return chromeHidden ? UIEdgeInsets(top: Self.miniBarHeight, left: 0, bottom: 0, right: 0) : .zero }
         if chromeHidden { return UIEdgeInsets(top: Self.miniBarHeight, left: 0, bottom: 0, right: 0) }
         let top = max(0, topBar.frame.maxY - view.safeAreaInsets.top)
@@ -805,7 +810,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     private func metrics(_ sv: UIScrollView) -> MioToolbarAutoHide.Metrics {
         MioToolbarAutoHide.Metrics(offsetY: Double(sv.contentOffset.y), contentHeight: Double(sv.contentSize.height),
-                                   viewportHeight: Double(sv.bounds.height), hiddenTopInset: Double(Self.miniBarHeight),
+                                   viewportHeight: Double(sv.bounds.height), hiddenTopInset: Double(mobileChrome?.hiddenTopInset ?? Self.miniBarHeight),
                                    bottomInset: Double(sv.contentInset.bottom))
     }
 
@@ -824,7 +829,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     @objc private func miniBarTapped() { showChrome(animated: true) }
 
-    private func setChromeHidden(_ hide: Bool, animated: Bool) {
+    func setChromeHidden(_ hide: Bool, animated: Bool) {
         guard isViewLoaded, hide != chromeHidden else { return }
         view.layoutIfNeeded()
         let sv = webView.scrollView
@@ -832,7 +837,9 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         let maxY = sv.contentSize.height - sv.bounds.height + sv.contentInset.bottom
         let atBottom = !hide && sv.contentOffset.y >= maxY - 2 && sv.contentSize.height > sv.bounds.height
         chromeHidden = hide
-        if let tc = tabChrome, tc.isTop, let top = tc.top {
+        if let m = mobileChrome {
+            m.prepareCollapse(hide)
+        } else if let tc = tabChrome, tc.isTop, let top = tc.top {
             top.constant = hide ? -(toolbar.bounds.height + tc.stripHeight) : 0
         } else {
             topBarTop.constant = hide ? -topBar.bounds.height : 0
@@ -842,6 +849,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         animatingChrome = true
         let changes = {
             self.view.layoutIfNeeded()
+            self.mobileChrome?.applyCollapse(hide)
             self.miniBar.alpha = hide ? 1 : 0
             self.topBar.alpha = hide ? 0 : 1
             self.toolbar.alpha = hide ? 0 : 1
@@ -927,42 +935,37 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     @objc private func shieldTapped() {
         let host = webView.url?.host
-        let alert = UIAlertController(title: host ?? "广告拦截", message: nil, preferredStyle: .actionSheet)
+        let alert = MioActionList(title: host ?? "广告拦截")
         if !MioAdblockSettings.enabled {
             alert.message = "广告拦截已关闭"
-            alert.addAction(UIAlertAction(title: "开启广告拦截", style: .default) { [weak self] _ in
+            alert.add("开启广告拦截") { [weak self] in
                 MioAdblockSettings.enabled = true
                 self?.webView.reload()
-            })
+            }
         } else if let host = host {
             if MioAdblockSettings.isAllowlisted(host) {
                 alert.message = "此站点在白名单中，不拦截"
-                alert.addAction(UIAlertAction(title: "恢复拦截此站点", style: .default) { [weak self] _ in
+                alert.add("恢复拦截此站点") { [weak self] in
                     MioAdblockSettings.setAllowlisted(host, false)
                     self?.webView.reload()
-                })
+                }
             } else {
                 alert.message = "正在拦截广告和跟踪器"
-                alert.addAction(UIAlertAction(title: "此站点不拦截（加入白名单）", style: .default) { [weak self] _ in
+                alert.add("此站点不拦截（加入白名单）") { [weak self] in
                     MioAdblockSettings.setAllowlisted(host, true)
                     self?.webView.reload()
-                })
+                }
             }
         }
         if let host = host, MioWebRTCSettings.enabled {
             let allowed = MioWebRTCSettings.isAllowed(host)
-            alert.addAction(UIAlertAction(title: allowed ? "此站点恢复屏蔽 WebRTC" : "此站点允许 WebRTC（网页通话）", style: .default) { [weak self] _ in
+            alert.add(allowed ? "此站点恢复屏蔽 WebRTC" : "此站点允许 WebRTC（网页通话）") { [weak self] in
                 MioWebRTCSettings.setAllowed(host, !allowed)
                 self?.webView.reload()
-            })
+            }
         }
-        alert.addAction(UIAlertAction(title: "拦截设置…", style: .default) { [weak self] _ in self?.settingsTapped() })
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = shieldButton
-            pop.sourceRect = shieldButton.bounds
-        }
-        present(alert, animated: true)
+        alert.add("拦截设置…") { [weak self] in self?.settingsTapped() }
+        alert.present(from: self, sourceView: shieldButton)
     }
 
     // MARK: address field
@@ -1012,7 +1015,9 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             decisionHandler(.cancel, preferences)
             return
         }
-        if isMain, profile == .desktop, let desktop = MioWebCompat.desktopURL(for: url), allowDesktopRewrite() {
+        // Mac 跟 Safari 对齐（MioDesktopParity.swift）：YouTube 用 v0.3.0 的 UA（HLS 高清）、按站点缩放
+        if parityDecide(navigationAction, url: url, isMain: isMain, preferences: preferences) { decisionHandler(.cancel, preferences); return }
+        if isMain, profile == .desktop, !MioDesktopParity.keepsYouTubeLegacy(url), let desktop = MioWebCompat.desktopURL(for: url), allowDesktopRewrite() {
             // m.youtube.com → www.youtube.com（旧链接 / 历史记录 / 旧 Cookie 触发的重定向）
             decisionHandler(.cancel, preferences)
             DispatchQueue.main.async { [weak self] in self?.webView.load(URLRequest(url: desktop)) }
@@ -1063,6 +1068,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageTools.didFinish()
+        parityDidFinish()
         // 诊断：YouTube 上记录 UA / MediaSource / 播放器拿到的最高清晰度（Mac 或 Debug）
         guard let host = webView.url?.host?.lowercased(), host == "youtube.com" || host.hasSuffix(".youtube.com") else { return }
         #if !DEBUG
@@ -1174,6 +1180,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case containers // 容器管理（MioContainerStore.swift）
         case translate
         case userScripts, webrtc
+        case desktopParity // Mac：页面缩放 / YouTube（MioDesktopParity.swift）
+        case browserLayout // iPhone Safari 式布局（MioMobileChrome.swift）
     }
 
     private let currentHost: String?
@@ -1234,10 +1242,12 @@ final class MioBrowserSettingsViewController: UITableViewController {
 
         var browse: [Row] = [.youtubeFocus]
         if MioBrowserSettings.youtubeFocus { browse.append(contentsOf: [.youtubeInterval, .youtubePlayables]) }
+        if MioMobileLayoutSettingsUI.applies { browse.append(.browserLayout) }
         browse.append(.hideToolbars)
         browse.append(.media)
         s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留），可选屏蔽首页的游戏大本营（Playables，直接打开 /playables 不受影响）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
         s.append(("翻译", "网页双语对照 / 仅译文、划词翻译、YouTube 双语字幕；引擎可选微软、谷歌或自定义 OpenAI 兼容 API。", [.translate]))
+        if MioDesktopParity.enabled { s.append(("页面缩放与 YouTube", nil, [.desktopParity])) }
         s.append(("用户脚本与隐私", "用户脚本：安装 Tampermonkey / Greasemonkey 格式的 .user.js。WebRTC 控制：防止网页借 WebRTC 获取你的真实 IP。", [.userScripts, .webrtc]))
         s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的「用 Safari 打开」（\(Self.safariHint)）改用 Safari。", [.preferSafari, .backgroundPlayback]))
         s.append((nil, "开启后，「用 Safari 打开」成功跳转后自动关闭当前标签页（最后一个标签关闭时收起浏览器回到 Mio 主界面）；打开失败则保留。", [.closeAfterExternal]))
@@ -1350,6 +1360,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.textLabel?.text = "屏蔽游戏大本营（Playables）"
             cell.detailTextLabel?.text = "隐藏首页 / 推荐里的小游戏区块和入口"
             cell.accessoryView = makeSwitch(MioBrowserSettings.youtubeHidePlayables) { MioBrowserSettings.youtubeHidePlayables = $0 }
+        case .browserLayout:
+            MioMobileLayoutSettingsUI.configure(cell)
         case .hideToolbars:
             cell.textLabel?.text = "滚动时隐藏工具栏"
             cell.detailTextLabel?.text = MioWebKitCompat.isMac ? "Mac 默认关闭" : "向上滚动或点顶部域名条恢复"
@@ -1404,6 +1416,11 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.textLabel?.text = "WebRTC 控制"
             let n = MioWebRTCSettings.allowlist.count
             cell.detailTextLabel?.text = MioWebRTCSettings.enabled ? (n > 0 ? "已屏蔽 · 放行 \(n) 个网站" : "已屏蔽（防 IP 泄露）") : "未开启"
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+        case .desktopParity:
+            cell.textLabel?.text = "页面缩放与 YouTube"
+            cell.detailTextLabel?.text = "默认缩放 " + MioZoomCore.label(MioDesktopParitySettings.defaultZoom) + (MioDesktopParitySettings.youtubeAlwaysSafari ? " · YouTube 用 Safari" : "")
             cell.accessoryType = .disclosureIndicator
             cell.selectionStyle = .default
         }
@@ -1462,6 +1479,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case .updateCheck:
             MioUpdater.shared.check(manual: true, from: self) { [weak self] in self?.rebuild() }
             rebuild()
+        case .browserLayout:
+            MioMobileLayoutSettingsUI.choose(from: self, sourceView: tableView.cellForRow(at: indexPath)) { [weak self] in self?.rebuild() }
         case .media:
             navigationController?.pushViewController(MioMediaSettingsViewController(), animated: true)
         case .containers:
@@ -1472,20 +1491,17 @@ final class MioBrowserSettingsViewController: UITableViewController {
             navigationController?.pushViewController(MioUserScriptsViewController(), animated: true)
         case .webrtc:
             navigationController?.pushViewController(MioWebRTCSettingsViewController(currentHost: currentHost), animated: true)
+        case .desktopParity:
+            navigationController?.pushViewController(MioDesktopParitySettingsViewController(), animated: true)
         case .youtubeInterval:
             let current = MioBrowserSettings.youtubeFocusInterval
-            let a = UIAlertController(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒", preferredStyle: .actionSheet)
+            let a = MioActionList(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒")
             for sec in MioWebCompat.youtubeFocusIntervalChoices {
-                a.addAction(UIAlertAction(title: Self.intervalText(sec) + (sec == current ? " ✓" : ""), style: .default) { _ in
+                a.add(Self.intervalText(sec), checked: sec == current) {
                     MioBrowserSettings.youtubeFocusInterval = sec
-                })
+                }
             }
-            a.addAction(UIAlertAction(title: "取消", style: .cancel))
-            if let pop = a.popoverPresentationController, let cell = tableView.cellForRow(at: indexPath) {
-                pop.sourceView = cell
-                pop.sourceRect = cell.bounds
-            }
-            present(a, animated: true)
+            a.present(from: self, sourceView: tableView.cellForRow(at: indexPath))
         default:
             break
         }

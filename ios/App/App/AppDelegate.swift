@@ -15,6 +15,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // 内置浏览器广告拦截：后台刷新任务必须在启动结束前注册；规则加载 / 首次编译在后台队列
         MioAdblockBackground.register()
         MioAdblock.shared.start()
+        MioMobileChromeSmoke.runIfRequested()   // 仅 CI 模拟器带 -mioLayoutSmoke YES 启动时
         return true
     }
 
@@ -63,6 +64,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         ]
         builder.remove(menu: .close)
         builder.insertChild(UIMenu(title: "", identifier: UIMenu.Identifier("xyz.mio.app.menu.tabs"), options: .displayInline, children: tabItems), atStartOfMenu: .file)
+        // 页面缩放（MioDesktopParity.swift）：显示 › 放大 ⌘+ / 缩小 ⌘- / 实际大小 ⌘0（⌘= 也放大，隐藏项）
+        let zoomPlus = UIKeyCommand(title: "放大", action: #selector(MioBrowserViewController.mioZoomIn(_:)), input: "+", modifierFlags: .command)
+        // 同一 action 的两条命令必须用不同 propertyList 区分，否则 UIMenuBuilder 抛 duplicate 异常
+        let zoomEq = UIKeyCommand(title: "放大", image: nil, action: #selector(MioBrowserViewController.mioZoomIn(_:)), input: "=", modifierFlags: .command, propertyList: "eq")
+        zoomEq.attributes = .hidden
+        let zoomItems: [UIKeyCommand] = [
+            zoomPlus, zoomEq,
+            UIKeyCommand(title: "缩小", action: #selector(MioBrowserViewController.mioZoomOut(_:)), input: "-", modifierFlags: .command),
+            UIKeyCommand(title: "实际大小", action: #selector(MioBrowserViewController.mioZoomReset(_:)), input: "0", modifierFlags: .command),
+        ]
+        builder.insertChild(UIMenu(title: "", identifier: UIMenu.Identifier("xyz.mio.app.menu.zoom"), options: .displayInline, children: zoomItems), atStartOfMenu: .view)
+        let hd = UIKeyCommand(title: "在 Safari 中看高清（YouTube）", action: #selector(MioBrowserViewController.mioYouTubeInSafari(_:)), input: "y", modifierFlags: [.command, .shift])
+        builder.insertChild(UIMenu(title: "", options: .displayInline, children: [hd]), atEndOfMenu: UIMenu.Identifier("xyz.mio.app.menu.browser"))
     }
     #endif
 
