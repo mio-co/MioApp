@@ -271,7 +271,7 @@ final class MioSmoke {
             let foreground = newTabs.first.map { $0.tabUUID == selected?.tabUUID } ?? false
             var ok = newTabs.count == expectNew
             if expectNew > 0 { ok = ok && foreground }
-            if let u = expectURL { ok = ok && newURLs.contains { $0.hasPrefix(u) } }
+            if let u = expectURL { ok = ok && newURLs.contains(where: { MioNewTabFixture.landed($0, on: u) }) }
             if let h = expectSameTabHost { ok = ok && wv.url?.host == h }
             if expectSameTabAccess { ok = ok && MioAccessAuth.isAccessURL(wv.url, prefs: MioKitHost.shared.kit.prefs) }
             if let e = expectReturn { ok = ok && ret == e }

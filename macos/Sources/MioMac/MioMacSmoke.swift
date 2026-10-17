@@ -583,7 +583,7 @@ final class MioMacSmoke {
             let foreground = newIDs.first.map { activeAfter == $0 } ?? false
             var ok = newIDs.count == expectNew
             if let f = expectForeground, expectNew > 0 { ok = ok && foreground == f && (f || activeAfter == activeBefore) }
-            if let u = expectURL { ok = ok && newURLs.contains(where: { $0.hasPrefix(u) || ($0.removingPercentEncoding ?? $0).hasPrefix(u) }) }
+            if let u = expectURL { ok = ok && newURLs.contains(where: { MioNewTabFixture.landed($0, on: u) }) }
             if let h = expectSameTabHost { ok = ok && wv.url?.host == h }
             if expectSameTabAccess { ok = ok && MioAccessAuth.isAccessURL(wv.url, prefs: host.kit.prefs) }
             if let e = expectReturn { ok = ok && ret == e }
@@ -602,7 +602,9 @@ final class MioMacSmoke {
         await loadPage(F.plainPage, F.plainBase)
         gate.append(await tryCase("plainBlank", F.clickJS("blank"), expectNew: 1, expectForeground: true, expectURL: F.blankTarget))
         gate.append(await tryCase("plainWindowOpen", F.windowOpenJS(F.openTarget), expectNew: 1, expectForeground: true, expectURL: F.openTarget, expectReturn: "window"))
-        // ⌘ 点 / ⇧⌘ 点 / 中键（合成事件，只记录）
+        // ⌘ 点 / ⇧⌘ 点 / 中键（合成事件，只记录：CI 上合成的 MouseEvent 修饰键 / 按键没有带进 WKNavigationAction，
+        // 真实点击的判定由 MioLinkOpeningTests 覆盖，真机再看一次）
+        cases["modifierCasesRecordedOnly"] = true
         _ = await tryCase("plainCmdClick", F.modifierClickJS("modifier", meta: true), expectNew: 1, expectForeground: false, expectURL: F.modifierTarget)
         _ = await tryCase("plainShiftCmdClick", F.modifierClickJS("modifier", meta: true, shift: true), expectNew: 1, expectForeground: true, expectURL: F.modifierTarget)
         _ = await tryCase("plainMiddleClick", F.modifierClickJS("modifier", meta: false, button: 1), expectNew: 1, expectForeground: false, expectURL: F.modifierTarget)

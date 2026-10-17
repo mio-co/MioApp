@@ -91,6 +91,18 @@ public enum MioNewTabFixture {
         """
     }
 
+    /// 新标签 / 当前标签的地址是不是打开的那个目标：同主机，且地址里带目标的 mio-newtab 标记
+    /// （accounts.google.com 会 302 到 /v3/signin/identifier?continue=<原地址>，标记被编码进 continue 参数）
+    public static func landed(_ actual: String?, on expected: String) -> Bool {
+        guard let actual, let a = URL(string: actual), let e = URL(string: expected) else { return false }
+        if actual.hasPrefix(expected) { return true }
+        guard a.host?.lowercased() == e.host?.lowercased() else { return false }
+        guard let marker = e.query?.components(separatedBy: "&").first(where: { $0.hasPrefix("mio-newtab=") }) else { return false }
+        let value = String(marker.dropFirst("mio-newtab=".count))
+        let decoded = actual.removingPercentEncoding ?? actual
+        return decoded.contains("mio-newtab=\(value)")
+    }
+
     /// JS（callAsyncJavaScript 体，WebKit 当作用户手势）
     public static func clickJS(_ id: String) -> String {
         "document.getElementById(\(MioJSString.literal(id))).click(); return 'clicked';"

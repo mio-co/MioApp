@@ -44,4 +44,15 @@ final class MioLinkOpeningTests: XCTestCase {
         XCTAssertEqual(L.linkActivation(platform: .ios, isLinkActivated: true, isHTTP: true, modifiers: [.command], buttonNumber: 0), .foregroundTab)
         XCTAssertEqual(L.linkActivation(platform: .ios, isLinkActivated: true, isHTTP: true, modifiers: [], buttonNumber: 0), .currentTab)
     }
+
+    /// 冒烟判定：Google 会把目标 302 到 /v3/signin/identifier?continue=<原地址>
+    func testFixtureLandedMatchesRedirectedTargets() {
+        let F = MioNewTabFixture.self
+        XCTAssertTrue(F.landed("https://example.org/?mio-newtab=blank", on: F.blankTarget))
+        XCTAssertTrue(F.landed("https://accounts.google.com/v3/signin/identifier?continue=https://accounts.google.com/?mio-newtab%3Dcore-idp&followup=x", on: F.coreIdPTarget))
+        XCTAssertFalse(F.landed("https://accounts.google.com/v3/signin/identifier?continue=https://accounts.google.com/?mio-newtab%3Daccess-idp", on: F.coreIdPTarget))
+        XCTAssertFalse(F.landed("https://example.com/?mio-newtab=blank", on: F.blankTarget), "主机不同")
+        XCTAssertFalse(F.landed("about:blank", on: F.blankTarget))
+        XCTAssertFalse(F.landed(nil, on: F.blankTarget))
+    }
 }
