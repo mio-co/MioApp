@@ -211,6 +211,51 @@ jobs:
           path: adblock-check
           retention-days: 14
 
+  miokit:
+    # v0.4.0 线路 C：apple/MioKit 共享 Swift package（iOS fork 与 Mac 原生壳共用）。
+    # swift test 在 macOS 上跑全部单测，包括真实 WebKit 的：WKContentRuleList 编译（内置列表 / 超 15 万条拆分）、
+    # WKWebView 里 MioCore 桥对其他来源 / iframe 的拒绝、mio:// 方案处理；再做 iOS 模拟器编译检查。不进 release。
+    runs-on: macos-26
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apple/MioKit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: swift test (macOS + WebKit)
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/miokit-test.log"
+
+      - name: Test summary
+        if: always()
+        run: grep -E "Executed [0-9]+ tests|error:|failed|skipped" "$RUNNER_TEMP/miokit-test.log" | tail -60 || true
+
+      - name: iOS Simulator build check
+        run: |
+          xcodebuild -list
+          set -o pipefail
+          xcodebuild build -scheme MioKit -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath "$RUNNER_TEMP/miokit-dd" | tail -40
+
+  miokit-linux:
+    # 同一个包的纯逻辑部分在 Linux 上也要能编、能测（WebKit / SafariConverterLib 部分自动排除）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test (Linux, Foundation only)
+        run: |
+          swift --version
+          swift test --package-path apple/MioKit
+
   android:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
