@@ -63,6 +63,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         ]
         builder.remove(menu: .close)
         builder.insertChild(UIMenu(title: "", identifier: UIMenu.Identifier("xyz.mio.app.menu.tabs"), options: .displayInline, children: tabItems), atStartOfMenu: .file)
+        // 页面缩放（MioDesktopParity.swift）：显示 › 放大 ⌘+ / 缩小 ⌘- / 实际大小 ⌘0（⌘= 也放大，隐藏项）
+        let zoomPlus = UIKeyCommand(title: "放大", action: #selector(MioBrowserViewController.mioZoomIn(_:)), input: "+", modifierFlags: .command)
+        let zoomEq = UIKeyCommand(title: "放大", action: #selector(MioBrowserViewController.mioZoomIn(_:)), input: "=", modifierFlags: .command)
+        zoomEq.attributes = .hidden
+        let zoomItems: [UIKeyCommand] = [
+            zoomPlus, zoomEq,
+            UIKeyCommand(title: "缩小", action: #selector(MioBrowserViewController.mioZoomOut(_:)), input: "-", modifierFlags: .command),
+            UIKeyCommand(title: "实际大小", action: #selector(MioBrowserViewController.mioZoomReset(_:)), input: "0", modifierFlags: .command),
+        ]
+        builder.insertChild(UIMenu(title: "", identifier: UIMenu.Identifier("xyz.mio.app.menu.zoom"), options: .displayInline, children: zoomItems), atStartOfMenu: .view)
+        let hd = UIKeyCommand(title: "在 Safari 中看高清（YouTube）", action: #selector(MioBrowserViewController.mioYouTubeInSafari(_:)), input: "y", modifierFlags: [.command, .shift])
+        builder.insertChild(UIMenu(title: "", options: .displayInline, children: [hd]), atEndOfMenu: UIMenu.Identifier("xyz.mio.app.menu.browser"))
     }
     #endif
 

@@ -28,6 +28,7 @@ const DEFAULTS = {
   // YouTube SponsorBlock（src/media.js）：总开关 + 逗号分隔的分类
   sponsorBlock: true,
   sponsorBlockCategories: 'sponsor,selfpromo,interaction',
+  defaultZoom: 1, // 默认页面缩放（zoom.js，Safari 档位）
 };
 
 class SettingsStore extends EventEmitter {
@@ -66,6 +67,7 @@ class SettingsStore extends EventEmitter {
     if (typeof value !== typeof DEFAULTS[key]) throw new Error(`bad value for ${key}`);
     if (key === 'youtubeFocusInterval' && !(Number.isFinite(value) && value >= 5 && value <= 3600)) throw new Error(`bad value for ${key}`);
     if (key === 'newTabUrl') value = normalizeNewTabSetting(value);
+    if (key === 'defaultZoom') value = require('./zoom-core').nearest(value);
     this.data[key] = value;
     this.save();
   }

@@ -11,19 +11,19 @@ html, body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.45
 button { font: inherit; color: inherit; }
 
 /* toolbar：上面一行（按钮 + 居中地址栏），下面一行标签条（Safari 式） */
-body.toolbar { height: 78px; overflow: hidden; user-select: none; position: relative; background: var(--bg); }
+body.toolbar { height: 74px; overflow: hidden; user-select: none; position: relative; background: var(--bg); }
 #row { height: 44px; display: flex; align-items: center; gap: 2px; padding: 0 6px; position: relative; }
 #row .spacer { flex: 1 1 0; min-width: 0; }
 .icon { width: 32px; height: 32px; border: 0; background: transparent; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; position: relative; flex: none; }
 .icon:hover:not(:disabled) { background: var(--hover); }
 .icon:disabled { opacity: .35; cursor: default; }
-.icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .icon.small { width: 26px; height: 26px; }
 .icon.small svg { width: 15px; height: 15px; }
 .icon .i-stop { display: none; }
 body.loading .icon .i-stop { display: block; }
 body.loading .icon .i-reload { display: none; }
-#addrForm { flex: 0 1 640px; min-width: 120px; height: 32px; margin: 0 6px; display: flex; align-items: center; background: var(--field); border-radius: 10px; padding: 0 4px 0 12px; border: 1px solid transparent; }
+#addrForm { flex: 0 1 640px; min-width: 120px; height: 28px; margin: 0 6px; display: flex; align-items: center; background: var(--field); border-radius: 7px; padding: 0 4px 0 12px; border: 1px solid transparent; }
 #addrForm:focus-within { border-color: var(--accent); background: var(--bg); }
 #addr { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; text-align: center; }
 body.editing #addr { text-align: left; }
@@ -40,10 +40,10 @@ body.editing #addr { text-align: left; }
 #progress { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--accent); opacity: 0; }
 body.loading #progress { opacity: 1; animation: load 2.4s ease-out forwards; }
 @keyframes load { from { width: 0; } to { width: 85%; } }
-#tabstrip { height: 34px; display: flex; align-items: center; gap: 4px; padding: 0 6px 4px; border-bottom: 1px solid var(--line); }
-#tabs { flex: 1; min-width: 0; height: 30px; display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#tabstrip { height: 30px; display: flex; align-items: center; gap: 4px; padding: 0 6px 3px; border-bottom: 1px solid var(--line); }
+#tabs { flex: 1; min-width: 0; height: 26px; display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 #tabs::-webkit-scrollbar { display: none; }
-.tab { --container: transparent; flex: 1 1 200px; min-width: 96px; max-width: 240px; height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 10px; border-radius: 8px; background: var(--field); color: var(--muted); cursor: default; position: relative; overflow: hidden; }
+.tab { --container: transparent; flex: 1 1 200px; min-width: 96px; max-width: 240px; height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 10px; border-radius: 6px; background: var(--field); color: var(--muted); cursor: default; position: relative; overflow: hidden; }
 .tab::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: 0; height: 2px; border-radius: 1px; background: var(--container); }
 .tab.locked .fav { box-shadow: 0 0 0 1.5px var(--container); }
 body.many .tab { min-width: 72px; }
@@ -54,7 +54,7 @@ body.many .tab { min-width: 72px; }
 .tab .fav { width: 16px; height: 16px; flex: none; border-radius: 4px; background: var(--line); color: var(--fg); font-size: 10px; line-height: 16px; text-align: center; font-weight: 600; }
 .tab.loading .fav { animation: pulse 1s ease-in-out infinite alternate; }
 @keyframes pulse { from { opacity: 1; } to { opacity: .35; } }
-.tab .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.tab .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; text-align: center; }
 .tab .tclose { width: 20px; height: 20px; flex: none; border: 0; border-radius: 5px; background: transparent; color: inherit; display: inline-flex; align-items: center; justify-content: center; opacity: 0; cursor: pointer; padding: 0; }
 .tab:hover .tclose, .tab.active .tclose { opacity: .75; }
 .tab .tclose:hover { opacity: 1; background: var(--hover); }
@@ -99,3 +99,7 @@ body.offline { display: flex; align-items: center; justify-content: center; min-
 .icon[hidden] { display: none; }
 #addrForm .icon.reader { width: 26px; height: 26px; margin-right: -8px; }
 #addrForm .icon.reader svg { width: 16px; height: 16px; }
+/* 页面缩放百分比小标签（地址栏内，点按恢复默认；zoom.js） */
+#zoomBadge { flex: none; height: 18px; padding: 0 6px; margin-right: 6px; border: 0; border-radius: 5px; background: var(--hover); color: var(--muted); font-size: 11px; font-weight: 600; line-height: 18px; cursor: pointer; }
+#zoomBadge:hover { color: var(--fg); }
+#zoomBadge[hidden] { display: none; }

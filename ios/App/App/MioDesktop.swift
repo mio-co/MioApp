@@ -249,6 +249,7 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             // 用户脚本 + WebRTC 控制（MioUserScripts.swift 的 MioUserScriptSmoke）
             var extrasOK = false
             var actionListOK = false
+            var parityOK = false
             func finish() {
                 let top = MioBrowserViewController.topPresenter(self)
                 let presented = top is MioBrowserViewController || top is MioTabsViewController
@@ -269,8 +270,9 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                     let mse = (obj["mediaSource"] as? String) == "function" || (obj["managedMediaSource"] as? String) == "function"
                     report["mseAvailable"] = mse
                     NSLog("⚡️ Mio smoke: MSE available in browser = %@ (informational, not a gate)", mse ? "yes" : "no")
-                    let desktopSafariUA = ua.contains("Macintosh") && ua.contains("Safari/") && ua.contains("Version/") && !ua.contains("Mobile")
-                    desktopOK = desktopSafariUA && (obj["host"] as? String) != "m.youtube.com"
+                    // v0.3.4：Mac 上 YouTube 恢复 v0.3.0 的 UA（Mobile Safari 标识 → YouTube 下发 HLS 高清，MioDesktopParity.swift）；
+                    // 其他站点仍是桌面 Safari UA（下面 parity 冒烟另查）
+                    desktopOK = ua == MioDesktopParity.legacyYouTubeUA
                 } else {
                     report["browserProbe"] = MioBrowserViewController.lastMediaProbe ?? "none"
                 }
@@ -294,7 +296,8 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["translateOK"] = translateOK
                 let page = report["page"] as? [String: Any]
                 report["tabsOK"] = tabsOK
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK && tabsOK && actionListOK
+                report["parityOK"] = parityOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK && tabsOK && actionListOK && parityOK
                 report["actionListOK"] = actionListOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
@@ -331,7 +334,13 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                                             MioActionListSmoke.run { r, ok in
                                                 report["actionList"] = r
                                                 actionListOK = ok
-                                                finish()
+                                                // Mac 跟 Safari 对齐（MioDesktopParity.swift）：⌘+ 后 pageZoom 变、重载后保持、⌘0 复位；YouTube UA / HLS 记录
+                                                MioDesktopParitySmoke.run { r, ok in
+                                                    report["parity"] = r
+                                                    parityOK = ok
+                                                    NSLog("⚡️ Mio smoke: parity %@ %@", ok ? "OK" : "FAILED", "\(r)")
+                                                    finish()
+                                                }
                                             }
                                         }
                                     }

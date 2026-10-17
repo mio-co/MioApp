@@ -597,7 +597,7 @@ extension MioBrowserViewController {
 final class MioTabChrome {
     weak var browser: MioBrowserViewController?
     private(set) var isTop = false
-    let stripHeight: CGFloat = MioWebKitCompat.isMac ? 34 : 38
+    let stripHeight: CGFloat = MioWebKitCompat.isMac ? MioMacMetrics.stripHeight : 38
     var top: NSLayoutConstraint?
     private(set) var strip: MioTabStripView?
     private var addressSlot: MioAddressSlot?
@@ -686,7 +686,7 @@ final class MioTabChrome {
             UIDeferredMenuElement.uncached { [weak self] done in done(self?.browser?.tabsController?.newTabContainerItems() ?? []) },
         ])
         let flex = { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
-        let right = buttons + [shieldItem, tabsItem, newTab]
+        let right = parityExtraItems() + buttons + [shieldItem, tabsItem, newTab]
         toolbar.items = [close] + nav + [flex(), addressItem, flex()] + right
         slot.reserved = CGFloat(1 + nav.count + right.count) * 44 + 32
 
@@ -731,6 +731,7 @@ final class MioTabChrome {
             slot?.toolbarWidth = tb.bounds.width
         }
         strip.reload()
+        parityStyleTop(toolbar: toolbar, addressSlot: slot)   // Mac：Safari 尺寸（MioDesktopParity.swift）
     }
 }
 
