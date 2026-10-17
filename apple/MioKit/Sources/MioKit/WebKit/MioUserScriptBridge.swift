@@ -181,7 +181,7 @@ public final class MioUserScriptBridge: NSObject {
         let start: (URLRequest) -> Void = { [weak self] request in
             guard let self = self else { reply(["error": "browser closed"], nil); return }
             let task = self.session.dataTask(with: request) { data, resp, err in
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     self.tasks.removeValue(forKey: reqId)
                     if let err = err as NSError? {
                         if err.code == NSURLErrorCancelled { reply(["error": "aborted"], nil); return }

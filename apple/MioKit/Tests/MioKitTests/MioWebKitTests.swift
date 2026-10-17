@@ -92,7 +92,6 @@ final class MioWebKitTests: XCTestCase {
         let host = FakeBridgeHost()
         kit.bridge.delegate = host
         let (wv, mods, nav) = makeWebView(kit)
-        _ = mods
         await load(wv, nav, html: "<html><body>evil</body></html>", base: "https://evil.example/")
         let evil = await js(wv, Self.probe) as? [String: Any]
         XCTAssertNotNil(evil, "页面里的探测脚本没有返回（WebKit 环境问题？）")
@@ -126,19 +125,23 @@ final class MioWebKitTests: XCTestCase {
               window.addEventListener('message', e => res(e.data), { once: true });
               const f = document.createElement('iframe');
               if (\(sandbox)) f.setAttribute('sandbox', 'allow-scripts');
-              f.srcdoc = "<script>webkit.messageHandlers.mio.postMessage({v:1,id:'f',method:'openTab',params:{url:'https://example.com/frame'}}).then(function(r){parent.postMessage(r,'*')},function(e){parent.postMessage({err:String(e)},'*')})<\\/script>";
+              f.srcdoc = "<script>try{webkit.messageHandlers.mio.postMessage({v:1,id:'f',method:'openTab',params:{url:'https://example.com/frame'}}).then(function(r){parent.postMessage(r,'*')},function(e){parent.postMessage({err:String(e)},'*')})}catch(e){parent.postMessage({nohandler:true},'*')}<\\/script>";
               document.body.appendChild(f);
               setTimeout(() => res('timeout'), 5000);
             });
             """) as? [String: Any]
-            XCTAssertEqual((r?["error"] as? [String: Any])?["code"] as? String, "forbidden", "iframe sandbox=\(sandbox): \(String(describing: r))")
+            // 不透明来源的 iframe 可能根本拿不到 messageHandlers（nohandler）——同样算拒绝
+            let rejected = (r?["error"] as? [String: Any])?["code"] as? String == "forbidden" || r?["nohandler"] as? Bool == true
+            XCTAssertTrue(rejected, "iframe sandbox=\(sandbox): \(String(describing: r))")
         }
         XCTAssertEqual(host.opened.count, 1, "iframe 没能打开标签")
+        withExtendedLifetime(mods) {}
     }
 
     func testSchemeHandlerServesInternalPages() async throws {
         let kit = makeKit()
-        let (wv, _, nav) = makeWebView(kit)
+        let (wv, mods, nav) = makeWebView(kit)
+        defer { withExtendedLifetime(mods) {} }
         await withCheckedContinuation { c in nav.cont = c; wv.load(URLRequest(url: MioHomeModel.aboutURL)) }
         let title = await js(wv, "return document.title")
         XCTAssertEqual(title as? String, "关于 Mio")
