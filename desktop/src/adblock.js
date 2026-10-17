@@ -55,6 +55,8 @@ class Adblock {
     });
     this.store.on('status', () => this.notify());
     this.readyPromise = null;
+    this.sessions = new Set();
+    this.ipcInstalled = false;
   }
 
   onChange(fn) {
@@ -87,12 +89,26 @@ class Adblock {
     this.blockedByWebContents.set(webContentsId, 0);
   }
 
-  start() {
-    const ses = this.session;
-    ses.registerPreloadScript({ type: 'frame', id: 'mio-adblock-scriptlets', filePath: MIO_FRAME_PRELOAD });
-    ses.registerPreloadScript({ type: 'frame', id: 'ghostery-adblocker', filePath: GHOSTERY_PRELOAD });
+  /** 浏览器会话之一（默认会话或某个容器的会话） */
+  isBrowserSession(ses) {
+    return !!ses && this.sessions.has(ses);
+  }
 
-    const isBrowserSender = (event) => event && event.sender && event.sender.session === ses;
+  start() {
+    this.attachSession(this.session);
+    this.installIpc();
+    this.readyPromise = this.load().catch((e) => console.error('[adblock] load', e));
+    // 启动后稍等再检查更新；之后每小时看一次是否已满 24 小时
+    setTimeout(() => this.maybeUpdate(false), 15000);
+    setInterval(() => this.maybeUpdate(false), 3600 * 1000).unref?.();
+    return this.readyPromise;
+  }
+
+  /** 全局 IPC（Ghostery / Mio frame preload 用），只注册一次；按发送方的会话判断是不是浏览器会话 */
+  installIpc() {
+    if (this.ipcInstalled) return;
+    this.ipcInstalled = true;
+    const isBrowserSender = (event) => !!(event && event.sender && this.isBrowserSession(event.sender.session));
     const topUrlOf = (event) => {
       try {
         return event.sender.getURL();
@@ -131,6 +147,14 @@ class Adblock {
       try {
         if (isBrowserSender(event)) {
           result.background = !!this.settings.get('backgroundPlayback') && event.senderFrame && event.senderFrame.parent === null;
+          // YouTube 防沉迷：只给顶层 frame（脚本自己也检查 window.top / 主机名），与拦截开关、白名单无关
+          if (event.senderFrame && event.senderFrame.parent === null) result.ytFocus = require('./youtube-focus').scriptFor(url, this.settings);
+          // YouTube 媒体脚本（SponsorBlock / MediaSession / 画中画），与拦截开关无关
+          try {
+            result.media = require('./media').scriptFor(url, (k) => this.settings.get(k), !!(event.senderFrame && event.senderFrame.parent === null));
+          } catch (e) {
+            result.mediaError = String((e && e.stack) || e);
+          }
           const top = event.senderFrame && event.senderFrame.top ? event.senderFrame.top.url : topUrlOf(event);
           if (this.activeFor(top || url)) {
             const parsed = require('tldts-experimental').parse(url);
@@ -152,6 +176,17 @@ class Adblock {
       }
       event.returnValue = result;
     });
+  }
+
+  /**
+   * 给一个浏览器会话装上拦截（frame preload + webRequest）。默认会话在 start() 里装；
+   * 容器会话由 ContainerSessions 的 configurator 调用（main.js 的 configureBrowserSession）。可重复调用（只装一次）。
+   */
+  attachSession(ses) {
+    if (!ses || this.sessions.has(ses)) return;
+    this.sessions.add(ses);
+    ses.registerPreloadScript({ type: 'frame', id: 'mio-adblock-scriptlets', filePath: MIO_FRAME_PRELOAD });
+    ses.registerPreloadScript({ type: 'frame', id: 'ghostery-adblocker', filePath: GHOSTERY_PRELOAD });
 
     ses.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
       if (!this.engine || details.resourceType === 'mainFrame') return callback({});
@@ -178,12 +213,6 @@ class Adblock {
         callback({});
       }
     });
-
-    this.readyPromise = this.load().catch((e) => console.error('[adblock] load', e));
-    // 启动后稍等再检查更新；之后每小时看一次是否已满 24 小时
-    setTimeout(() => this.maybeUpdate(false), 15000);
-    setInterval(() => this.maybeUpdate(false), 3600 * 1000).unref?.();
-    return this.readyPromise;
   }
 
   async load({ forceRebuild = false } = {}) {

@@ -44,6 +44,44 @@ ipa 未签名。用电脑上的 [iloader](https://iloader.app) → Import IPA，
 - `Mio-Setup-…exe` 装到当前用户（可选目录，不需要管理员）；`Mio-Portable-…exe` 免安装（数据在 `%APPDATA%\Mio`）。
 - 未签名：SmartScreen 提示「Windows 已保护你的电脑」→ **更多信息 → 仍要运行**。Windows 10 / 11 x64。
 
+## 软件内更新（0.3.3 起）
+
+各平台启动 / 回到前台时，如果「自动检查更新」开着、距上次检查超过 24 小时，就查一次
+[GitHub Releases latest](https://api.github.com/repos/mio-co/MioApp/releases/latest)（公开仓库，不需要 token）。
+设置里有「自动检查更新」开关和「立即检查」（iOS / Mac：内置浏览器设置 › 软件更新；Android：浏览器设置；Windows：文件 › 浏览器设置…）。
+发现新版本时弹窗显示更新说明，可以「稍后」或「跳过此版本」。
+
+| 平台 | 怎么更新 | 校验 |
+|---|---|---|
+| Android | App 内下载 `Mio.apk` 到私有目录 → PackageInstaller 安装（第一次要允许 Mio「安装未知应用」） | `Mio.apk.sha256` + GitHub 资产 digest；安装前比对 APK 签名证书与当前 App 一致（调试包签名不同，不能覆盖） |
+| Windows 安装版 | electron-updater 下载 `Mio-Setup-…exe`（差分 blockmap），重启安装或退出时安装 | `latest.yml` 里的 sha512；安装包未做代码签名，可能出现「未知发布者」提示 |
+| Windows 便携版 | 只提示，打开下载页 | — |
+| Mac | App 内下载 `Mio-<版本>-mac.zip` → Mio 退出 → 辅助脚本替换当前 `Mio.app`、去掉 quarantine、重新打开（日志 `~/Library/Logs/Mio-update.log`）。从 dmg 里直接运行 / 目录不可写时改为打开下载页 | `SHA256SUMS.txt`（CI 生成）+ GitHub 资产 digest，Info.plist 的 bundle id 必须一致 |
+| iPhone / iPad | 侧载版不能自己装 ipa：弹窗「在 SideStore 中更新」添加 Mio 源，然后在 SideStore「我的 App」里更新 | SideStore / AltStore 按源里的版本和大小下载 Release 的 `Mio.ipa` |
+
+### SideStore / AltStore 源
+
+源地址（每次发版自动更新）：
+
+```
+https://github.com/mio-co/MioApp/releases/latest/download/altstore-source.json
+```
+
+- SideStore：**源（Sources）→ 右上角 + → 粘贴上面的地址 → 添加**，在 Mio 页面点「获取 / Get」。已经装过 Mio 时，之后的新版本出现在「我的 App（My Apps）」的更新里，
+  用同一个 Apple ID 重签，数据保留。也可以在 iPhone 上直接打开
+  `sidestore://source?url=https%3A%2F%2Fgithub.com%2Fmio-co%2FMioApp%2Freleases%2Flatest%2Fdownload%2Faltstore-source.json`。
+- AltStore Classic：浏览（Browse）→ 源（Sources）→ + → 同一地址。
+- Mio 里发现新版本时点「在 SideStore 中更新」会自动打开上面的添加源链接（没装 SideStore 时依次尝试 AltStore，都没有就打开 Release 页）。
+
+### 发版产物（release job 自动生成）
+
+- `SHA256SUMS.txt`：本次 Release 全部 CI 产物的 sha256（`sha256sum -c` 格式）。
+- `altstore-source.json`：AltStore 源 v2 格式（`bundleIdentifier` = `xyz.mio.app`，`versions[0]` = 本次 `Mio.ipa` 的版本 / buildVersion / 日期 / 大小 / minOSVersion，
+  `appPermissions.privacy` 取自 Info.plist）。生成脚本 `scripts/release-manifests.mjs`，单测 `tools/MioAppTests/js/release-manifests.test.mjs`，PR 的 `unit` job 里会对假产物跑一遍。
+- `latest.yml` + `Mio-Setup-…exe.blockmap`：electron-builder 按 `desktop/package.json` 的 `build.publish`（GitHub）生成，electron-updater 用。
+- `Mio.apk` + `Mio.apk.sha256`：发布后由本地签名脚本（固定 keystore）上传。Release 里还没有 `Mio.apk` 时 Android 不提示更新（1 小时后再查）；
+  校验值优先用 `Mio.apk.sha256`，没有时用 GitHub 记录的资产 digest，两者都有时必须一致。
+
 ## 结构
 
 | 路径 | 说明 |
@@ -120,6 +158,39 @@ YouTube 视频广告靠 AdGuard Base 里的 `set-constant ytInitialPlayerRespons
   （尺寸不变 → 页面不重排）。向下滚动超过 16pt 隐藏，向上滚动、回到顶部、停在底部、点状态栏、新的主框架导航、地址栏聚焦（⌘L）、旋转时显示；
   隐藏时顶部保留域名条，点一下恢复。只认用户手势驱动的滚动，VoiceOver 开启或网页全屏时不隐藏。
   状态机是纯函数 `MioToolbarAutoHide`（`MioWebCompat.swift`），单测在 `tools/MioAppTests`。scroll delegate 挂在 WKScrollView 的外部 delegate 上（WebKit 自己的回调照常）。
+
+## 媒体：后台播放 / 画中画 / 锁屏控制 / SponsorBlock / DRM（0.3.3 起）
+
+源码：`ios/App/App/MioMediaScripts.swift`（纯逻辑 + 注入 JS，唯一源）、`ios/App/App/MioMedia.swift`（iOS / Mac 原生部分、设置页）；
+Android / Windows 用 `node scripts/sync-media-js.mjs` 从同一份 JS 生成的 `android/app/src/main/assets/mio/youtube-media.js`、`desktop/src/inject/youtube-media.js`（单测检查没过期）。
+设置：iOS / Mac 浏览器设置 › 浏览体验 › **媒体与 SponsorBlock**；Android 浏览器设置对话框；Windows 设置窗口「浏览」。
+
+- **后台播放**（沿用 v0.3.2 的「后台 / 锁屏继续播放」开关，默认开）：可见性伪造从 `MioBrowser.backgroundPlaybackScripts` 移到 `MioMediaScripts.visibilityScript`，
+  现在在 window 捕获阶段就拦掉 `visibilitychange`（之前只拦 document）。iOS 上 WebKit 切后台会停掉有画面的 `<video>`：
+  原生在 `didEnterBackground` 时通知页面（`__mioMedia.appState('background')`，0 / 0.5 / 1.5 秒，带后台任务），页面脚本在**真的不可见或刚切后台**、
+  暂停前确实在播放、不是用户暂停时自动 `play()`。锁屏 / 控制中心的暂停（MediaSession）、耳机拔出（`routeChange oldDeviceUnavailable`）、
+  来电 / 其他 App 抢占音频（`interruption began`）、画中画窗口里的暂停都算用户意图，不续播。`AVAudioSession .playback` + `UIBackgroundModes audio` 已有。
+  Android：从不调用 `webView.onPause`，播放中启动前台服务 `MioMediaService`（mediaPlayback 类型，媒体通知 + MediaSession：上一个 / 播放暂停 / 下一个；
+  Android 13+ 首次播放时请求一次通知权限）。Mac / Windows：窗口失焦本来不暂停（Windows `backgroundThrottling: false` + 同样的可见性伪造）。
+- **锁屏 Now Playing**：页面脚本设置 `navigator.mediaSession` 元数据（标题 / 频道 / 封面 `i.ytimg.com/vi/<id>/hqdefault.jpg`）、位置，
+  并包一层 `setActionHandler`：YouTube 自己的处理器照常调用，只是先记一下「用户要暂停」。页面没有 MediaSession 时，iOS 原生用
+  `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`（播放 / 暂停 / 切换 / 上一个 / 下一个 / 拖动进度）兜底，映射到 `__mioMedia.command(...)`。
+- **画中画**：YouTube 播放器左上角加一个按钮（点视频显示 3 秒），iOS / Mac 用 `video.webkitSetPresentationMode('picture-in-picture')`，
+  Windows 用 `requestPictureInPicture()`；Android WebView 不支持画中画，不显示。`allowsPictureInPictureMediaPlayback = true` 已有。
+- **SponsorBlock**（默认开，默认只跳 赞助 / 自我推广 / 互动提醒，片头 / 片尾可选）：`GET https://sponsor.ajay.app/api/skipSegments/<SHA-256(videoID) 前 4 位>?categories=[…]&actionTypes=["skip"]`，
+  只发哈希前缀，本地按 videoID 精确匹配。YouTube 的 CSP 没有 `connect-src`、API 返回 `Access-Control-Allow-Origin: *`，所以页面直接 `fetch`（`credentials: omit`）；
+  iOS 上 fetch 失败时经原生代取（只允许 `https://sponsor.ajay.app/api/skipSegments/<十六进制前缀>`）。播放进入片段自动跳到结尾，底部提示「已跳过…」+「撤销」
+  （回到跳过前的位置，本次不再自动跳）；用户手动拖进片段内部也不再跳；进度条上按分类颜色标出片段。全部 DOM API 构建（Trusted Types）。
+- **Spotify / DRM**（不改 UA）：Android `onPermissionRequest` 只放行 `RESOURCE_PROTECTED_MEDIA_ID`（Widevine），其它资源和以前一样拒绝；WebSettings 没有阻止 EME 的项。
+  iOS / Mac 的 WKWebView 只有 FairPlay（`com.apple.fps`），没有 Widevine；Mac CI 冒烟会记录 YouTube 和 open.spotify.com 上
+  `requestMediaKeySystemAccess`（Widevine / FairPlay / ClearKey）的结果（`smoke-mac.json` 的 `media.emeYouTube` / `media.emeSpotify`，不作门槛）。
+  Windows：官方 Electron 不带 Widevine CDM（只有 castlabs 的 Electron for Content Security 带），Spotify 网页播放器的 DRM 内容放不了；没有换 Electron，冒烟里记录 `widevine` 结果。
+- 测试：`tools/MioAppTests/js/media-youtube.test.mjs`（videoID 解析、哈希前缀匹配、跳过 / 撤销 / 手动 seek、续播判定、MediaSession、画中画、Trusted Types）、
+  `media-visibility.test.mjs`（可见性伪造 + 与防沉迷共存 + 生成文件没过期）、`MioMediaScriptsTests.swift`、Android `MioMediaTest`、`desktop/test/media.test.js`；
+  Mac 冒烟门槛 `mediaOK`（真实 YouTube 页面里脚本已注入、`crypto.subtle` 哈希前缀正确），Windows 冒烟门槛 `media`。
+
+SponsorBlock 数据由社区提交，来自 [SponsorBlock](https://sponsor.ajay.app)（作者 Ajay Ramachandran），按 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) 授权使用；
+Mio 只在播放时实时查询，不缓存到磁盘、不再分发数据。
 
 ## 已知限制
 

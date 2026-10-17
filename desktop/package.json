@@ -1,7 +1,7 @@
 {
   "name": "mio-desktop",
   "productName": "Mio",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "description": "Mio desktop shell (Windows / macOS) for MioCore: main window + in-app browser with Ghostery adblocker",
   "author": "Smee238 <Smee238@users.noreply.github.com>",
@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "2.20.1",
+    "electron-updater": "6.8.10",
     "tldts-experimental": "7.4.18"
   },
   "devDependencies": {
@@ -30,6 +31,14 @@
       "output": "dist",
       "buildResources": "build"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "mio-co",
+        "repo": "MioApp",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "src/**/*",
       "assets/icon.png",
@@ -40,6 +49,25 @@
       {
         "from": "assets/adblock",
         "to": "adblock"
+      },
+      {
+        "from": "../shared/scripts",
+        "to": "mio-scripts",
+        "filter": ["*.js"]
+      },
+      {
+        "from": "../www/mio-browser",
+        "to": "mio-browser",
+        "filter": [
+          "*.js"
+        ]
+      },
+      {
+        "from": "../shared/translate",
+        "to": "translate",
+        "filter": [
+          "mio-translate.js"
+        ]
       }
     ],
     "win": {

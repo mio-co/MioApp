@@ -4,12 +4,30 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { normalizeWhitelistEntry, hostInList } = require('./util');
+const { normalizeNewTabUrl, DEFAULT_NEW_TAB_URL } = require('./tabs-core');
+
+/** 新标签页地址：空 / 默认地址 → ''（跟随默认）；无效 → 抛错 */
+function normalizeNewTabSetting(value) {
+  const u = normalizeNewTabUrl(value);
+  if (u === null) throw new Error('bad value for newTabUrl');
+  return u === DEFAULT_NEW_TAB_URL ? '' : u;
+}
 
 const DEFAULTS = {
   adblockEnabled: true,
   whitelist: [],
   preferSystemBrowser: false,
   backgroundPlayback: true,
+  // YouTube 防沉迷（共享脚本 shared/scripts/youtube-focus.js）
+  youtubeFocus: true,
+  youtubeFocusInterval: 60,
+  youtubeFocusPlayables: true,
+  // 多标签页：新标签页地址（空 = MioCore 导航 /mio/nav，见 tabs-core.js）
+  newTabUrl: '',
+  closeTabAfterExternal: false, // 跳转系统浏览器后自动关闭标签页（close-after-external.js）
+  // YouTube SponsorBlock（src/media.js）：总开关 + 逗号分隔的分类
+  sponsorBlock: true,
+  sponsorBlockCategories: 'sponsor,selfpromo,interaction',
 };
 
 class SettingsStore extends EventEmitter {
@@ -46,6 +64,8 @@ class SettingsStore extends EventEmitter {
   set(key, value) {
     if (!(key in DEFAULTS) || key === 'whitelist') throw new Error(`unknown setting ${key}`);
     if (typeof value !== typeof DEFAULTS[key]) throw new Error(`bad value for ${key}`);
+    if (key === 'youtubeFocusInterval' && !(Number.isFinite(value) && value >= 5 && value <= 3600)) throw new Error(`bad value for ${key}`);
+    if (key === 'newTabUrl') value = normalizeNewTabSetting(value);
     this.data[key] = value;
     this.save();
   }

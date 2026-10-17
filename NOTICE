@@ -39,3 +39,8 @@ Windows / desktop
 - uBlock Origin scriptlets / redirect resources（resources.json，经 Ghostery 仓库同步）— Raymond Hill — GPL-3.0 — https://github.com/gorhill/uBlock
 - 过滤列表：AdGuard 官方的 uBlock Origin 语法版本（https://filters.adtidy.org/extension/ublock/filters/），许可同上
 - desktop/filters/mio-youtube.txt — 本仓库自写，GPL-3.0
+
+所有平台：YouTube SponsorBlock
+------------------------------
+- SponsorBlock 片段数据 — Ajay Ramachandran 与 SponsorBlock 贡献者 — CC BY-NC-SA 4.0
+  https://sponsor.ajay.app  （运行时按视频 ID 哈希前缀实时查询 /api/skipSegments，不随 App 分发数据；跳过逻辑为本仓库自写，未使用 SponsorBlock 扩展代码）

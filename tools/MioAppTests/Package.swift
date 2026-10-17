@@ -9,5 +9,11 @@ let package = Package(
     targets: [
         .target(name: "MioWebCompat", path: "Sources/MioWebCompat"),
         .testTarget(name: "MioWebCompatTests", dependencies: ["MioWebCompat"], path: "Tests/MioWebCompatTests"),
+        // 软件内更新纯逻辑：Sources/MioUpdateCore/MioUpdateCore.swift → ios/App/App/MioUpdateCore.swift（符号链接）
+        .target(name: "MioUpdateCore", path: "Sources/MioUpdateCore"),
+        .testTarget(name: "MioUpdateCoreTests", dependencies: ["MioUpdateCore"], path: "Tests/MioUpdateCoreTests"),
+        // 用户脚本管理器 + WebRTC 控制的纯逻辑（符号链接到 ios/App/App/MioUserScriptCore.swift、MioWebRTCGuard.swift）
+        .target(name: "MioUserScriptCore", path: "Sources/MioUserScriptCore"),
+        .testTarget(name: "MioUserScriptTests", dependencies: ["MioUserScriptCore"], path: "Tests/MioUserScriptTests"),
     ]
 )

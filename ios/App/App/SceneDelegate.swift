@@ -34,6 +34,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if MioAdblock.shared.needsUpdateCheck && MioAdblock.shared.snapshot.busy == nil {
             MioAdblock.shared.checkForUpdates(force: false)
         }
+        // 软件内更新：超过 24 小时查一次 GitHub Releases（MioUpdater.swift）
+        MioUpdater.shared.sceneDidBecomeActive()
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {

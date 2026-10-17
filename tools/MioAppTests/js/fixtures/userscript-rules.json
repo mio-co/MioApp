@@ -1,0 +1,166 @@
+[
+  {
+    "kind" : "match",
+    "pattern" : "https:\/\/*.example.com\/*",
+    "rule" : {
+      "ignoreCase" : false,
+      "source" : "^https:\\\/\\\/(?:[^\\\/:?#]+\\.)?example\\.com(?::\\d+)?\\\/.*$"
+    },
+    "urls" : {
+      "http:\/\/www.example.com\/" : false,
+      "https:\/\/example.com.evil.org\/" : false,
+      "https:\/\/example.com\/" : true,
+      "https:\/\/www.example.com\/a?b" : true,
+      "https:\/\/xexample.com\/" : false
+    }
+  },
+  {
+    "kind" : "match",
+    "pattern" : "*:\/\/*\/*",
+    "rule" : {
+      "ignoreCase" : false,
+      "source" : "^https?:\\\/\\\/[^\\\/:?#]+(?::\\d+)?\\\/.*$"
+    },
+    "urls" : {
+      "file:\/\/\/x" : false,
+      "ftp:\/\/a.b\/" : false,
+      "http:\/\/a.b\/" : true,
+      "https:\/\/a.b:8080\/x" : true
+    }
+  },
+  {
+    "kind" : "match",
+    "pattern" : "<all_urls>",
+    "rule" : {
+      "ignoreCase" : false,
+      "source" : "^(?:https?|file):\\\/\\\/.*$"
+    },
+    "urls" : {
+      "about:blank" : false,
+      "file:\/\/\/etc\/hosts" : true,
+      "https:\/\/a\/" : true
+    }
+  },
+  {
+    "kind" : "match",
+    "pattern" : "http:\/\/example.org\/foo\/bar.html",
+    "rule" : {
+      "ignoreCase" : false,
+      "source" : "^http:\\\/\\\/example\\.org(?::\\d+)?\\\/foo\\\/bar\\.html$"
+    },
+    "urls" : {
+      "http:\/\/example.org\/foo\/bar.html" : true,
+      "http:\/\/example.org\/foo\/bar.html?q" : false,
+      "http:\/\/example.org\/foo\/barXhtml" : false
+    }
+  },
+  {
+    "kind" : "match",
+    "pattern" : "*:\/\/news.ycombinator.com\/item?id=*",
+    "rule" : {
+      "ignoreCase" : false,
+      "source" : "^https?:\\\/\\\/news\\.ycombinator\\.com(?::\\d+)?\\\/item\\?id=.*$"
+    },
+    "urls" : {
+      "https:\/\/news.ycombinator.com\/item?id=1" : true,
+      "https:\/\/news.ycombinator.com\/itemid=1" : false
+    }
+  },
+  {
+    "kind" : "match",
+    "pattern" : "http:\/\/localhost:3000\/*",
+    "rule" : {
+      "ignoreCase" : false,
+      "source" : "^http:\\\/\\\/localhost:3000\\\/.*$"
+    },
+    "urls" : {
+      "http:\/\/localhost:3000\/" : true,
+      "http:\/\/localhost:3001\/" : false
+    }
+  },
+  {
+    "kind" : "match",
+    "pattern" : "https:\/\/www.google.tld\/search*",
+    "rule" : {
+      "ignoreCase" : false,
+      "source" : "^https:\\\/\\\/www\\.google\\.(?:[a-z0-9-]{2,63}|(?:com?|net|org|gov|edu|ac|ne|or|go)\\.[a-z]{2})(?::\\d+)?\\\/search.*$"
+    },
+    "urls" : {
+      "https:\/\/www.google.co.jp\/search?q=1" : true,
+      "https:\/\/www.google.com\/maps" : false
+    }
+  },
+  {
+    "kind" : "glob",
+    "pattern" : "http*:\/\/example.com\/*",
+    "rule" : {
+      "ignoreCase" : true,
+      "source" : "^http.*:\\\/\\\/example\\.com\\\/.*$"
+    },
+    "urls" : {
+      "http:\/\/example.com\/" : true,
+      "https:\/\/example.com\/x#y" : true,
+      "https:\/\/sub.example.com\/" : false
+    }
+  },
+  {
+    "kind" : "glob",
+    "pattern" : "*example.com*",
+    "rule" : {
+      "ignoreCase" : true,
+      "source" : "^.*example\\.com.*$"
+    },
+    "urls" : {
+      "https:\/\/example.org\/" : false,
+      "https:\/\/sub.example.com\/" : true
+    }
+  },
+  {
+    "kind" : "glob",
+    "pattern" : "HTTPS:\/\/EXAMPLE.COM\/A?B",
+    "rule" : {
+      "ignoreCase" : true,
+      "source" : "^HTTPS:\\\/\\\/EXAMPLE\\.COM\\\/A\\?B$"
+    },
+    "urls" : {
+      "https:\/\/example.com\/a?b" : true,
+      "https:\/\/example.com\/ab" : false
+    }
+  },
+  {
+    "kind" : "glob",
+    "pattern" : "*:\/\/*.google.tld\/*",
+    "rule" : {
+      "ignoreCase" : true,
+      "source" : "^.*:\\\/\\\/.*\\.google\\.(?:[a-z0-9-]{2,63}|(?:com?|net|org|gov|edu|ac|ne|or|go)\\.[a-z]{2})\\\/.*$"
+    },
+    "urls" : {
+      "https:\/\/google.de\/" : false,
+      "https:\/\/www.google.co.uk\/x" : true,
+      "https:\/\/www.google.de\/" : true
+    }
+  },
+  {
+    "kind" : "glob",
+    "pattern" : "\/^https?:\/\/(www\\.)?github\\.com\/[^\/]+\/[^\/]+\/?$\/i",
+    "rule" : {
+      "ignoreCase" : true,
+      "source" : "^https?:\/\/(www\\.)?github\\.com\/[^\/]+\/[^\/]+\/?$"
+    },
+    "urls" : {
+      "https:\/\/GitHub.com\/a\/b" : true,
+      "https:\/\/github.com\/a\/b\/issues" : false
+    }
+  },
+  {
+    "kind" : "glob",
+    "pattern" : "*",
+    "rule" : {
+      "ignoreCase" : true,
+      "source" : "^.*$"
+    },
+    "urls" : {
+      "https:\/\/anything\/" : true
+    }
+  }
+]

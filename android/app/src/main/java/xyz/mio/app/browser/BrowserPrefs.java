@@ -53,6 +53,26 @@ public final class BrowserPrefs {
     public static boolean preferSystemBrowser(Context c) { return read(c).optBoolean("preferSystem", false); }
     public static void setPreferSystemBrowser(Context c, boolean v) { JSONObject o = read(c); try { o.put("preferSystem", v); } catch (Exception ignored) {} write(c, o); }
 
+    // 通用键值（YouTube 防沉迷等独立功能用自己的键）
+    public static boolean getBoolean(Context c, String key, boolean def) { return read(c).optBoolean(key, def); }
+    public static void putBoolean(Context c, String key, boolean v) { JSONObject o = read(c); try { o.put(key, v); } catch (Exception ignored) {} write(c, o); }
+    public static int getInt(Context c, String key, int def) { return read(c).optInt(key, def); }
+    public static void putInt(Context c, String key, int v) { JSONObject o = read(c); try { o.put(key, v); } catch (Exception ignored) {} write(c, o); }
+    /** 跳转系统浏览器后自动关闭标签页（默认关），见 CloseAfterExternal */
+    public static boolean closeTabAfterExternal(Context c) { return read(c).optBoolean("closeTab.afterExternal", false); }
+    public static void setCloseTabAfterExternal(Context c, boolean v) { JSONObject o = read(c); try { o.put("closeTab.afterExternal", v); } catch (Exception ignored) {} write(c, o); }
+
+    /** 多标签页：新标签页地址（空 = MioCore 导航），见 TabsCore.normalizeNewTabUrl */
+    public static String newTabUrl(Context c) { return read(c).optString("tabs.newTabUrl", ""); }
+    public static void setNewTabUrl(Context c, String v) { JSONObject o = read(c); try { o.put("tabs.newTabUrl", v == null ? "" : v); } catch (Exception ignored) {} write(c, o); }
+    // 媒体（MioMedia）：SponsorBlock 总开关 / 分类，媒体通知权限只问一次
+    public static boolean sponsorBlock(Context c) { return read(c).optBoolean("sponsorBlock", true); }
+    public static void setSponsorBlock(Context c, boolean v) { JSONObject o = read(c); try { o.put("sponsorBlock", v); } catch (Exception ignored) {} write(c, o); }
+    public static boolean sponsorBlockCategory(Context c, String cat, boolean def) { return read(c).optBoolean("sb." + cat, def); }
+    public static void setSponsorBlockCategory(Context c, String cat, boolean v) { JSONObject o = read(c); try { o.put("sb." + cat, v); } catch (Exception ignored) {} write(c, o); }
+    public static boolean askedNotifications(Context c) { return read(c).optBoolean("askedNotifications", false); }
+    public static void setAskedNotifications(Context c, boolean v) { JSONObject o = read(c); try { o.put("askedNotifications", v); } catch (Exception ignored) {} write(c, o); }
+
     public static List<String> allowlist(Context c) {
         List<String> out = new ArrayList<>();
         JSONArray a = read(c).optJSONArray("allowlist");

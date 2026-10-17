@@ -137,6 +137,12 @@ final class YouTubeFocusScriptTests: XCTestCase {
         XCTAssertTrue(MioWebCompat.youtubeFocusIntervalChoices.contains(MioWebCompat.youtubeFocusDefaultInterval))
     }
 
+    func testPlayablesFlagIsSubstituted() {
+        XCTAssertTrue(MioWebCompat.youtubeFocusScript(intervalSeconds: 60).contains("'1' !== '0'"))
+        XCTAssertTrue(MioWebCompat.youtubeFocusScript(intervalSeconds: 60, hidePlayables: false).contains("'0' !== '0'"))
+        XCTAssertFalse(MioWebCompat.youtubeFocusScript(intervalSeconds: 60).contains("__MIO_YT_PLAYABLES__"))
+    }
+
     func testNoHTMLStringSinks() {
         for bad in ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"] {
             XCTAssertFalse(MioWebCompat.youtubeFocusScriptTemplate.contains(bad), bad)

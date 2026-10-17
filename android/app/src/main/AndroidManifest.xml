@@ -24,14 +24,33 @@
 
         </activity>
 
-        <!-- App 内置浏览器：独立进程 = 独立的 WebView 数据目录（Cookie / 存储与 MioCore 主界面分开） -->
+        <!-- App 内置浏览器：独立进程 = 独立的 WebView 数据目录（Cookie / 存储与 MioCore 主界面分开）；独立任务 = 可收起到后台（标签保留），主界面角标点回来 -->
         <activity
             android:name=".browser.BrowserActivity"
             android:process=":browser"
+            android:taskAffinity="${applicationId}.browser"
+            android:label="Mio 浏览器"
             android:theme="@style/BrowserTheme"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|uiMode|density"
             android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
+            android:exported="false" />
+
+        <!-- 软件内更新：PackageInstaller 会话结果（xyz.mio.app.update） -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
+
+        <!-- 内置浏览器后台播放：媒体通知 + MediaSession，和浏览器同一进程（MioMediaService.java） -->
+        <service
+            android:name=".browser.MioMediaService"
+            android:process=":browser"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
+
+        <!-- 存到 MioCore：在主进程里用 MioCore 主界面的登录 Cookie 调 API（内置浏览器在 :browser 进程，拿不到） -->
+        <service
+            android:name=".browser.MioSaveService"
             android:exported="false" />
 
         <provider
@@ -48,4 +67,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 软件内更新：安装从 GitHub Releases 下载的 Mio.apk（同一 keystore 签名，安装前校验证书） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 内置浏览器后台播放（MioMediaService） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

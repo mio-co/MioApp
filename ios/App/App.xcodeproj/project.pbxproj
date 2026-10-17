@@ -22,7 +22,24 @@
 		A1000001000000000000A005 /* MioDesktop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001000000000000F005 /* MioDesktop.swift */; };
 		A1000001000000000000A006 /* MioObjCSafe.m in Sources */ = {isa = PBXBuildFile; fileRef = A1000001000000000000F006 /* MioObjCSafe.m */; };
 		A1000001000000000000A009 /* MioWebCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001000000000000F009 /* MioWebCompat.swift */; };
+		7D0E5A1C00000000000000B1 /* MioUpdateCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0E5A1C00000000000000F1 /* MioUpdateCore.swift */; };
+		C0A7A1E5000000000000B001 /* MioContainerCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A7A1E5000000000000F001 /* MioContainerCore.swift */; };
+		C0A7A1E5000000000000B002 /* MioContainerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A7A1E5000000000000F002 /* MioContainerStore.swift */; };
+		7D0E5A1C00000000000000B2 /* MioUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0E5A1C00000000000000F2 /* MioUpdater.swift */; };
+		C1053AB0C1053AB0C1053A01 /* MioCloseAfterExternal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1053AB0C1053AB0C1053F01 /* MioCloseAfterExternal.swift */; };
+		7AB50000000000000000A002 /* MioTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB50000000000000000F002 /* MioTabs.swift */; };
+		7AB50000000000000000A001 /* MioTabsCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB50000000000000000F001 /* MioTabsCore.swift */; };
+		B2ED1A00000000000000A001 /* MioMediaScripts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2ED1A00000000000000F001 /* MioMediaScripts.swift */; };
+		B2ED1A00000000000000A002 /* MioMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2ED1A00000000000000F002 /* MioMedia.swift */; };
+		B7EAD000000000000000A001 /* MioReaderCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7EAD000000000000000F001 /* MioReaderCore.swift */; };
+		B7EAD000000000000000A002 /* MioPageTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7EAD000000000000000F002 /* MioPageTools.swift */; };
 		A1000001000000000000A004 /* ContentBlockerConverter in Frameworks */ = {isa = PBXBuildFile; productRef = A1000001000000000000D001 /* ContentBlockerConverter */; };
+		B7A15E000000000000000011 /* MioTranslate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A15E000000000000000001 /* MioTranslate.swift */; };
+		B7A15E000000000000000012 /* MioTranslateCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A15E000000000000000002 /* MioTranslateCore.swift */; };
+		B7A15E000000000000000013 /* mio-translate.js in Resources */ = {isa = PBXBuildFile; fileRef = B7A15E000000000000000003 /* mio-translate.js */; };
+		55530001000000000000A001 /* MioUserScriptCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55530001000000000000F001 /* MioUserScriptCore.swift */; };
+		55530001000000000000A002 /* MioUserScripts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55530001000000000000F002 /* MioUserScripts.swift */; };
+		55530001000000000000A003 /* MioWebRTCGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55530001000000000000F003 /* MioWebRTCGuard.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,10 +58,27 @@
 		A1000001000000000000F002 /* MioBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioBrowser.swift; sourceTree = "<group>"; };
 		A1000001000000000000F005 /* MioDesktop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioDesktop.swift; sourceTree = "<group>"; };
 		A1000001000000000000F009 /* MioWebCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioWebCompat.swift; sourceTree = "<group>"; };
+		7D0E5A1C00000000000000F1 /* MioUpdateCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioUpdateCore.swift; sourceTree = "<group>"; };
+		C0A7A1E5000000000000F001 /* MioContainerCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioContainerCore.swift; sourceTree = "<group>"; };
+		C0A7A1E5000000000000F002 /* MioContainerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioContainerStore.swift; sourceTree = "<group>"; };
+		7D0E5A1C00000000000000F2 /* MioUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioUpdater.swift; sourceTree = "<group>"; };
+		C1053AB0C1053AB0C1053F01 /* MioCloseAfterExternal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioCloseAfterExternal.swift; sourceTree = "<group>"; };
+		7AB50000000000000000F002 /* MioTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioTabs.swift; sourceTree = "<group>"; };
+		7AB50000000000000000F001 /* MioTabsCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioTabsCore.swift; sourceTree = "<group>"; };
+		B2ED1A00000000000000F001 /* MioMediaScripts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioMediaScripts.swift; sourceTree = "<group>"; };
+		B2ED1A00000000000000F002 /* MioMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioMedia.swift; sourceTree = "<group>"; };
+		B7EAD000000000000000F001 /* MioReaderCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioReaderCore.swift; sourceTree = "<group>"; };
+		B7EAD000000000000000F002 /* MioPageTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioPageTools.swift; sourceTree = "<group>"; };
 		A1000001000000000000F006 /* MioObjCSafe.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MioObjCSafe.m; sourceTree = "<group>"; };
 		A1000001000000000000F007 /* MioObjCSafe.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MioObjCSafe.h; sourceTree = "<group>"; };
 		A1000001000000000000F008 /* App-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "App-Bridging-Header.h"; sourceTree = "<group>"; };
 		A1000001000000000000F003 /* AdblockBundle */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AdblockBundle; sourceTree = "<group>"; };
+		B7A15E000000000000000001 /* MioTranslate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioTranslate.swift; sourceTree = "<group>"; };
+		B7A15E000000000000000002 /* MioTranslateCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioTranslateCore.swift; sourceTree = "<group>"; };
+		B7A15E000000000000000003 /* mio-translate.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = "mio-translate.js"; path = "../../shared/translate/mio-translate.js"; sourceTree = SOURCE_ROOT; };
+		55530001000000000000F001 /* MioUserScriptCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioUserScriptCore.swift; sourceTree = "<group>"; };
+		55530001000000000000F002 /* MioUserScripts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioUserScripts.swift; sourceTree = "<group>"; };
+		55530001000000000000F003 /* MioWebRTCGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioWebRTCGuard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -87,6 +121,23 @@
 				A1000001000000000000F002 /* MioBrowser.swift */,
 				A1000001000000000000F005 /* MioDesktop.swift */,
 				A1000001000000000000F009 /* MioWebCompat.swift */,
+				7D0E5A1C00000000000000F1 /* MioUpdateCore.swift */,
+				C0A7A1E5000000000000F001 /* MioContainerCore.swift */,
+				C0A7A1E5000000000000F002 /* MioContainerStore.swift */,
+				7D0E5A1C00000000000000F2 /* MioUpdater.swift */,
+				C1053AB0C1053AB0C1053F01 /* MioCloseAfterExternal.swift */,
+				7AB50000000000000000F002 /* MioTabs.swift */,
+				7AB50000000000000000F001 /* MioTabsCore.swift */,
+				B2ED1A00000000000000F001 /* MioMediaScripts.swift */,
+				B2ED1A00000000000000F002 /* MioMedia.swift */,
+				B7EAD000000000000000F001 /* MioReaderCore.swift */,
+				B7EAD000000000000000F002 /* MioPageTools.swift */,
+				B7A15E000000000000000001 /* MioTranslate.swift */,
+				B7A15E000000000000000002 /* MioTranslateCore.swift */,
+				B7A15E000000000000000003 /* mio-translate.js */,
+				55530001000000000000F001 /* MioUserScriptCore.swift */,
+				55530001000000000000F002 /* MioUserScripts.swift */,
+				55530001000000000000F003 /* MioWebRTCGuard.swift */,
 				A1000001000000000000F006 /* MioObjCSafe.m */,
 				A1000001000000000000F007 /* MioObjCSafe.h */,
 				A1000001000000000000F008 /* App-Bridging-Header.h */,
@@ -175,6 +226,7 @@
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				A1000001000000000000A003 /* AdblockBundle in Resources */,
+				B7A15E000000000000000013 /* mio-translate.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -191,7 +243,23 @@
 				A1000001000000000000A002 /* MioBrowser.swift in Sources */,
 				A1000001000000000000A005 /* MioDesktop.swift in Sources */,
 				A1000001000000000000A009 /* MioWebCompat.swift in Sources */,
+				7D0E5A1C00000000000000B1 /* MioUpdateCore.swift in Sources */,
+				C0A7A1E5000000000000B001 /* MioContainerCore.swift in Sources */,
+				C0A7A1E5000000000000B002 /* MioContainerStore.swift in Sources */,
+				7D0E5A1C00000000000000B2 /* MioUpdater.swift in Sources */,
+				C1053AB0C1053AB0C1053A01 /* MioCloseAfterExternal.swift in Sources */,
+				7AB50000000000000000A002 /* MioTabs.swift in Sources */,
+				7AB50000000000000000A001 /* MioTabsCore.swift in Sources */,
+				B2ED1A00000000000000A001 /* MioMediaScripts.swift in Sources */,
+				B2ED1A00000000000000A002 /* MioMedia.swift in Sources */,
+				B7EAD000000000000000A001 /* MioReaderCore.swift in Sources */,
+				B7EAD000000000000000A002 /* MioPageTools.swift in Sources */,
+				55530001000000000000A001 /* MioUserScriptCore.swift in Sources */,
+				55530001000000000000A002 /* MioUserScripts.swift in Sources */,
+				55530001000000000000A003 /* MioWebRTCGuard.swift in Sources */,
 				A1000001000000000000A006 /* MioObjCSafe.m in Sources */,
+				B7A15E000000000000000011 /* MioTranslate.swift in Sources */,
+				B7A15E000000000000000012 /* MioTranslateCore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -332,14 +400,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.2;
+				MARKETING_VERSION = 0.3.3;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.mio.app;
@@ -358,14 +426,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.2;
+				MARKETING_VERSION = 0.3.3;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.mio.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
