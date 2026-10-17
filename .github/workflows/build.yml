@@ -385,6 +385,80 @@ jobs:
           path: out/*
           retention-days: 14
 
+  mac-native:
+    # 原生 macOS（AppKit，SwiftPM：macos/，依赖 apple/MioKit）浏览器壳的冒烟（feat/mac-native，不进 release）：
+    # MSE 门槛（Catalyst 的 WKWebView 没有 MediaSource）、YouTube 桌面 UA 的可用格式（只记录）、标签 / 容器 / 缩放 / 菜单快捷键、工具栏截图；
+    # MioKit 接通：测试页广告请求被内容规则拦下、Mio 扩展开关切换生效、MioCore 桥只对 MioCore / mio:// 开放
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build + bundle (xcodebuild macos/ + apple/MioKit → Mio Preview.app, ad-hoc)
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          bash macos/scripts/bundle.sh "$PWD/mac-native-dist"
+          APP="mac-native-dist/Mio Preview.app"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist"
+          lipo -info "$APP/Contents/MacOS/MioMac"
+          otool -L "$APP/Contents/MacOS/MioMac" | grep -E 'WebKit|AppKit'
+          ! otool -L "$APP/Contents/MacOS/MioMac" | grep -i -E 'UIKit|Capacitor'
+          # MioKit 资源包（注入脚本 / 内置规则）在 Contents/Resources；构建目录删掉，冒烟只能从 .app 里找资源
+          find "$APP/Contents/Resources/MioKit_MioKit.bundle" -name '*.js' -o -name '*.txt' | sed "s|$APP/||"
+          rm -rf macos/.build
+
+      - name: Smoke (MSE gate, YouTube formats, Firefox-style UI, animations, screenshots + recording)
+        run: |
+          set +e -u
+          mkdir -p mac-native-smoke
+          OUT="$PWD/mac-native-smoke/smoke.json"
+          # MIO_REDUCE_MOTION=0：runner 系统开着「减少动态效果」，强制打开动画录证据（App 平时跟随系统设置）
+          MIO_REDUCE_MOTION=0 MIO_SMOKE_OUT="$OUT" MIO_SMOKE_SHOTS="$PWD/mac-native-smoke" "mac-native-dist/Mio Preview.app/Contents/MacOS/MioMac" > mac-native-smoke/app.log 2>&1 &
+          PID=$!
+          SHOT=0
+          for i in $(seq 1 420); do
+            kill -0 $PID 2>/dev/null || break
+            if [ $SHOT = 0 ] && [ $i -ge 70 ]; then screencapture -x mac-native-smoke/screen.png 2>/dev/null; SHOT=1; fi
+            sleep 1
+          done
+          if kill -0 $PID 2>/dev/null; then echo "still running after 420s"; screencapture -x mac-native-smoke/screen-timeout.png 2>/dev/null; kill $PID; fi
+          wait $PID
+          CODE=$?
+          echo "--- app.log (tail) ---"; tail -40 mac-native-smoke/app.log
+          echo "--- smoke.json ---"; cat "$OUT" 2>/dev/null || echo "(no smoke json)"
+          echo "--- summary ---"
+          jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, modulesOK, bridgeOK, blockOK, toggleOK, missingKeys, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
+          echo "--- MioKit ---"
+          jq -c '.miokit | {blockOK, toggleOK, ruleLists, rulesReadyMs, appliedOn, appliedOff, appliedOnAgain, on, off, onAgain, adLoadedWhenOff, panelRowsFound, settingsChangeKey, userScriptOK, userScript, userScriptError, pageMenu, filterStatus}' "$OUT" 2>/dev/null
+          jq -c '.ui.bridge' "$OUT" 2>/dev/null
+          echo "--- Firefox UI ---"
+          jq -c '.ui | {systemReduceMotion, homeOK, homeAddressBar, bridge, pinnedOK, dragOK, detachOK, overflow, dropdownRows, zoomHUDShown, zoomPill, findStatus, verticalMode, reduceMotionOK, tabsAboveNav, trafficLightsInTabRow, layout}' "$OUT" 2>/dev/null
+          jq -c '.ui | {animation, recording, fullscreen}' "$OUT" 2>/dev/null
+          jq -c '.ui.strips | to_entries | map({(.key): {frames: .value.frames, changed: .value.framesThatChanged}}) | add' "$OUT" 2>/dev/null
+          ls -la mac-native-smoke
+          jq -c '.youtube | {playability, hlsManifest, dashManifest, adaptiveCount, maxAdaptiveHeight, qualityLevels, playbackQuality, video, mediaSource, managedMediaSource}' "$OUT" 2>/dev/null
+          jq -c '[.youtube.adaptiveVideo[]? | "\(.q) \(.mime)"] | unique' "$OUT" 2>/dev/null
+          ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i -E 'MioMac' | head -2 | while read f; do echo "--- crash $f ---"; head -60 ~/Library/Logs/DiagnosticReports/"$f"; done
+          echo "exit $CODE"
+          test "$CODE" = 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-native-smoke
+          path: mac-native-smoke
+          retention-days: 14
+
+      - name: Zip preview app
+        run: ditto -c -k --sequesterRsrc --keepParent "mac-native-dist/Mio Preview.app" mac-native-preview.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-native-preview
+          path: mac-native-preview.zip
+          retention-days: 14
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [unit, ios, ios-sim-smoke, mac]
