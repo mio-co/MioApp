@@ -4,7 +4,7 @@
 set -uo pipefail
 OUT="$1"; mkdir -p "$OUT"
 adb logcat -c
-adb shell am start -W -n xyz.mio.app/.browser.BrowserActivity -e url "https://en.wikipedia.org/wiki/Safari_(web_browser)" --ez mioLayoutSmoke true > "$OUT/am-start.txt"
+adb shell am start -W -n xyz.mio.app/.browser.BrowserActivity -e url "https://en.wikipedia.org/wiki/WebKit" --ez mioLayoutSmoke true > "$OUT/am-start.txt" 2>&1
 seen=0
 for i in $(seq 1 120); do
   sleep 0.5
