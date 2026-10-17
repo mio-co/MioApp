@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('mioSettings', {
   updateNow: () => ipcRenderer.invoke('mio-settings:update-now'),
   clearData: () => ipcRenderer.invoke('mio-settings:clear-data'),
   onChange: (fn) => ipcRenderer.on('mio-settings:changed', (_e, s) => fn(s)),
+  openTranslate: () => ipcRenderer.invoke('mio-translate-settings:open'),
 });
 
 // 软件更新（desktop/src/updater.js）

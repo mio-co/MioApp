@@ -61,6 +61,13 @@
         "filter": [
           "*.js"
         ]
+      },
+      {
+        "from": "../shared/translate",
+        "to": "translate",
+        "filter": [
+          "mio-translate.js"
+        ]
       }
     ],
     "win": {

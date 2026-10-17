@@ -6,13 +6,14 @@ const config = require('./config');
 const { hostOf, isHttpUrl, hostInList } = require('./util');
 const { SettingsStore } = require('./settings-store');
 const { Adblock } = require('./adblock');
-const { BrowserManager, SettingsWindow } = require('./browser');
+const { BrowserManager, SettingsWindow, UI_PARTITION } = require('./browser');
 const { Updater } = require('./updater');
 const { PageTools } = require('./page-tools');
 const pageToolsStore = require('./page-tools-store');
 const { ContainerStore } = require('./containers-store');
 const { ContainerSessions } = require('./containers');
 const { COLOR_HEX } = require('./containers-core');
+const { Translate } = require('./translate');
 
 app.setAppUserModelId('xyz.mio.desktop');
 
@@ -234,6 +235,8 @@ if (!app.requestSingleInstanceLock()) {
       pageTools,
       openSettings: (host) => settingsWindow.open(host),
     });
+    // 翻译（网页双语 / 划词 / YouTube 双语字幕）：工具栏「译」按钮
+    browser.translate = new Translate({ session: browserSession, icon, uiPartition: UI_PARTITION, isBrowserSession: (ses) => containers.isBrowserSession(ses) });
 
     // 主会话、浏览器会话都不需要的权限一律拒绝；常见的（通知、剪贴板、全屏、媒体自动播放）放行
     const allow = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'notifications', 'pointerLock', 'media', 'window-management']);
@@ -243,6 +246,7 @@ if (!app.requestSingleInstanceLock()) {
     containers.configure(function configureBrowserSession(ses) {
       ses.setPermissionRequestHandler((wc, permission, callback) => callback(allow.has(permission)));
       adblock.attachSession(ses);
+      browser.translate.attachSession(ses);
     });
     containers.installIpc((event) => !!(settingsWindow.win && !settingsWindow.win.isDestroyed() && event.sender === settingsWindow.win.webContents));
 
