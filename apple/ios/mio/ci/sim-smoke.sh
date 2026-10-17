@@ -4,6 +4,7 @@
 #   2. 通过 URL scheme 打开 mio://home
 #   3. 通过 <scheme>://open-url 打开一个网页 → 截图（含底部工具栏，另裁一张底部工具栏）
 #   4. <scheme>://deep-link?url=/action/show-tab-tray → 截图标签页概览
+#   5. App 内 MioKit 断言（MioSmoke.swift → kit-smoke.json）：mio://home→MioCore、本机桥来源校验、广告拦截、Mio 扩展设置页截图
 # 任一步骤 App 进程消失即失败。
 # 用法：apple/ios/mio/ci/sim-smoke.sh <Client.app> <输出目录>
 set -uo pipefail
@@ -53,7 +54,8 @@ SUMMARY="$OUT/summary.txt"; : > "$SUMMARY"
 touch "$OUT/.start"
 
 xcrun simctl install "$DEV" "$APP" || { echo "INSTALL_FAILED" | tee -a "$SUMMARY"; exit 1; }
-LOUT=$(xcrun simctl launch --terminate-running-process --stdout="$OUT/stdout.txt" --stderr="$OUT/stderr.txt" "$DEV" "$BID" 2>&1)
+# SIMCTL_CHILD_MIO_SMOKE=1 → App 里的 MioSmoke（Client/Frontend/Browser/Mio/MioSmoke.swift）等 go 文件后跑 MioKit 断言
+LOUT=$(SIMCTL_CHILD_MIO_SMOKE=1 xcrun simctl launch --terminate-running-process --stdout="$OUT/stdout.txt" --stderr="$OUT/stderr.txt" "$DEV" "$BID" 2>&1)
 echo "$LOUT" > "$OUT/launch.txt"
 PID=${LOUT##*: }
 
@@ -94,6 +96,41 @@ if step 01-launch-home "$WAIT"; then
   run_to 30 xcrun simctl openurl "$DEV" "mio://home" >>"$OUT/openurl.txt" 2>&1 || echo "openurl mio://home rc=$?" >>"$OUT/openurl.txt"
   step 02-mio-home 10 || true
 fi
+# App 内 MioKit 断言：mio://home → MioCore、example.com 调本机桥被拒 / mio://about 可用、广告请求被拦、Mio 扩展设置页
+kit_smoke() {
+  local data smoke i name
+  data=$(run_to 30 xcrun simctl get_app_container "$DEV" "$BID" data 2>/dev/null) || { echo "kit-smoke NO_CONTAINER" | tee -a "$SUMMARY"; FAIL=1; return 1; }
+  smoke="$data/Documents/mio-smoke"
+  mkdir -p "$smoke"; rm -f "$smoke/report.json"; touch "$smoke/go"
+  for i in $(seq 1 "${KIT_SMOKE_TIMEOUT:-300}"); do
+    if ! alive; then echo "kit-smoke CRASHED (gone after ~${i}s)" | tee -a "$SUMMARY"; FAIL=1; break; fi
+    if [ -f "$smoke/shot-request" ]; then
+      name=$(cat "$smoke/shot-request")
+      run_to 30 xcrun simctl io "$DEV" screenshot "$OUT/$name.png" >/dev/null 2>&1 || true
+      rm -f "$smoke/shot-request"
+    fi
+    [ -f "$smoke/report.json" ] && break
+    sleep 1
+  done
+  cp "$smoke"/*.png "$OUT/" 2>/dev/null || true
+  if [ ! -f "$smoke/report.json" ]; then
+    [ "$FAIL" = 1 ] || { echo "kit-smoke TIMEOUT (no report.json)" | tee -a "$SUMMARY"; FAIL=1; }
+    return 1
+  fi
+  cp "$smoke/report.json" "$OUT/kit-smoke.json"
+  echo "--- kit-smoke.json"; cat "$OUT/kit-smoke.json"; echo
+  python3 - "$OUT/kit-smoke.json" <<'PY' | tee -a "$SUMMARY"
+import json, sys
+r = json.load(open(sys.argv[1]))
+for k in ("homeOK", "bridgeOK", "blockOK", "settingsOK"):
+    print(f"kit-smoke {k} {'OK' if r.get(k) else 'FAIL'}")
+PY
+  if [ "$(python3 -c 'import json,sys; print(1 if json.load(open(sys.argv[1])).get("pass") else 0)' "$OUT/kit-smoke.json")" != 1 ]; then
+    FAIL=1; return 1
+  fi
+}
+if [ "$FAIL" = 0 ]; then kit_smoke || true; fi
+
 if [ "$FAIL" = 0 ]; then
   run_to 30 xcrun simctl openurl "$DEV" "${SCHEME}://open-url?url=https%3A%2F%2Fexample.com%2F" >>"$OUT/openurl.txt" 2>&1 || echo "openurl open-url rc=$?" >>"$OUT/openurl.txt"
   step 03-webpage 12 && crop_bottom "$OUT/03-webpage.png" "$OUT/03-webpage-bottom-toolbar.png"

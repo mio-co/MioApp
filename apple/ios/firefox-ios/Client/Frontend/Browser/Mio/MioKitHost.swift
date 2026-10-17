@@ -33,6 +33,8 @@ final class MioKitHost {
         init(mods: MioWebViewModules, webView: WKWebView) { self.mods = mods; self.webView = webView }
     }
     private var entries: [ObjectIdentifier: Entry] = [:]
+    /// Main-frame navigations per web view, recorded only for the CI smoke (MioSmoke).
+    private var mainFrameNavigations: [ObjectIdentifier: [String]] = [:]
     private var observers: [NSObjectProtocol] = []
 
     private init() {
@@ -83,6 +85,17 @@ final class MioKitHost {
         hostScriptsDidChange(webView: webView)
         mods.applyContentRules(topURL: webView.url)
         pruneEntries()
+        MioSmoke.startIfRequested()
+    }
+
+    /// MioKit modules of a web view (CI smoke).
+    func modules(for webView: WKWebView) -> MioWebViewModules? {
+        entries[ObjectIdentifier(webView)]?.mods
+    }
+
+    /// Main-frame navigations seen for a web view (only recorded when the CI smoke runs).
+    func mainFrameLog(for webView: WKWebView) -> [String] {
+        mainFrameNavigations[ObjectIdentifier(webView)] ?? []
     }
 
     /// Firefox re-injected its scripts (UserScriptManager removes every user script first):
@@ -105,6 +118,9 @@ final class MioKitHost {
 
     /// Main-frame navigation is about to start (allow-list → attach / detach rule lists, GM value changes).
     func willNavigateMainFrame(webView: WKWebView, to url: URL?) {
+        if MioSmoke.isRequested, let url {
+            mainFrameNavigations[ObjectIdentifier(webView), default: []].append(url.absoluteString)
+        }
         entries[ObjectIdentifier(webView)]?.mods.willNavigateMainFrame(to: url)
     }
 
@@ -168,7 +184,7 @@ final class MioKitHost {
         }
     }
 
-    private static func topViewController() -> UIViewController? {
+    static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let window = scenes.flatMap { $0.windows }.first { $0.isKeyWindow } ?? scenes.first?.windows.first
         var top = window?.rootViewController
