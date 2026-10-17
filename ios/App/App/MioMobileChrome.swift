@@ -696,7 +696,7 @@ final class MioMobileChrome: NSObject, UIGestureRecognizerDelegate {
             pill.alpha = hide ? 1 : 0
             pill.isUserInteractionEnabled = hide
         case .top:
-            topChrome?.contentView.subviews.forEach { v in
+            (topChrome as? UIVisualEffectView)?.contentView.subviews.forEach { v in
                 if v === topStrip { v.alpha = hide ? 1 : 0; v.isUserInteractionEnabled = hide } else { v.alpha = hide ? 0 : 1 }
             }
             bottomChrome?.alpha = hide ? 0 : 1
