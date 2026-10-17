@@ -329,6 +329,7 @@ jobs:
           script: |
             bash scripts/android-emulator-smoke.sh "$(ls apk/*-android-debug.apk | head -1)" android-smoke
             bash scripts/android-ytfocus-smoke.sh android-smoke/ytfocus
+            bash scripts/android-tabs-smoke.sh android-smoke/tabs
 
       - uses: actions/upload-artifact@v4
         if: always()

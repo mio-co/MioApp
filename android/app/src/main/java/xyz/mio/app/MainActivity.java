@@ -61,6 +61,13 @@ public class MainActivity extends BridgeActivity {
         xyz.mio.app.update.UpdateUi.attach(this);
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        // 内置浏览器收起后 / App 重启后有上次的标签：右下角显示标签数角标（xyz.mio.app.browser.TabsBadge）
+        xyz.mio.app.browser.TabsBadge.refresh(this);
+    }
+
     /** CapConfig 没有 setter：只在路径需要规范化时用反射改 startPath */
     static void normalizeStartPath(CapConfig cfg) throws Exception {
         String start = cfg.getStartPath();

@@ -62,6 +62,10 @@ public final class BrowserPrefs {
     public static boolean closeTabAfterExternal(Context c) { return read(c).optBoolean("closeTab.afterExternal", false); }
     public static void setCloseTabAfterExternal(Context c, boolean v) { JSONObject o = read(c); try { o.put("closeTab.afterExternal", v); } catch (Exception ignored) {} write(c, o); }
 
+    /** 多标签页：新标签页地址（空 = MioCore 导航），见 TabsCore.normalizeNewTabUrl */
+    public static String newTabUrl(Context c) { return read(c).optString("tabs.newTabUrl", ""); }
+    public static void setNewTabUrl(Context c, String v) { JSONObject o = read(c); try { o.put("tabs.newTabUrl", v == null ? "" : v); } catch (Exception ignored) {} write(c, o); }
+
     public static List<String> allowlist(Context c) {
         List<String> out = new ArrayList<>();
         JSONArray a = read(c).optJSONArray("allowlist");
