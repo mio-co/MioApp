@@ -321,7 +321,12 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                                         report["tabs"] = r
                                         tabsOK = ok
                                         NSLog("⚡️ Mio smoke: tabs %@ %@", ok ? "OK" : "FAILED", "\(r)")
-                                        finish()
+                                        // YouTube 高清（MioYouTubeHD.swift）：MSE / 可用画质
+                                        MioYouTubeHDSmoke.run { r, ok in
+                                            report["youtubeHD"] = r
+                                            report["youtubeHDOK"] = ok
+                                            finish()
+                                        }
                                     }
                                 }
                             }

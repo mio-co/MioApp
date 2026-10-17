@@ -516,6 +516,10 @@ jobs:
           grep -q 'unexpected bundle id' "$T/wrongid/update.log"
           test -e "$T/wrongid/apps/Mio.app/Contents/old-marker"
 
+      - name: WebKit MSE baseline (AppKit WKWebView on this runner, informational)
+        continue-on-error: true
+        run: timeout 90 swift scripts/mac-appkit-mse-probe.swift https://example.com/ || true
+
       - name: Smoke test (public site page → window.MioDesktop.browser.open → in-app browser + adblock ready)
         run: |
           # 不用 -e：App 非 0 退出时 wait 会直接终止脚本，日志和 JSON 就看不到了
