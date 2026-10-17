@@ -183,13 +183,23 @@ protocol MioModuleContentRules           // shouldApplyContentRules(topURL:prefs
 
 - 内置（离线可用，不可关）：`mio-basic`（Mio 精简：常见广告网络与统计）、`mio-youtube`（v0.3.x 的 YouTube 补充）。
 - 订阅（默认全开，与 v0.3.x 相同）：AdGuard Base / 移动广告 / 跟踪保护 / EasyList / EasyPrivacy / AdGuard 中文（`filters.adtidy.org/ios/filters/<id>_optimized.txt`）；
-  自定义订阅：`mio.adblock.customLists`（https，EasyList / AdGuard 语法）。
-- 下载：ETag / Last-Modified 条件请求，HTML（门户页）拒收；文件在 `Application Support/MioKit/ContentBlocking/lists/`，状态 `state.json`。
+  可选：EasyList China（默认关，已包含在 AdGuard 中文里）。自定义订阅：`mio.adblock.customLists`（https，EasyList / AdGuard 语法）。
+- 拆行：列表是 CRLF，一律用 `MioFilterText.lines`（按 UTF-8 字节拆）。**不要用 `split(whereSeparator: { $0 == "\n" })`**：Swift 把 "\r\n" 当一个 Character，
+  v0.4.0 因此把每份订阅读成一行注释、编出 0 条规则（设置页只显示内置的约 46 条）。
+- 下载：ETag / Last-Modified 条件请求，HTML（门户页）拒收；单个列表网络错误 / 5xx / 429 重试 2 次（2 s、6 s）；文件在 `Application Support/MioKit/ContentBlocking/lists/`，状态 `state.json`。
+- 更新节奏（`MioFilterManager.nextCheckDate` + `MioContentBlocker`）：订阅缺失（首次启动 / 刚打开开关）→ 立即下载；之后上次成功 + 24 小时；
+  失败按 1 → 5 → 15 → 60 分钟退避（失败不再记成「已检查」）。检查时机：启动、回到前台（didBecomeActive）、运行中每 30 分钟、设置变化（`mio.adblock.*`）。
+  所有下载 / 编译在 `MioContentBlocker` 里串行，后来的请求合并到下一轮（不丢）。设置页「立即更新」走 `manager.refreshHandler`。
 - 转换：Apple 平台用 SafariConverterLib（`MioAdGuardFilterConverter`，参数同 v0.3.x）；Linux / 退路用 `MioBasicFilterConverter`（子集）。
+  网络规则 + `##` 元素隐藏（`css-display-none`）进 WKContentRuleList；scriptlet（`#%#//scriptlet(...)`、`##+js(...)`）/ 扩展 CSS（`#?#`、`#$#`）/ JS 规则进高级规则。
+- 高级规则（`MioAdvancedRules.swift`）：SafariConverterLib 的 FilterEngine 按页面地址查 → `MioAdvancedScript.build` 拼 JS（AdGuard Scriptlets 2.5.1 / ExtendedCss 2.3.0，
+  `Resources/adguard/`，更新用 `scripts/update-adguard-assets.sh`）→ `MioWebViewModules` 注入 page world：主框架在 `willNavigateMainFrame` 预先查好、
+  document-start 按主机名分发（比页面脚本早）；iframe / 没准备到的主框架在隔离世界 `mio-adblock` 发消息、原生 `evaluateJavaScript(in: frame)`。
 - 拆分：单个 WKContentRuleList 上限 15 万条；超了把源规则对半拆（递归），**例外规则（@@ / #@#）每一片都保留**。每片标识 `mio.kit.<list>.<part>`。
-- 缓存：按列表文本 SHA-256；内容没变、编译结果还在就不重编；关掉的列表 / 多余分片自动删。
-- 白名单站点：不挂规则（与 v0.3.x 相同做法，切换不需要重编）。
-- 未包含：AdGuard 高级规则（scriptlets / 扩展 CSS，v0.3.x 的 FilterEngine + `pageScript`）——见剩余工作。
+- 缓存：按（列表文本 SHA-256 + `MioFilterManager.compileFormat`）；格式变了（v0.4.0 = 1，现在 2）旧的空表自动重编；关掉的列表 / 多余分片自动删。
+- 状态：设置页「状态」= 已加载 N 条（内容规则 X · 高级 Y）· 跳过 M 条 · 上次更新 …；「各列表」逐个列出版本、条数、错误；「立即更新」按钮。
+- 白名单站点 / Access 登录页：不挂规则、不注入（与 v0.3.x 相同做法，切换不需要重编）。
+- 自检：`MioAdblockProbe`（CI 冒烟：>1 万条、请求被拦、## 隐藏、真实列表里的 set-constant 生效；adblock.turtlecute.org 打分 + 截图）。
 
 ## 用户脚本
 
@@ -257,8 +267,8 @@ cd apple/MioKit && swift test          # macOS：含 WebKit 测试；Linux：纯
 
 ## 剩余工作（TODO）
 
-- AdGuard 高级规则（scriptlets / 扩展 CSS）：把 v0.3.x `MioAdblockCore` 的 FilterEngine + `pageScript(for:)` 搬进来（需要按导航注入，接 `willNavigateMainFrame`）。
-- 后台更新调度：iOS `BGAppRefreshTask` / Mac `NSBackgroundActivityScheduler` 调 `blocker.prepare()`（宿主侧）。
+- 后台更新调度：iOS `BGAppRefreshTask`（App 不在前台时更新订阅；现在是启动 / 回到前台 / 运行中定时检查）。
+- Scriptlets 运行库远程更新（v0.3.x 有，现在只用包内 2.5.1）。
 - 相册同步、控制设备、文件：桥接口与权限已定义，方法实现 + 宿主授权界面待做。
 - 阅读视图外观面板、容器 / 用户脚本管理界面：各端 UI（数据都在这里）。
 - 翻译的「译为…」语言选择器、YouTube 双语开关的 UI 入口（设置已在模型里）。

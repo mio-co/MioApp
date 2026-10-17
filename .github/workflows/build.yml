@@ -215,13 +215,28 @@ jobs:
           swift --version
 
       - name: swift test (macOS + WebKit)
+        # MIO_ADBLOCK_LIVE=1：MioAdblockWebKitTests.testLiveSubscriptions 真实下载默认订阅（约 11 MB），断言 >1 万条、请求被拦、
+        # ## 元素隐藏、scriptlet 生效，并给 adblock.turtlecute.org 开 / 关拦截各打一次分、截图（artifact miokit-adblock）
+        env:
+          MIO_ADBLOCK_LIVE: "1"
+          MIO_ADBLOCK_ARTIFACTS: ${{ runner.temp }}/miokit-adblock
         run: |
           set -o pipefail
           swift test 2>&1 | tee "$RUNNER_TEMP/miokit-test.log"
 
       - name: Test summary
         if: always()
-        run: grep -E "Executed [0-9]+ tests|error:|failed|skipped" "$RUNNER_TEMP/miokit-test.log" | tail -60 || true
+        run: |
+          grep -E "Executed [0-9]+ tests|error:|failed|skipped" "$RUNNER_TEMP/miokit-test.log" | tail -60 || true
+          grep -A60 "ADBLOCK_REPORT" "$RUNNER_TEMP/miokit-test.log" | head -120 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: miokit-adblock
+          path: ${{ runner.temp }}/miokit-adblock
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: iOS Simulator build check
         run: |
@@ -284,18 +299,21 @@ jobs:
           MIO_REDUCE_MOTION=0 MIO_SMOKE_OUT="$OUT" MIO_SMOKE_SHOTS="$PWD/mac-native-smoke" "mac-native-dist/Mio.app/Contents/MacOS/MioMac" > mac-native-smoke/app.log 2>&1 &
           PID=$!
           SHOT=0
-          for i in $(seq 1 420); do
+          # 720s：冒烟里真实下载 + 编译广告拦截订阅（约 11 MB），再给 adblock.turtlecute.org 打分
+          for i in $(seq 1 720); do
             kill -0 $PID 2>/dev/null || break
             if [ $SHOT = 0 ] && [ $i -ge 70 ]; then screencapture -x mac-native-smoke/screen.png 2>/dev/null; SHOT=1; fi
             sleep 1
           done
-          if kill -0 $PID 2>/dev/null; then echo "still running after 420s"; screencapture -x mac-native-smoke/screen-timeout.png 2>/dev/null; kill $PID; fi
+          if kill -0 $PID 2>/dev/null; then echo "still running after 720s"; screencapture -x mac-native-smoke/screen-timeout.png 2>/dev/null; kill $PID; fi
           wait $PID
           CODE=$?
           echo "--- app.log (tail) ---"; tail -40 mac-native-smoke/app.log
           echo "--- smoke.json ---"; cat "$OUT" 2>/dev/null || echo "(no smoke json)"
           echo "--- summary ---"
-          jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, modulesOK, bridgeOK, blockOK, toggleOK, missingKeys, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
+          echo "--- adblock ---"
+          jq -c '.adblock | {ok, rulesOK, blockedOK, hideOK, scriptletOK, contentRules, advancedRules, skipped, compiledLists, rulesReadySeconds, scriptletRule, scriptletType, probe, turtlecute, errors, status}' "$OUT" 2>/dev/null
+          jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, modulesOK, bridgeOK, blockOK, toggleOK, adblockOK, missingKeys, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
           echo "--- MioKit ---"
           jq -c '.miokit | {blockOK, toggleOK, ruleLists, rulesReadyMs, appliedOn, appliedOff, appliedOnAgain, on, off, onAgain, adLoadedWhenOff, panelRowsFound, settingsChangeKey, userScriptOK, userScript, userScriptError, pageMenu, filterStatus}' "$OUT" 2>/dev/null
           jq -c '.ui.bridge' "$OUT" 2>/dev/null

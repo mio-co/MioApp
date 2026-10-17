@@ -21,6 +21,7 @@
 //   bridgeOK  example.com: window.Mio undefined and the bridge answers forbidden; mio://about: ping → pong
 //   blockOK   example.com: Mio ad-block rule lists attached, doubleclick request blocked, same-origin request loads
 //   settingsOK  Settings → "Mio 扩展" page (MioExtensionsView) renders with module rows
+//   adblockOK   downloaded subscriptions > 10k rules; probe page in a real tab: ad request blocked, ## hidden, scriptlet applied
 //   (recorded only) tab overview via the app's own deep link; tabTrayOK = only normal + private panes (v0.4.1)
 
 import Foundation
@@ -265,6 +266,12 @@ final class MioSmoke {
         report["newTab"] = newTabReport
         let newTabOK = (newTabReport["ok"] as? Bool) ?? false
 
+        // 3c. Ad-block depth (MioAdblockSmoke.swift): >10k rules from downloaded subscriptions, request blocked,
+        //     ## element hidden, real scriptlet applied in a real tab; adblock.turtlecute.org score + screenshot
+        let adblock = await MioAdblockSmoke.run(host: host, dir: dir)
+        report["adblock"] = adblock
+        let adblockOK = (adblock["ok"] as? Bool) == true
+
         // 4. Settings → Mio 扩展
         var settings: [String: Any] = [:]
         let groups = host.kit.settingsModel.groups()
@@ -312,7 +319,8 @@ final class MioSmoke {
         }
 
         let homePassed = (homeOK as? Bool) == true || (homeOK as? String) == "access-login"
-        let pass = homePassed && bridgeOK && blockOK && settingsOK && newTabOK
+        let pass = homePassed && bridgeOK && blockOK && settingsOK && newTabOK && adblockOK
+        report["adblockOK"] = adblockOK
         report["homeOK"] = homeOK
         report["newTabOK"] = newTabOK
         report["bridgeOK"] = bridgeOK
