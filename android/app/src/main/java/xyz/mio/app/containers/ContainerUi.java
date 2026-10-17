@@ -26,6 +26,10 @@ import java.util.List;
 public final class ContainerUi {
     private ContainerUi() {}
 
+    /** 「打开此容器」：内置浏览器设置的回调（在该容器里开新标签）；null = 不显示按钮 */
+    public interface Opener { void open(String containerId); }
+    public static Opener opener;
+
     /** 浏览器设置页里的入口按钮 */
     public static void addSettingsButton(Activity a, LinearLayout box) {
         Button b = new Button(a);
@@ -88,6 +92,19 @@ public final class ContainerUi {
             t.setText(c.name + (c.isDefault() ? "  ·  原来的浏览数据" : "  ·  " + ContainerState.colorName(c.color) + (tabs > 0 ? " · " + tabs + " 个标签" : "")));
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
             row.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            if (opener != null && (supported || c.isDefault())) {
+                Button open = new Button(a);
+                open.setText("打开");
+                open.setAllCaps(false);
+                open.setContentDescription("打开容器 " + c.name);
+                final String cid = c.id;
+                open.setOnClickListener(v -> {
+                    if (holder[0] != null) holder[0].dismiss();
+                    Opener o = opener;
+                    if (o != null) o.open(cid);
+                });
+                row.addView(open, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
             if (!c.isDefault()) {
                 row.setClickable(true);
                 row.setOnClickListener(v -> editContainer(a, c, reopen));

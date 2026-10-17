@@ -101,6 +101,11 @@ public final class MobileChromeCore {
 
     /** Android 页面菜单：翻译的双语 / 仅译文 / 原文 / 自动 / 目标语言在「翻译…」（TranslateBridge.showMenu）里，深色在「存到 Mio 与深色…」里 */
     public static List<Section> menuSections(boolean webPage, String host, boolean adblockEnabled, boolean webrtcGuard) {
+        return menuSections(webPage, host, adblockEnabled, webrtcGuard, false);
+    }
+
+    /** containers = 系统支持容器（MULTI_PROFILE）：加「在容器中打开此页 / 此网站始终用某容器打开」 */
+    public static List<Section> menuSections(boolean webPage, String host, boolean adblockEnabled, boolean webrtcGuard, boolean containers) {
         boolean hasHost = host != null && !host.isEmpty();
         List<Section> out = new ArrayList<>();
         List<String> page = new ArrayList<>(Arrays.asList("forward"));
@@ -114,6 +119,7 @@ public final class MobileChromeCore {
         tools.add("darkSite");
         out.add(new Section("翻译、阅读与外观", tools));
         if (webPage) out.add(new Section("存到 Mio", Arrays.asList("saveBookmark", "saveNote", "saveClip")));
+        if (webPage && hasHost && containers) out.add(new Section("容器", Arrays.asList("openInContainer", "siteContainer")));
         List<String> privacy = new ArrayList<>(Arrays.asList("adblock"));
         if (hasHost && adblockEnabled) privacy.add("adblockSite");
         if (hasHost && webrtcGuard) privacy.add("webrtcSite");
@@ -145,6 +151,8 @@ public final class MobileChromeCore {
             case "userScripts": return "用户脚本…";
             case "youtubeFocus": return "YouTube 防沉迷";
             case "adblockSettings": return "拦截设置…";
+            case "openInContainer": return "在容器中打开此页…";
+            case "siteContainer": return "此网站始终用某容器打开…";
             case "settings": return "浏览器设置…";
             case "backToMio": return "回到 Mio 导航";
             default: return id;

@@ -71,6 +71,11 @@ public class MobileChromeCoreTest {
         assertFalse(few.contains("adblockSite"));
         assertTrue(few.contains("settings"));
         assertTrue(few.contains("backToMio"));
+        Set<String> withC = new HashSet<>();
+        for (MobileChromeCore.Section s : MobileChromeCore.menuSections(true, "a.com", true, true, true)) withC.addAll(s.items);
+        assertTrue(withC.contains("openInContainer"));
+        assertTrue(withC.contains("siteContainer"));
+        assertFalse(all.contains("siteContainer"));
     }
 
     @Test

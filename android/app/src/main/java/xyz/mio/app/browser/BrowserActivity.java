@@ -203,9 +203,13 @@ public class BrowserActivity extends Activity {
             public void onContainersChanged() {
                 if (overview != null && overview.getVisibility() == View.VISIBLE) renderOverview();
                 updateButtons();
+                updateContainerBadge();
+                main.postDelayed(BrowserActivity.this::maybeShowContainerTip, 800);
             }
         };
         xyz.mio.app.containers.ContainerManager.get(this).addListener(containerListener);
+        // 容器管理里的「打开」按钮：在该容器里开新标签
+        xyz.mio.app.containers.ContainerUi.opener = id -> { hideOverview(); openTab(newTabUrl(), true, false, id); };
 
         Intent in = getIntent();
         String url = in.getStringExtra(EXTRA_URL);
@@ -345,6 +349,10 @@ public class BrowserActivity extends Activity {
     /** 底部胶囊 / 收缩后的域名胶囊（Safari 紧凑布局，MobileChromeCore） */
     private LinearLayout capsule;
     private TextView pill;
+    /** 地址栏左侧的容器色点 + 名称（默认容器不显示） */
+    private TextView containerBadge;
+    /** 标签概览的容器切换器：null = 全部 */
+    private String overviewFilter;
     private final MobileChromeCore.Collapse collapse = new MobileChromeCore.Collapse(48);
 
     /**
@@ -423,6 +431,15 @@ public class BrowserActivity extends Activity {
         FrameLayout addrBox = new FrameLayout(this);
         LinearLayout addrRow = new LinearLayout(this);
         addrRow.setGravity(Gravity.CENTER_VERTICAL);
+        containerBadge = new TextView(this);
+        containerBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        containerBadge.setTypeface(Typeface.DEFAULT_BOLD);
+        containerBadge.setSingleLine(true);
+        containerBadge.setMaxWidth(dp(90));
+        containerBadge.setEllipsize(TextUtils.TruncateAt.END);
+        containerBadge.setPadding(dp(8), 0, 0, 0);
+        containerBadge.setVisibility(View.GONE);
+        addrRow.addView(containerBadge, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         addrRow.addView(readerBtn, new LinearLayout.LayoutParams(dp(36), dp(40)));
         addrRow.addView(address, new LinearLayout.LayoutParams(0, dp(40), 1));
         addrRow.addView(reloadBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
@@ -621,7 +638,7 @@ public class BrowserActivity extends Activity {
         gl.gravity = Gravity.CENTER_HORIZONTAL;
         gl.setMargins(0, dp(2), 0, dp(6));
         list.addView(grab, gl);
-        for (MobileChromeCore.Section sec : MobileChromeCore.menuSections(web, host, BrowserPrefs.adblockEnabled(this), WebRtcGuard.enabled(this))) {
+        for (MobileChromeCore.Section sec : MobileChromeCore.menuSections(web, host, BrowserPrefs.adblockEnabled(this), WebRtcGuard.enabled(this), TabContainers.supported())) {
             TextView h = new TextView(this);
             h.setText(sec.title);
             h.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
@@ -713,6 +730,31 @@ public class BrowserActivity extends Activity {
             case "adblockSettings":
             case "settings": showSettings(false); break;
             case "backToMio": hideBrowser(); break;
+            case "openInContainer": {
+                String u = curUrl();
+                if (u == null) break;
+                pickContainer("在容器中打开此页", current != null ? current.containerId : null, false, id -> openTab(u, true, false, id));
+                break;
+            }
+            case "siteContainer": {
+                if (host == null) break;
+                xyz.mio.app.containers.ContainerManager cm = xyz.mio.app.containers.ContainerManager.get(this);
+                String ruleHost = null;
+                String cur = null;
+                for (xyz.mio.app.containers.ContainerState.SiteRule r : cm.state().siteRules()) {
+                    if (host.equals(r.host) || host.endsWith("." + r.host)) { ruleHost = r.host; cur = r.containerId; }
+                }
+                final String existing = ruleHost;
+                pickContainer("此网站始终用这个容器打开（" + (existing != null ? existing : host) + "，含子域名）", cur, true, id -> {
+                    try {
+                        if (id != null) cm.setSiteRule(host, id);
+                        else if (existing != null) cm.removeSiteRule(existing);
+                    } catch (Exception e) {
+                        Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                });
+                break;
+            }
             default: break;
         }
     }
@@ -888,6 +930,7 @@ public class BrowserActivity extends Activity {
         for (Tab x : loaded.values()) x.webView.setVisibility(x == t ? View.VISIBLE : View.INVISIBLE);
         t.webView.bringToFront();
         if (switched) setCollapsed(false);
+        updateContainerBadge();
         updateAddress();
         updateShield();
         updateButtons();
@@ -1067,13 +1110,9 @@ public class BrowserActivity extends Activity {
     private void showTabsMenu() {
         List<String> items = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
-        items.add("新建标签页");
-        actions.add(() -> openTab(newTabUrl(), true, false, null));
+        // 新建标签页 / 新建无痕 / 在容器中新建 / 新建容器（与 iOS 同样的入口）
+        addNewTabItems(items, actions);
         List<TabContainers.Info> containers = TabContainers.list(this);
-        if (containers.size() > 1 && TabContainers.supported()) {
-            items.add("在容器中新建标签页…");
-            actions.add(() -> pickContainer(id -> openTab(newTabUrl(), true, false, id)));
-        }
         if (tabs.hasClosed()) {
             items.add("重新打开关闭的标签页");
             actions.add(this::reopenClosedTab);
@@ -1098,15 +1137,106 @@ public class BrowserActivity extends Activity {
 
     interface ContainerPick { void pick(String id); }
 
-    private void pickContainer(ContainerPick cb) {
+    private void pickContainer(ContainerPick cb) { pickContainer("选择容器", null, false, cb); }
+
+    /** 选容器（带色点；可新建；includeNone = 「不指定」→ cb.pick(null)） */
+    private void pickContainer(String title, String current, boolean includeNone, ContainerPick cb) {
+        if (!TabContainers.supported()) { containersUnsupported(); return; }
         List<TabContainers.Info> list = TabContainers.list(this);
-        String[] names = new String[list.size()];
-        for (int i = 0; i < names.length; i++) names[i] = list.get(i).name;
+        List<CharSequence> names = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        if (includeNone) { names.add("不指定（跟随打开方式）" + (current == null ? "  ✓" : "")); ids.add(null); }
+        for (TabContainers.Info i : list) {
+            android.text.SpannableString sp = new android.text.SpannableString("●  " + i.name + (i.id.equals(current) ? "  ✓" : ""));
+            sp.setSpan(new android.text.style.ForegroundColorSpan(i.color), 0, 1, 0);
+            names.add(sp);
+            ids.add(i.id);
+        }
+        names.add("＋ 新建容器…");
+        ids.add("\u0000new");
         new AlertDialog.Builder(this)
-                .setTitle("选择容器")
-                .setItems(names, (d, which) -> cb.pick(list.get(which).id))
+                .setTitle(title)
+                .setItems(names.toArray(new CharSequence[0]), (d, which) -> {
+                    String id = ids.get(which);
+                    if ("\u0000new".equals(id)) createContainer(cb);
+                    else cb.pick(id);
+                })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    private void containersUnsupported() {
+        new AlertDialog.Builder(this)
+                .setTitle("容器不可用")
+                .setMessage("当前系统的 Android System WebView 版本过旧，不支持多配置文件（MULTI_PROFILE），只能使用默认容器。请在 Google Play 更新「Android System WebView」或 Chrome 后重试。")
+                .setPositiveButton("好", null)
+                .show();
+    }
+
+    /** 新建容器 → 回调新容器 id；第一次创建后出现一次性引导 */
+    private void createContainer(ContainerPick then) {
+        if (!TabContainers.supported()) { containersUnsupported(); return; }
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("名称，例如 工作、小号");
+        new AlertDialog.Builder(this)
+                .setTitle("新建容器")
+                .setMessage("容器里的登录状态、Cookie 和网站数据与其他容器互不相通")
+                .setView(input)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("创建", (d, w) -> {
+                    try {
+                        xyz.mio.app.containers.ContainerManager cm = xyz.mio.app.containers.ContainerManager.get(this);
+                        String n = input.getText().toString().trim();
+                        xyz.mio.app.containers.ContainerState.Container c = cm.create(n.isEmpty() ? "容器 " + cm.list().size() : n, null);
+                        if (then != null) then.pick(c.id);
+                        main.postDelayed(this::maybeShowContainerTip, 800);
+                    } catch (Exception e) {
+                        Toast.makeText(this, "无法创建容器：" + e.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                })
+                .show();
+    }
+
+    /** 新建标签菜单条目（标签按钮长按 / 概览「+」长按） */
+    private void addNewTabItems(List<String> items, List<Runnable> actions) {
+        items.add("新建标签页");
+        actions.add(() -> openTab(newTabUrl(), true, false, null));
+        items.add("新建无痕标签页");
+        actions.add(() -> Toast.makeText(this, "Android 版暂不支持无痕标签：系统 WebView 不能为单个标签关闭存储（可新建一个容器代替）", Toast.LENGTH_LONG).show());
+        items.add("在容器中新建…");
+        actions.add(() -> pickContainer(id -> { hideOverview(); openTab(newTabUrl(), true, false, id); }));
+        items.add("新建容器…");
+        actions.add(() -> createContainer(id -> { hideOverview(); openTab(newTabUrl(), true, false, id); }));
+    }
+
+    private void showNewTabMenu() {
+        List<String> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        addNewTabItems(items, actions);
+        new AlertDialog.Builder(this).setItems(items.toArray(new String[0]), (d, w) -> actions.get(w).run()).show();
+    }
+
+    /** 第一次有了非默认容器：一次性说明三种用法 */
+    private void maybeShowContainerTip() {
+        if (isFinishing() || BrowserPrefs.getBoolean(this, "containers.tipShown", false)) return;
+        if (!TabContainers.supported() || TabContainers.list(this).size() < 2) return;
+        BrowserPrefs.putBoolean(this, "containers.tipShown", true);
+        new AlertDialog.Builder(this)
+                .setTitle("容器已创建，这样使用")
+                .setMessage("① 长按标签按钮或概览里的「＋」→ 在容器中新建\n② 页面菜单 → 在容器中打开此页 / 此网站始终用某容器打开\n③ 标签概览底部切换容器，只看该容器的标签，「＋」直接在该容器里新建\n容器标签在地址栏左侧显示色点和名称。")
+                .setPositiveButton("知道了", null)
+                .show();
+    }
+
+    private void updateContainerBadge() {
+        if (containerBadge == null) return;
+        TabContainers.Info ci = current == null || TabsCore.DEFAULT_CONTAINER.equals(current.containerId) ? null : TabContainers.find(this, current.containerId);
+        if (ci == null) { containerBadge.setVisibility(View.GONE); return; }
+        containerBadge.setText("● " + ci.name);
+        containerBadge.setTextColor(ci.color);
+        containerBadge.setContentDescription("容器：" + ci.name);
+        containerBadge.setVisibility(View.VISIBLE);
     }
 
     // ---------------------------------------------------------------- overview（网格卡片）
@@ -1143,13 +1273,14 @@ public class BrowserActivity extends Activity {
         reopen.setAlpha(tabs.hasClosed() ? 1f : 0.35f);
         bar.addView(reopen, new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView count = new TextView(this);
-        count.setText(tabs.size() + " 个标签页");
+        count.setText(overviewFilter == null ? tabs.size() + " 个标签页" : overviewTabs().size() + " / " + tabs.size() + " 个标签页");
         count.setTextColor(fg);
         count.setGravity(Gravity.CENTER);
         count.setTypeface(Typeface.DEFAULT_BOLD);
         bar.addView(count, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Button add = glyph("＋", "新建标签页", v -> { hideOverview(); openTab(newTabUrl(), true, false, null); });
-        add.setOnLongClickListener(v -> { if (TabContainers.list(this).size() > 1 && TabContainers.supported()) pickContainer(id -> { hideOverview(); openTab(newTabUrl(), true, false, id); }); return true; });
+        final String filterNow = overviewFilter;
+        Button add = glyph("＋", "新建标签页", v -> { hideOverview(); openTab(newTabUrl(), true, false, filterNow); });
+        add.setOnLongClickListener(v -> { showNewTabMenu(); return true; });
         bar.addView(add, new LinearLayout.LayoutParams(dp(48), dp(48)));
         Button done = glyph("完成", "完成", v -> hideOverview());
         done.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
@@ -1165,7 +1296,7 @@ public class BrowserActivity extends Activity {
 
         int columns = getResources().getConfiguration().screenWidthDp >= 600 ? 3 : 2;
         LinearLayout row = null;
-        List<TabsCore.Tab> list = tabs.tabs();
+        List<TabsCore.Tab> list = overviewTabs();
         for (int i = 0; i < list.size(); i++) {
             if (i % columns == 0) {
                 row = new LinearLayout(this);
@@ -1214,13 +1345,14 @@ public class BrowserActivity extends Activity {
             FrameLayout.LayoutParams xl = new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP | Gravity.END);
             xl.setMargins(0, dp(4), dp(4), 0);
             thumbBox.addView(x, xl);
-            c.addView(thumbBox, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(150)));
+            // 容器色条在卡片顶部
             TabContainers.Info ci = "default".equals(rec.containerId) ? null : TabContainers.find(this, rec.containerId);
             if (ci != null) {
                 View stripe = new View(this);
                 stripe.setBackgroundColor(ci.color);
-                c.addView(stripe, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
+                c.addView(stripe, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(5)));
             }
+            c.addView(thumbBox, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(150)));
             TextView title = new TextView(this);
             Tab lt = loaded.get(rec.id);
             String tt = lt != null && lt.webView.getTitle() != null && !lt.webView.getTitle().isEmpty() ? lt.webView.getTitle() : rec.title;
@@ -1232,10 +1364,11 @@ public class BrowserActivity extends Activity {
             title.setPadding(dp(2), dp(6), dp(2), 0);
             c.addView(title);
             TextView h = new TextView(this);
-            h.setText(host);
+            h.setText(ci != null ? "● " + ci.name + " · " + host : host);
+            if (ci != null) h.setTextColor(ci.color);
             h.setSingleLine(true);
             h.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            h.setTextColor(0xFF888888);
+            if (ci == null) h.setTextColor(0xFF888888);
             h.setPadding(dp(2), 0, dp(2), 0);
             c.addView(h);
             c.setContentDescription(title.getText() + "，" + host + (isActive ? "，当前标签" : ""));
@@ -1250,6 +1383,57 @@ public class BrowserActivity extends Activity {
                 row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
             }
         }
+        // 底部容器切换器（Safari 描述文件 / 标签组式）：全部 / 默认 / 各容器；选中后只显示该容器的标签，「＋」在该容器里新建
+        List<TabContainers.Info> containers = TabContainers.list(this);
+        if (containers.size() > 1) {
+            android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+            hs.setHorizontalScrollBarEnabled(false);
+            LinearLayout chips = new LinearLayout(this);
+            chips.setPadding(dp(8), dp(6), dp(8), dp(6));
+            hs.addView(chips);
+            chips.addView(filterChip("全部", 0xFF888888, null, dark, fg));
+            for (TabContainers.Info ci : containers) chips.addView(filterChip(ci.name, ci.color, ci.id, dark, fg));
+            TextView manage = filterChip("管理…", 0xFF888888, "\u0000manage", dark, fg);
+            chips.addView(manage);
+            col.addView(hs, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+    }
+
+    private List<TabsCore.Tab> overviewTabs() {
+        List<TabsCore.Tab> all = tabs.tabs();
+        if (overviewFilter == null) return all;
+        List<TabsCore.Tab> out = new ArrayList<>();
+        for (TabsCore.Tab t : all) if (overviewFilter.equals(t.containerId)) out.add(t);
+        return out;
+    }
+
+    private TextView filterChip(String name, int color, String id, boolean dark, int fg) {
+        TextView t = new TextView(this);
+        boolean selected = id == null ? overviewFilter == null : id.equals(overviewFilter);
+        android.text.SpannableString sp = new android.text.SpannableString((id == null || id.startsWith("\u0000") ? "" : "● ") + name);
+        if (id != null && !id.startsWith("\u0000")) sp.setSpan(new android.text.style.ForegroundColorSpan(color), 0, 1, 0);
+        t.setText(sp);
+        t.setTextColor(fg);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        t.setPadding(dp(14), dp(8), dp(14), dp(8));
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(18));
+        g.setColor(selected ? (dark ? 0xFF3A3A3C : 0xFFFFFFFF) : 0x00000000);
+        g.setStroke(dp(1), selected ? color : 0x33888888);
+        t.setBackground(g);
+        t.setContentDescription((selected ? "已选：" : "") + "容器 " + name);
+        t.setOnClickListener(v -> {
+            if ("\u0000manage".equals(id)) {
+                xyz.mio.app.containers.ContainerUi.show(this, this::renderOverview);
+                return;
+            }
+            overviewFilter = id;
+            renderOverview();
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMarginEnd(dp(6));
+        t.setLayoutParams(lp);
+        return t;
     }
 
     // ---------------------------------------------------------------- WebView（per-tab setup）
@@ -1803,10 +1987,28 @@ public class BrowserActivity extends Activity {
                         android.util.Log.i(TAG, "MioLayout step 4 tab-overview");
                         main.postDelayed(() -> {
                             hideOverview();
-                            boolean ok = r.optBoolean("capsuleVisible") && r.optBoolean("capsuleBelowWeb") && r.optBoolean("noTopBar")
-                                    && r.optBoolean("collapsed") && r.optBoolean("menuShown");
-                            try { r.put("ok", ok); } catch (Exception ignored) {}
-                            android.util.Log.i(TAG, "MioLayout result " + r);
+                            // 容器：支持 MULTI_PROFILE → 建一个容器开标签，地址栏显示色点 + 名称；不支持 → 选择容器时弹降级提示
+                            boolean sup = TabContainers.supported();
+                            try { r.put("containersSupported", sup); } catch (Exception ignored) {}
+                            if (sup) {
+                                try {
+                                    xyz.mio.app.containers.ContainerState.Container c = xyz.mio.app.containers.ContainerManager.get(this).create("冒烟", null);
+                                    r.put("autoColor", c.color);
+                                    openTab(newTabUrl(), true, false, c.id);
+                                } catch (Exception e) { android.util.Log.e(TAG, "smoke container", e); }
+                            } else {
+                                pickContainer(id -> {});
+                            }
+                            main.postDelayed(() -> {
+                                try { r.put("containerStep", sup ? (containerBadge.getVisibility() == View.VISIBLE && containerBadge.getText().toString().contains("冒烟")) : true); } catch (Exception ignored) {}
+                                android.util.Log.i(TAG, "MioLayout step 5 " + (sup ? "container-badge" : "containers-unsupported"));
+                                main.postDelayed(() -> {
+                                    boolean ok = r.optBoolean("capsuleVisible") && r.optBoolean("capsuleBelowWeb") && r.optBoolean("noTopBar")
+                                            && r.optBoolean("collapsed") && r.optBoolean("menuShown") && r.optBoolean("containerStep");
+                                    try { r.put("ok", ok); } catch (Exception ignored) {}
+                                    android.util.Log.i(TAG, "MioLayout result " + r);
+                                }, 2500);
+                            }, 3500);
                         }, 3000);
                     }, 3000);
                 }, 3000);
