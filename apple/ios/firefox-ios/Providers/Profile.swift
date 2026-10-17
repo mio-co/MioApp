@@ -318,7 +318,12 @@ open class BrowserProfile: Profile,
 
         // Initiating the sync manager has to happen prior to the databases being opened,
         // because opening them can trigger events to which the SyncManager listens.
+        // Mio: no Mozilla Sync in the app (MIO_NO_SYNC); extensions keep upstream's manager
+        #if MIO_NO_SYNC
+        self.syncManager = MioNoSyncManager()
+        #else
         self.syncManager = RustSyncManager(profile: self)
+        #endif
 
         // Remove the default homepage. This does not change the user's preference,
         // just the behaviour when there is no homepage.

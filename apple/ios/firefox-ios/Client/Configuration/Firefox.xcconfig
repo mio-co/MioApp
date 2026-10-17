@@ -12,5 +12,6 @@ MOZ_BUNDLE_ID = xyz.mio.app
 MOZ_PRODUCT_NAME = Mio
 CODE_SIGN_ENTITLEMENTS = Client/Entitlements/FirefoxApplication.entitlements
 CHANNEL = release
-OTHER_SWIFT_FLAGS = $(OTHER_SWIFT_FLAGS_common) -DMOZ_CHANNEL_$(CHANNEL)
+// Mio: MIO_NO_SYNC = Client is built without Sync.framework / Mozilla Sync (v0.4.1, see Client/Frontend/Browser/Mio/MioNoSync.swift)
+OTHER_SWIFT_FLAGS = $(OTHER_SWIFT_FLAGS_common) -DMOZ_CHANNEL_$(CHANNEL) -DMIO_NO_SYNC
 MOZ_INTERNAL_URL_SCHEME = mio-internal

@@ -119,6 +119,10 @@ jobs:
           test ! -e Payload/Mio.app/BrowserKit_OnboardingKit.bundle/IntroVideo.mp4
           test -z "$(find Payload/Mio.app -name '*.xctestplan' -o -name '*.swiftmodule' -o -name '*.xcconfig')"
           if otool -l Payload/Mio.app/Client | grep -q -E '__LLVM_COV|__llvm_prf'; then echo 'coverage instrumentation in Client'; exit 1; fi
+          # v0.4.1：不带 Sentry / Mozilla Sync
+          test ! -e Payload/Mio.app/Frameworks/Sentry.framework
+          test ! -e Payload/Mio.app/Frameworks/Sync.framework
+          ls Payload/Mio.app/Frameworks
           mkdir -p out && mv Mio.ipa out/
           ls -l out
 

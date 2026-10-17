@@ -89,9 +89,6 @@ let package = Package(
             url: "https://github.com/SwiftyBeaver/SwiftyBeaver.git",
             exact: "2.1.1"),
         .package(
-            url: "https://github.com/getsentry/sentry-cocoa.git",
-            exact: "9.10.0"),
-        .package(
             url: "https://github.com/nbhasin2/GCDWebServer.git",
             branch: "master"),
         .package(
@@ -146,9 +143,9 @@ let package = Package(
         ),
         .target(
             name: "Common",
+            // Mio: Sentry (sentry-cocoa) is not linked; CrashManager is a no-op (crash reporting is off in Mio)
             dependencies: ["Dip",
-                           "SwiftyBeaver",
-                           .product(name: "Sentry-Dynamic", package: "sentry-cocoa")],
+                           "SwiftyBeaver"],
             swiftSettings: [
                 .unsafeFlags(["-enable-testing"]),
             ]
