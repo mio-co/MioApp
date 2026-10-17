@@ -239,6 +239,7 @@ public class BrowserActivity extends Activity {
         }
         if (intent.getBooleanExtra(EXTRA_SETTINGS, false)) showSettings(false);
         if (intent.getBooleanExtra(EXTRA_SMOKE, false) && isDebuggable()) main.postDelayed(this::runTabsSmoke, 6000);
+        if (intent.getBooleanExtra("mioLayoutSmoke", false) && isDebuggable()) main.postDelayed(this::runLayoutSmoke, 8000);
     }
 
     @Override
