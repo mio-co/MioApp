@@ -29,6 +29,14 @@ public final class MioWebViewModules: NSObject {
     private var endpoints: Set<MioMessageEndpoint> = []
     private var appliedLists: [String: WKContentRuleList] = [:]
     private var seenValuesVersion = 0
+    /// 广告拦截高级规则（scriptlet / 扩展 CSS）：主框架导航前按目标主机预先查好的注入代码（host → JS，最多 adblockPreparedLimit 个，
+    /// Mac 上多个标签可能共用一个 WKUserContentController，所以按主机分发而不是只留一个）
+    public private(set) var adblockPrepared: [(host: String, code: String)] = []
+    public static let adblockPreparedLimit = 8
+    public static let adblockMessageName = "mioAdblock"
+    /// iframe / 没预先准备到的主框架：在这个隔离世界里发消息给原生，原生查好后注入到那个 frame 的 page world（页面拿不到这个通道）
+    public static let adblockWorld = WKContentWorld.world(name: "mio-adblock")
+    private var adblockHandler: MioAdblockFrameHandler?
 
     public init(kit: MioKitContainer, controller: WKUserContentController, blocker: MioContentBlocker? = nil) {
         self.kit = kit
@@ -39,12 +47,18 @@ public final class MioWebViewModules: NSObject {
         super.init()
         seenValuesVersion = kit.userScripts.valuesVersion
         bridgeHandler.attach(to: controller)
+        let h = MioAdblockFrameHandler(self)
+        controller.add(h, contentWorld: Self.adblockWorld, name: Self.adblockMessageName)
+        adblockHandler = h
     }
 
     /// 装（或重装）全部启用模块的脚本 + 消息通道。设置变化后调用；对之后加载的页面生效
     public func install() {
         controller.removeAllUserScripts()
         controller.addUserScript(bridgeHandler.shimUserScript())
+        // 广告拦截高级规则最先注入（scriptlet 要赶在页面脚本之前）
+        controller.addUserScript(adblockMainScript())
+        controller.addUserScript(adblockFrameScript())
         hostScripts.forEach(controller.addUserScript)
         for (_, s) in kit.registry.scripts() { controller.addUserScript(Self.userScript(s)) }
         syncEndpoints()
@@ -56,6 +70,8 @@ public final class MioWebViewModules: NSObject {
         endpoints = []
         userScriptBridge.detach()
         bridgeHandler.detach(from: controller)
+        if adblockHandler != nil { controller.removeScriptMessageHandler(forName: Self.adblockMessageName, contentWorld: Self.adblockWorld) }
+        adblockHandler = nil
         for (_, l) in appliedLists { controller.remove(l) }
         appliedLists = [:]
     }
@@ -85,10 +101,56 @@ public final class MioWebViewModules: NSObject {
     public func willNavigateMainFrame(to url: URL?) {
         applyContentRules(topURL: url)
         userScriptBridge.willNavigateMainFrame()
+        var reinstall = prepareAdblockScript(for: url)
         if kit.userScripts.valuesVersion != seenValuesVersion {
             seenValuesVersion = kit.userScripts.valuesVersion
-            install()
+            reinstall = true
         }
+        if reinstall { install() }
+    }
+
+    // MARK: 广告拦截高级规则（scriptlet / 扩展 CSS / JS 规则）
+
+    /// 这个顶层地址上要不要拦截（模块开着、不在白名单、不是 Access 登录页）
+    public func adblockActive(topURL: URL?) -> Bool {
+        !kit.registry.contentRuleModules(topURL: topURL).isEmpty
+    }
+
+    /// 主框架导航前查好目标页面的注入代码（document-start 生效，比页面脚本早）。返回 true = 脚本要重装
+    @discardableResult
+    public func prepareAdblockScript(for url: URL?) -> Bool {
+        guard let url, let host = url.host?.lowercased(), let sc = url.scheme?.lowercased(), sc == "http" || sc == "https" else { return false }
+        let code = adblockActive(topURL: url) ? blocker?.pageScript(for: url, topURL: nil) : nil
+        let old = adblockPrepared.first { $0.host == host }?.code
+        if old == code { return false }
+        adblockPrepared.removeAll { $0.host == host }
+        if let code {
+            adblockPrepared.append((host, code))
+            if adblockPrepared.count > Self.adblockPreparedLimit { adblockPrepared.removeFirst(adblockPrepared.count - Self.adblockPreparedLimit) }
+        }
+        return true
+    }
+
+    /// 主框架（page world）：按 location.hostname 分发预先准备好的代码
+    func adblockMainScript() -> WKUserScript {
+        let map = adblockPrepared.map { "\(MioJSString.literal($0.host)):function(){\n\($0.code)\n}" }.joined(separator: ",\n")
+        let src = "(function(){if(window.top!==window)return;var M={\(map)};var f=M[location.hostname.toLowerCase()];if(f){try{f();}catch(e){}}})();"
+        return WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page)
+    }
+
+    /// 全部 frame（隔离世界）：iframe，或主框架没预先准备到（异常路径：重定向到了别的主机）→ 发消息要代码
+    func adblockFrameScript() -> WKUserScript {
+        let hosts = MioJSString.json(adblockPrepared.map { $0.host })
+        let src = "(function(){if(!/^https?:$/.test(location.protocol))return;var top=window.top===window;if(top&&\(hosts).indexOf(location.hostname.toLowerCase())>=0)return;try{window.webkit.messageHandlers.\(Self.adblockMessageName).postMessage({url:location.href,main:top});}catch(e){}})();"
+        return WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Self.adblockWorld)
+    }
+
+    /// iframe / 主框架要代码：查好后注入到发消息的那个 frame（page world）
+    func handleAdblockFrame(url: URL, isMain: Bool, frame: WKFrameInfo, webView: WKWebView?) {
+        guard let wv = webView ?? self.webView else { return }
+        let top = isMain ? url : (wv.url ?? url)
+        guard adblockActive(topURL: top), let code = blocker?.pageScript(for: url, topURL: isMain ? nil : wv.url) else { return }
+        wv.evaluateJavaScript(code, in: frame, in: .page, completionHandler: nil)
     }
 
     public func applyContentRules(topURL: URL?) {
@@ -161,6 +223,20 @@ struct MioWKMessageInfo {
         let o = message.frameInfo.securityOrigin
         origin = (o.host.isEmpty && o.protocol.lowercased() != "mio") ? nil : MioFrameOrigin(scheme: o.protocol, host: o.host, port: o.port)
         url = message.frameInfo.request.url
+    }
+}
+
+/// 广告拦截高级规则的 frame 消息（隔离世界）→ MioWebViewModules.handleAdblockFrame
+final class MioAdblockFrameHandler: NSObject, WKScriptMessageHandler {
+    weak var owner: MioWebViewModules?
+    init(_ owner: MioWebViewModules) { self.owner = owner }
+
+    func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], let s = body["url"] as? String, let url = URL(string: s) else { return }
+        let isMain = (body["main"] as? Bool) ?? message.frameInfo.isMainFrame
+        let frame = message.frameInfo
+        let wv = message.webView
+        Task { @MainActor [weak o = self.owner] in o?.handleAdblockFrame(url: url, isMain: isMain, frame: frame, webView: wv) }
     }
 }
 

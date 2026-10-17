@@ -19,11 +19,12 @@ let package = Package(
         .target(
             name: "MioKit",
             dependencies: [
-                // 只在 Apple 平台链接（FilterEngine 在 Linux 上编不过）；Linux 单测用内置的 MioBasicFilterConverter
+                // 只在 Apple 平台链接（FilterEngine 在 Linux 上编不过）；Linux 单测用内置的 MioBasicFilterConverter。
+                // 这个 product 同时带 ContentBlockerConverter（规则 → WKContentRuleList）和 FilterEngine（scriptlet / 扩展 CSS 高级规则）
                 .product(name: "ContentBlockerConverter", package: "SafariConverterLib", condition: .when(platforms: [.iOS, .macOS])),
             ],
             path: "Sources/MioKit",
-            resources: [.copy("Resources/js"), .copy("Resources/filters")]
+            resources: [.copy("Resources/js"), .copy("Resources/filters"), .copy("Resources/adguard")]
         ),
         .testTarget(name: "MioKitTests", dependencies: ["MioKit"], path: "Tests/MioKitTests"),
     ]

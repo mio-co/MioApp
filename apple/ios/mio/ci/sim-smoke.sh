@@ -128,11 +128,13 @@ kit_smoke() {
   python3 - "$OUT/kit-smoke.json" <<'PY' | tee -a "$SUMMARY"
 import json, sys
 r = json.load(open(sys.argv[1]))
-for k in ("homeOK", "bridgeOK", "blockOK", "settingsOK"):
+for k in ("homeOK", "bridgeOK", "blockOK", "settingsOK", "adblockOK"):
     v = r.get(k)
     # homeOK == "access-login": MioCore is behind Cloudflare Access and CI is not signed in (login page reached = OK)
     print(f"kit-smoke {k} {v if isinstance(v, str) else ('OK' if v else 'FAIL')}")
 h = r.get("home", {})
+a = r.get("adblock", {})
+print(f"kit-smoke adblock contentRules={a.get('contentRules')} advanced={a.get('advancedRules')} skipped={a.get('skipped')} blocked={a.get('blockedOK')} hidden={a.get('hideOK')} scriptlet={a.get('scriptletOK')} ({a.get('scriptletRule')}) turtlecute={(a.get('turtlecute') or {}).get('score')}")
 if h.get("landing") == "access-login":
     print(f"kit-smoke access-login host={h.get('loginHost')} ruleLists={len(h.get('loginRuleLists') or [])} ua={h.get('loginUserAgent')}")
 PY

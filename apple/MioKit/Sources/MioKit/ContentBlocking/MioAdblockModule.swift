@@ -6,7 +6,7 @@ import Foundation
 public final class MioAdblockModule: MioModuleContentRules {
     public let id = "adblock"
     public let title = "广告 / 跟踪拦截"
-    public let summary = "用 WebKit 内容规则拦截广告和跟踪器。内置精简列表离线可用，可订阅 AdGuard / EasyList，或添加自定义订阅。"
+    public let summary = "用 WebKit 内容规则拦截广告和跟踪器、隐藏广告元素，并支持 AdGuard scriptlet / 扩展 CSS。默认订阅 AdGuard / EasyList，首次打开自动下载，之后每天更新。"
     public let symbol = "shield.lefthalf.filled"
     public let section = MioSettingsSection.privacy
     public var enabledKey: String? { MioFilterCatalog.enabledKey }
@@ -19,25 +19,36 @@ public final class MioAdblockModule: MioModuleContentRules {
     public var settings: [MioModuleSetting] {
         var s: [MioModuleSetting] = [
             MioModuleSetting(key: "adblock.status", title: "状态", kind: .info),
+            MioModuleSetting(key: "adblock.update", title: "立即更新", kind: .action(title: "立即更新"),
+                             footer: "重新下载全部订阅并编译。平时启动、回到前台时自动检查（每 24 小时一次，失败会自动重试）。"),
+            MioModuleSetting(key: "adblock.lists", title: "各列表", kind: .info),
             MioModuleSetting(key: MioFilterCatalog.allowlistKey, title: "不拦截的网站", kind: .stringList(placeholder: "example.com"),
                              footer: "这些网站（含子域名）上关闭拦截。"),
         ]
         s += MioFilterCatalog.subscriptions.map { MioModuleSetting(key: $0.enabledKey, title: $0.name, kind: .toggle(default: $0.defaultEnabled)) }
         s.append(MioModuleSetting(key: MioFilterCatalog.customListsKey, title: "自定义订阅", kind: .stringList(placeholder: "https://easylist.to/easylist/easylist.txt"),
                                   footer: "EasyList / AdGuard 语法的规则列表地址（https）。每个列表超过 15 万条会自动拆分。"))
-        s.append(MioModuleSetting(key: "adblock.update", title: "立即检查更新", kind: .action(title: "更新")))
         return s
     }
 
     public func settingStatus(_ key: String, prefs: MioPrefs) -> String? {
-        key == "adblock.status" ? manager.statusText() : nil
+        switch key {
+        case "adblock.status": return manager.statusText()
+        case "adblock.lists": return manager.listDetails()
+        default: return nil
+        }
     }
 
     public func performSettingAction(_ key: String, prefs: MioPrefs) async -> String? {
         guard key == "adblock.update" else { return nil }
-        let msg = await manager.refresh(force: true)
-        await recompile?()
-        return msg
+        let msg: String
+        if let h = manager.refreshHandler {
+            msg = await h(true)
+        } else {
+            msg = await manager.refresh(force: true)
+            await recompile?()
+        }
+        return msg + "。" + manager.statusText()
     }
 
     public func shouldApplyContentRules(topURL: URL?, prefs: MioPrefs) -> Bool {
