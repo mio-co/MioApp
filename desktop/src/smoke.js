@@ -21,6 +21,99 @@ function waitLoad(wc, timeout) {
   });
 }
 
+async function tabsSmoke({ browser, ytWc, wc2, out, getMainWindow }) {
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const { TOOLBAR_HEIGHT } = require('./browser');
+  const { hostOf } = require('./util');
+  const r = { ok: false };
+  try {
+    const store = browser.store;
+    r.afterTwoOpens = store.size;
+    r.distinctWebContents = ytWc !== wc2 && !ytWc.isDestroyed() && !wc2.isDestroyed();
+    const second = store.activeId;
+    browser.command('selectTab', String(store.tabs[0].id));
+    r.switchedToFirst = browser.content.webContents === ytWc;
+    // 新建标签页 = 设置里的地址（默认 MioCore 导航；CI 没登录 → Access 登录页）
+    browser.command('newTab');
+    const nt = browser.content.webContents;
+    await waitLoad(nt, 30000);
+    r.newTabUrl = nt.getURL();
+    r.newTabCount = store.size;
+    // 后台标签里也有按 webContents 注入的脚本（YouTube 防沉迷）
+    const bg = browser.newTab('https://www.youtube.com/', { activate: false, fromActive: true });
+    const bgWc = browser.views.get(bg.id).webContents;
+    await waitLoad(bgWc, 45000);
+    await wait(4000);
+    r.backgroundTabYtFocus = await bgWc.executeJavaScript('!!window.__mioYTFocus').catch((e) => String(e));
+    r.activeStillNewTab = browser.content.webContents === nt;
+    r.toolbarTop = browser.toolbar.getBounds().y === 0 && browser.content.getBounds().y === TOOLBAR_HEIGHT;
+    await wait(600);
+    r.stripTabs = await browser.toolbar.webContents.executeJavaScript("document.querySelectorAll('#tabs .tab').length");
+    try {
+      const dir = path.dirname(out);
+      fs.writeFileSync(path.join(dir, 'smoke-toolbar.png'), (await browser.toolbar.webContents.capturePage()).toPNG());
+      browser.command('selectTab', String(second));
+      await wait(800);
+      fs.writeFileSync(path.join(dir, 'smoke-content.png'), (await browser.content.webContents.capturePage()).toPNG());
+      browser.command('selectTab', String(store.tabs[store.indexOf(bg.id) - 1].id));
+    } catch (e) {
+      r.screenshotError = String(e);
+    }
+    browser.selectTab(store.tabs.find((t) => browser.views.get(t.id) && browser.views.get(t.id).webContents === nt).id);
+    // 关闭当前（新标签页）→ 恢复关闭
+    const before = store.size;
+    browser.command('closeTab');
+    r.afterClose = store.size;
+    r.closedDestroyed = nt.isDestroyed();
+    browser.command('reopenTab');
+    r.afterReopen = store.size;
+    r.reopenedHost = hostOf(store.active.url);
+    // 收起：窗口隐藏、标签不销毁、主窗口出现角标；再显示
+    browser.hide();
+    await wait(800);
+    r.hiddenVisible = browser.isVisible();
+    r.hiddenKeepsTabs = store.size === before && !ytWc.isDestroyed();
+    const main = getMainWindow();
+    r.badgeShown = !!(main && main.contentView.children.some((v) => v !== main.webContents && v.getVisible && v.getVisible() && v.getBounds().width === 132));
+    browser.show();
+    await wait(500);
+    r.shownAgain = browser.isVisible();
+    // 跳转系统浏览器后自动关闭标签页：打开成功才关（这里注入 openExternal 不真的打开浏览器）
+    const cae = require('./close-after-external');
+    const n0 = store.size;
+    const tid = store.activeId;
+    await cae.openExternalThenMaybeClose({ url: 'https://example.com/', enabled: true, openExternal: () => Promise.reject(new Error('x')), close: () => browser.closeTab(tid) });
+    r.failedOpenKeepsTab = store.size === n0;
+    await cae.openExternalThenMaybeClose({ url: 'https://example.com/', enabled: true, openExternal: () => Promise.resolve(), close: () => browser.closeTab(tid) });
+    r.openedClosesTab = store.size === n0 - 1;
+    r.final = store.size;
+    r.saved = store.serialize().tabs.length;
+    r.ok =
+      r.afterTwoOpens === 2 &&
+      r.distinctWebContents &&
+      r.switchedToFirst &&
+      r.newTabCount === 3 &&
+      /^https:\/\/(mio\.300031\.xyz|[a-z0-9.-]+\.cloudflareaccess\.com)\//.test(r.newTabUrl) &&
+      r.backgroundTabYtFocus === true &&
+      r.activeStillNewTab &&
+      r.toolbarTop &&
+      r.stripTabs === 4 &&
+      r.afterClose === before - 1 &&
+      r.closedDestroyed &&
+      r.afterReopen === before &&
+      r.hiddenVisible === false &&
+      r.hiddenKeepsTabs &&
+      r.badgeShown &&
+      r.shownAgain &&
+      r.failedOpenKeepsTab &&
+      r.openedClosesTab;
+  } catch (e) {
+    r.error = String((e && e.stack) || e);
+  }
+  return r;
+}
+
 async function runSmoke({ out, adblock, browser, getMainWindow }) {
   const result = { ok: false, platform: process.platform, version: app.getVersion(), steps: {} };
   const finish = (code) => {
@@ -68,20 +161,25 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
       ),
     };
 
-    // 白名单后同一页面不再拦截
-    adblock.resetCount(wc.id);
+    // 白名单后同一页面不再拦截（MioCore 打开外链 = 新标签：speedtest 在第二个标签里）
+    const ytWc = wc;
     browser.open('https://www.speedtest.net/');
-    await waitLoad(wc, 45000);
+    const wc2 = browser.content.webContents;
+    adblock.resetCount(wc2.id);
+    await waitLoad(wc2, 45000);
     await wait(4000);
-    const blockedOn = adblock.blockedCount(wc.id);
+    const blockedOn = adblock.blockedCount(wc2.id);
     adblock.settings.addWhitelist('speedtest.net');
-    adblock.resetCount(wc.id);
-    wc.reload();
-    await waitLoad(wc, 45000);
+    adblock.resetCount(wc2.id);
+    wc2.reload();
+    await waitLoad(wc2, 45000);
     await wait(4000);
-    const blockedOff = adblock.blockedCount(wc.id);
+    const blockedOff = adblock.blockedCount(wc2.id);
     adblock.settings.removeWhitelist('speedtest.net');
     result.steps.whitelist = { blockedOn, blockedOff };
+
+    // 多标签页：两个标签各自一个 webContents、切换、新建（默认 MioCore 导航）、后台标签也有注入脚本、关闭 / 恢复、收起 + 角标
+    result.steps.tabs = await tabsSmoke({ browser, ytWc, wc2, out, getMainWindow });
 
     const s = result.steps;
     result.ok =
@@ -92,7 +190,8 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
       s.youtube.page.ytFocus === true &&
       s.youtube.page.ytFocusStyle === true &&
       blockedOn > 0 &&
-      blockedOff === 0;
+      blockedOff === 0 &&
+      s.tabs.ok === true;
     clearTimeout(guard);
     finish(result.ok ? 0 : 1);
   } catch (e) {

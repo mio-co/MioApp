@@ -17,6 +17,14 @@
     <div class="row"><div class="label">浏览数据<div class="sub">内置浏览器有独立的 Cookie / 登录状态，与 MioCore 主窗口互不影响</div></div><button class="btn danger" id="clearData">清除浏览数据</button></div>
   </div>
 
+  <h2>标签页</h2>
+  <div class="card">
+    <div class="row"><div class="label">新标签页地址<div class="sub">留空 = MioCore 导航（https://mio.300031.xyz/mio/nav，沿用主窗口的登录状态）</div></div></div>
+    <form class="row" id="newTabForm" autocomplete="off"><input class="text" id="newTabUrl" placeholder="https://mio.300031.xyz/mio/nav"><button class="btn" type="submit">保存</button><button class="btn" type="button" id="newTabReset">恢复默认</button></form>
+  </div>
+  <p class="note" id="newTabError"></p>
+  <p class="note">快捷键：Ctrl+T 新建、Ctrl+W 关闭、Ctrl+Shift+T 重新打开关闭的标签页、Ctrl+Tab / Ctrl+Shift+Tab 切换、Ctrl+1…9 跳到第 n 个、Ctrl+L 地址栏、Ctrl+Shift+W 收起浏览器（macOS 用 ⌘）。中键点标签关闭，拖动标签排序，右键标签有更多操作。关闭浏览器窗口只是收起：标签留在后台，主窗口右下角的角标一点即回。</p>
+
   <h2>YouTube 防沉迷</h2>
   <div class="card">
     <label class="row"><div class="label">YouTube 防沉迷<div class="sub">隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏 Shorts 入口（频道页保留）；看 Shorts 时立即提醒，之后按间隔提醒</div></div><span class="switch"><input type="checkbox" id="youtubeFocus"><span></span></span></label>
@@ -57,5 +65,6 @@
   <p class="note" id="about"></p>
 <script src="settings.js"></script>
 <script src="update-settings.js"></script>
+<script src="tabs-settings.js"></script>
 </body>
 </html>

@@ -205,3 +205,18 @@ test('displayHost / normalizeNewTabUrl', () => {
   assert.equal(normalizeNewTabUrl('file:///etc/passwd'), null);
   assert.equal(normalizeNewTabUrl('nodot'), null);
 });
+
+test('settings: newTabUrl validated and normalized', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { SettingsStore } = require('../src/settings-store');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mio-tabs-')), 'settings.json');
+  const s = new SettingsStore(file);
+  assert.equal(s.get('newTabUrl'), '');
+  s.set('newTabUrl', 'example.com/start');
+  assert.equal(s.get('newTabUrl'), 'https://example.com/start');
+  assert.throws(() => s.set('newTabUrl', 'javascript:alert(1)'));
+  s.set('newTabUrl', DEFAULT_NEW_TAB_URL);
+  assert.equal(s.get('newTabUrl'), '');
+});

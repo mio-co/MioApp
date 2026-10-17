@@ -10,28 +10,57 @@
 html, body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.45 "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
 button { font: inherit; color: inherit; }
 
-/* toolbar */
-body.toolbar { height: 44px; display: flex; align-items: center; gap: 2px; padding: 0 6px; border-bottom: 1px solid var(--line); overflow: hidden; user-select: none; position: relative; }
+/* toolbar：上面一行（按钮 + 居中地址栏），下面一行标签条（Safari 式） */
+body.toolbar { height: 78px; overflow: hidden; user-select: none; position: relative; background: var(--bg); }
+#row { height: 44px; display: flex; align-items: center; gap: 2px; padding: 0 6px; position: relative; }
+#row .spacer { flex: 1 1 0; min-width: 0; }
 .icon { width: 32px; height: 32px; border: 0; background: transparent; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; position: relative; flex: none; }
 .icon:hover:not(:disabled) { background: var(--hover); }
 .icon:disabled { opacity: .35; cursor: default; }
 .icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon.small { width: 26px; height: 26px; }
+.icon.small svg { width: 15px; height: 15px; }
 .icon .i-stop { display: none; }
 body.loading .icon .i-stop { display: block; }
 body.loading .icon .i-reload { display: none; }
-#addrForm { flex: 1; min-width: 80px; height: 32px; margin: 0 4px; display: flex; align-items: center; background: var(--field); border-radius: 16px; padding: 0 12px; border: 1px solid transparent; }
+#addrForm { flex: 0 1 640px; min-width: 120px; height: 32px; margin: 0 6px; display: flex; align-items: center; background: var(--field); border-radius: 10px; padding: 0 4px 0 12px; border: 1px solid transparent; }
 #addrForm:focus-within { border-color: var(--accent); background: var(--bg); }
-#addr { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; }
+#addr { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; text-align: center; }
+body.editing #addr { text-align: left; }
+.icon.inaddr { width: 26px; height: 26px; }
+.icon.inaddr svg { width: 15px; height: 15px; }
 #lock { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; flex: none; }
 #lock.secure { background: var(--ok); }
 #lock.insecure { background: var(--warn); }
 .shield svg { stroke: var(--ok); }
 .shield.off svg { stroke: var(--muted); }
-#count { position: absolute; right: 0; bottom: 1px; min-width: 14px; padding: 0 3px; border-radius: 7px; background: var(--ok); color: #fff; font-size: 9px; line-height: 14px; text-align: center; }
-#count:empty { display: none; }
-#progress { position: absolute; left: 0; bottom: -1px; height: 2px; width: 0; background: var(--accent); opacity: 0; }
+#count, #tabCount { position: absolute; right: 0; bottom: 1px; min-width: 14px; padding: 0 3px; border-radius: 7px; background: var(--ok); color: #fff; font-size: 9px; line-height: 14px; text-align: center; }
+#tabCount { background: var(--accent); }
+#count:empty, #tabCount:empty { display: none; }
+#progress { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--accent); opacity: 0; }
 body.loading #progress { opacity: 1; animation: load 2.4s ease-out forwards; }
 @keyframes load { from { width: 0; } to { width: 85%; } }
+#tabstrip { height: 34px; display: flex; align-items: center; gap: 4px; padding: 0 6px 4px; border-bottom: 1px solid var(--line); }
+#tabs { flex: 1; min-width: 0; height: 30px; display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#tabs::-webkit-scrollbar { display: none; }
+.tab { --container: transparent; flex: 1 1 200px; min-width: 96px; max-width: 240px; height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 10px; border-radius: 8px; background: var(--field); color: var(--muted); cursor: default; position: relative; overflow: hidden; }
+.tab::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: 0; height: 2px; border-radius: 1px; background: var(--container); }
+.tab.locked .fav { box-shadow: 0 0 0 1.5px var(--container); }
+body.many .tab { min-width: 72px; }
+.tab:hover { background: var(--hover); }
+.tab.active { background: var(--bg); color: var(--fg); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(0,0,0,.08); }
+.tab.unloaded .title { font-style: italic; }
+.tab.drop { box-shadow: inset 2px 0 0 var(--accent); }
+.tab .fav { width: 16px; height: 16px; flex: none; border-radius: 4px; background: var(--line); color: var(--fg); font-size: 10px; line-height: 16px; text-align: center; font-weight: 600; }
+.tab.loading .fav { animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: 1; } to { opacity: .35; } }
+.tab .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.tab .tclose { width: 20px; height: 20px; flex: none; border: 0; border-radius: 5px; background: transparent; color: inherit; display: inline-flex; align-items: center; justify-content: center; opacity: 0; cursor: pointer; padding: 0; }
+.tab:hover .tclose, .tab.active .tclose { opacity: .75; }
+.tab .tclose:hover { opacity: 1; background: var(--hover); }
+.tab .tclose svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+#notice { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); background: var(--fg); color: var(--bg); border-radius: 8px; padding: 4px 12px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .15s; }
+#notice.show { opacity: .92; }
 
 /* settings */
 body.settings { padding: 18px 20px 28px; max-width: 720px; margin: 0 auto; }

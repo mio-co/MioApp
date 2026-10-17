@@ -8,6 +8,7 @@ const { SettingsStore } = require('./settings-store');
 const { Adblock } = require('./adblock');
 const { BrowserManager, SettingsWindow } = require('./browser');
 const { Updater } = require('./updater');
+const { TabsBadge } = require('./tabs-badge');
 
 app.setAppUserModelId('xyz.mio.desktop');
 
@@ -66,6 +67,8 @@ if (!app.requestSingleInstanceLock()) {
     setTimeout(() => !win.isDestroyed() && !win.isVisible() && win.show(), 4000);
     win.on('closed', () => {
       mainWindow = null;
+      // 收起的浏览器窗口是隐藏的、不会触发 window-all-closed：主窗口关掉就退出（macOS 照常留在 Dock）
+      if (process.platform !== 'darwin') app.quit();
     });
 
     const wc = win.webContents;
@@ -211,6 +214,8 @@ if (!app.requestSingleInstanceLock()) {
     installMainIpc();
     buildMenu();
     createMainWindow();
+    // 浏览器收起后主窗口右下角的标签角标
+    new TabsBadge({ browser, getMainWindow: () => mainWindow });
     adblock.start();
 
     if (process.env.MIO_SMOKE_OUT) {

@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld('mioToolbar', {
   state: () => ipcRenderer.invoke('mio-toolbar:state'),
   onState: (fn) => ipcRenderer.on('mio-toolbar:state', (_e, s) => fn(s)),
   onFocusAddress: (fn) => ipcRenderer.on('mio-toolbar:focus-address', () => fn()),
+  onNotice: (fn) => ipcRenderer.on('mio-toolbar:notice', (_e, text) => fn(String(text))),
 });
