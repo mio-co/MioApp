@@ -244,6 +244,7 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             let started = Date()
             var ytFocus: [String: Any]?
             var tabsOK = false
+            var media: [String: Any]?
             func finish() {
                 let top = MioBrowserViewController.topPresenter(self)
                 let presented = top is MioBrowserViewController || top is MioTabsViewController
@@ -280,9 +281,13 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                     report["youtubeFocus"] = "not checked (no YouTube page)"
                 }
                 report["youtubeFocusOK"] = ytFocusOK
+                // 媒体（MioMedia.swift）：YouTube 页面里媒体脚本已注入、SponsorBlock 纯逻辑可用；EME（YouTube / Spotify）只记录
+                report["media"] = media ?? "not checked"
+                let mediaOK = (media?["ok"] as? Bool) == true
+                report["mediaOK"] = mediaOK
                 let page = report["page"] as? [String: Any]
                 report["tabsOK"] = tabsOK
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && tabsOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && tabsOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
@@ -297,12 +302,15 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                         } else if let e = error {
                             NSLog("⚡️ Mio smoke: youtube focus check failed: %@", "\(e)")
                         }
-                        // 多标签页（MioTabs.swift）：第二个标签、切换、关闭、恢复；顶部工具栏 + 标签条；网页在工具栏下面
-                        MioTabsSmoke.run { r, ok in
-                            report["tabs"] = r
-                            tabsOK = ok
-                            NSLog("⚡️ Mio smoke: tabs %@ %@", ok ? "OK" : "FAILED", "\(r)")
-                            finish()
+                        MioMediaSmoke.run { m in
+                            media = m
+                            // 多标签页（MioTabs.swift）：第二个标签、切换、关闭、恢复；顶部工具栏 + 标签条；网页在工具栏下面
+                            MioTabsSmoke.run { r, ok in
+                                report["tabs"] = r
+                                tabsOK = ok
+                                NSLog("⚡️ Mio smoke: tabs %@ %@", ok ? "OK" : "FAILED", "\(r)")
+                                finish()
+                            }
                         }
                     }
                 } else {

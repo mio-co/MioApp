@@ -31,9 +31,10 @@ class BrowserManager extends EventEmitter {
    * @param {(containerId: string) => Electron.Session} [o.sessionForContainer] 容器模块接入点：返回该容器的会话（已配置拦截 / 脚本 / 权限）
    * @param {() => Array<{id: string, name: string, color: string}>} [o.listContainers] 容器列表（新建标签 / 在容器中打开的菜单）
    */
-  constructor({ adblock, settings, browserSession, openSettings, icon, sessionForContainer, listContainers }) {
+  constructor({ adblock, settings, browserSession, openSettings, icon, pageTools, sessionForContainer, listContainers }) {
     super();
     this.adblock = adblock;
+    this.pageTools = pageTools || null;
     this.settings = settings;
     this.session = browserSession;
     this.sessionForContainer = sessionForContainer || null;
@@ -438,7 +439,14 @@ class BrowserManager extends EventEmitter {
     });
     wc.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument) this.adblock.resetCount(wc.id);
+      if (details.isMainFrame && !details.isSameDocument && this.pageTools) this.pageTools.clear(wc);
     });
+    // 阅读模式按钮：页面加载完 / SPA 换地址后判断是否像文章
+    if (this.pageTools) {
+      const check = () => this.pageTools.checkReaderable(wc).then(push, () => undefined);
+      wc.on('did-stop-loading', check);
+      wc.on('did-navigate-in-page', (e, url, isMainFrame) => isMainFrame && setTimeout(check, 1000));
+    }
     // 网页被拦截数：节流刷新（计数在 adblock 的 onBeforeRequest 里累加）
     let timer = null;
     wc.on('did-frame-finish-load', () => {
@@ -580,6 +588,7 @@ class BrowserManager extends EventEmitter {
         cmd = 'selectNumber';
         arg = key;
       } else if (key === 'f12' || (mod && input.shift && key === 'i')) cmd = 'devtools';
+      else if (key === 'f9') cmd = 'reader';
       else if (key === 'escape' && this.content && wc === this.content.webContents) cmd = 'stop';
       if (cmd) {
         event.preventDefault();
@@ -724,6 +733,15 @@ class BrowserManager extends EventEmitter {
         Menu.buildFromTemplate(items).popup({ window: this.win, x: Math.max(0, width - 260), y: ROW_HEIGHT });
         break;
       }
+      case 'reader':
+        if (this.pageTools) this.pageTools.openReader(wc, true);
+        break;
+      case 'pageMenu': {
+        if (!this.pageTools) break;
+        const { width } = this.win.getContentBounds();
+        Menu.buildFromTemplate(this.pageTools.menuTemplate(wc, { reload: () => wc.reload() })).popup({ window: this.win, x: Math.max(0, width - 360), y: ROW_HEIGHT });
+        break;
+      }
       case 'focusAddress':
         this.toolbar.webContents.focus();
         this.toolbar.webContents.send('mio-toolbar:focus-address');
@@ -823,6 +841,8 @@ class BrowserManager extends EventEmitter {
       canGoForward: wc.navigationHistory.canGoForward(),
       siteWhitelisted: !!host && this.settings.isWhitelisted(host),
       blocked: this.adblock.blockedCount(wc.id),
+      readerable: !!this.pageTools && this.pageTools.isReaderable(wc),
+      pageTools: !!this.pageTools,
     };
   }
 

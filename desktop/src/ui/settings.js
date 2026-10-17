@@ -20,6 +20,7 @@ function render(s) {
   $('preferSystemBrowser').checked = !!st.preferSystemBrowser;
   $('backgroundPlayback').checked = !!st.backgroundPlayback;
   $('closeTabAfterExternal').checked = !!st.closeTabAfterExternal;
+  renderSponsorBlock(st);
   $('adblockEnabled').checked = !!st.adblockEnabled;
   $('youtubeFocus').checked = !!st.youtubeFocus;
   $('youtubeFocusPlayables').checked = !!st.youtubeFocusPlayables;
@@ -72,7 +73,31 @@ function render(s) {
 }
 
 $('youtubeFocusInterval').addEventListener('change', (e) => api.set('youtubeFocusInterval', Number(e.target.value)).then(render));
-for (const key of ['preferSystemBrowser', 'backgroundPlayback', 'closeTabAfterExternal', 'adblockEnabled', 'youtubeFocus', 'youtubeFocusPlayables']) {
+// SponsorBlock：总开关 + 分类复选框（存成逗号分隔字符串 sponsorBlockCategories）
+const SB_CATS = [['sponsor', '赞助广告'], ['selfpromo', '自我推广'], ['interaction', '互动提醒'], ['intro', '片头'], ['outro', '片尾']];
+function renderSponsorBlock(st) {
+  $('sponsorBlock').checked = st.sponsorBlock !== false;
+  $('sbCats').hidden = st.sponsorBlock === false;
+  const on = new Set(String(st.sponsorBlockCategories || '').split(','));
+  const box = $('sbCatList');
+  box.textContent = '';
+  for (const [key, label] of SB_CATS) {
+    const l = el('label', 'sb-cat');
+    l.style.marginRight = '12px';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = on.has(key);
+    cb.addEventListener('change', () => {
+      const next = SB_CATS.map(([k]) => k).filter((k) => (k === key ? cb.checked : on.has(k)));
+      api.set('sponsorBlockCategories', next.join(',')).then(render);
+    });
+    l.appendChild(cb);
+    l.appendChild(document.createTextNode(' ' + label));
+    box.appendChild(l);
+  }
+}
+
+for (const key of ['preferSystemBrowser', 'backgroundPlayback', 'closeTabAfterExternal', 'adblockEnabled', 'youtubeFocus', 'youtubeFocusPlayables', 'sponsorBlock']) {
   $(key).addEventListener('change', (e) => api.set(key, e.target.checked).then(render));
 }
 $('siteEnabled').addEventListener('change', (e) => snap && snap.currentHost && api.setSite(snap.currentHost, e.target.checked).then(render));

@@ -41,6 +41,18 @@
             android:name=".update.UpdateInstallReceiver"
             android:exported="false" />
 
+        <!-- 内置浏览器后台播放：媒体通知 + MediaSession，和浏览器同一进程（MioMediaService.java） -->
+        <service
+            android:name=".browser.MioMediaService"
+            android:process=":browser"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
+
+        <!-- 存到 MioCore：在主进程里用 MioCore 主界面的登录 Cookie 调 API（内置浏览器在 :browser 进程，拿不到） -->
+        <service
+            android:name=".browser.MioSaveService"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -57,4 +69,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 软件内更新：安装从 GitHub Releases 下载的 Mio.apk（同一 keystore 签名，安装前校验证书） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 内置浏览器后台播放（MioMediaService） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

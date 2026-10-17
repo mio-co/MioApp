@@ -25,6 +25,9 @@ const DEFAULTS = {
   // 多标签页：新标签页地址（空 = MioCore 导航 /mio/nav，见 tabs-core.js）
   newTabUrl: '',
   closeTabAfterExternal: false, // 跳转系统浏览器后自动关闭标签页（close-after-external.js）
+  // YouTube SponsorBlock（src/media.js）：总开关 + 逗号分隔的分类
+  sponsorBlock: true,
+  sponsorBlockCategories: 'sponsor,selfpromo,interaction',
 };
 
 class SettingsStore extends EventEmitter {

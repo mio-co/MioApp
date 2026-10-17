@@ -117,6 +117,11 @@ public class BrowserActivity extends Activity {
         final LinkedHashMap<String, ScriptHandler> hostScripts = new LinkedHashMap<>();
         long hostScriptsBuiltAt;
         YouTubeFocus ytFocus;
+        /** 媒体（SponsorBlock / MediaSession / 后台播放通知，MioMedia.java） */
+        MioMedia media;
+        /** 阅读模式 / 强制深色 / 存到 Mio（PageTools.java）；阅读按钮只交给当前标签，后台标签用自己的占位 View */
+        PageTools pageTools;
+        View readerDummy;
         int progress = 100;
         volatile boolean activeCache = true;
         volatile String activeCacheHost = "";
@@ -135,6 +140,9 @@ public class BrowserActivity extends Activity {
     /** 当前标签的 WebView / 防沉迷（工具栏、设置等按「当前页」操作的代码用） */
     private WebView webView;
     private YouTubeFocus ytFocus;
+    private MioMedia media;
+    private PageTools pageTools;
+    private Button readerBtn;
     private Tab current;
     private FrameLayout webFrame;
     private FrameLayout overview;
@@ -327,6 +335,9 @@ public class BrowserActivity extends Activity {
             else updateAddress();
         });
         top.addView(address, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        readerBtn = glyph("📖", "阅读模式", v -> { if (pageTools != null) pageTools.openReader(false); });
+        readerBtn.setVisibility(View.GONE);
+        top.addView(readerBtn, new LinearLayout.LayoutParams(dp(44), dp(44)));
         shield = glyph("🛡", "广告拦截", v -> showShieldMenu());
         top.addView(shield, new LinearLayout.LayoutParams(dp(44), dp(44)));
         col.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -352,6 +363,7 @@ public class BrowserActivity extends Activity {
         Button share = glyph("⇪", "分享", v -> share());
         Button external = glyph("↗", "用系统浏览器打开", v -> openExternal(webView != null ? webView.getUrl() : null));
         Button settings = glyph("⚙", "浏览器设置", v -> showSettings(false));
+        Button mio = glyph("📥", "存到 Mio / 阅读模式 / 深色", v -> { if (pageTools != null) pageTools.showMenu(); });
         tabsBtn = glyph("1", "标签页", v -> showOverview());
         tabsBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         tabsBtn.setTypeface(Typeface.DEFAULT_BOLD);
@@ -361,7 +373,7 @@ public class BrowserActivity extends Activity {
         InsetDrawable inset = new InsetDrawable(box, dp(14), dp(12), dp(14), dp(12));
         tabsBtn.setBackground(inset);
         tabsBtn.setOnLongClickListener(v -> { showTabsMenu(); return true; });
-        for (Button b : new Button[]{backBtn, fwdBtn, reloadBtn, share, external, settings, tabsBtn}) {
+        for (Button b : new Button[]{backBtn, fwdBtn, reloadBtn, share, external, mio, settings, tabsBtn}) {
             bottom.addView(b, new LinearLayout.LayoutParams(0, dp(48), 1));
         }
         col.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -495,10 +507,20 @@ public class BrowserActivity extends Activity {
         if (rec == null) return;
         Tab t = ensureLoaded(rec.id, true);
         if (t == null) return;
-        if (current != null && current != t && current.webView != null) captureThumb(current);
+        if (current != null && current != t && current.webView != null) {
+            captureThumb(current);
+            if (current.pageTools != null) current.pageTools.setReaderButton(current.readerDummy);
+        }
+        boolean switched = current != t;
         current = t;
         webView = t.webView;
         ytFocus = t.ytFocus;
+        media = t.media;
+        pageTools = t.pageTools;
+        if (switched && t.pageTools != null) {
+            t.pageTools.setReaderButton(readerBtn);
+            t.pageTools.onUrlChanged();
+        }
         for (Tab x : loaded.values()) x.webView.setVisibility(x == t ? View.VISIBLE : View.INVISIBLE);
         t.webView.bringToFront();
         updateAddress();
@@ -521,7 +543,7 @@ public class BrowserActivity extends Activity {
         if (t != null) destroyWebView(t);
         savedStates.remove(id);
         thumbs.remove(id);
-        if (current == t) { current = null; webView = null; ytFocus = null; }
+        if (current == t) { current = null; webView = null; ytFocus = null; media = null; pageTools = null; readerBtn.setVisibility(View.GONE); }
         if (tabs.close(id) == null) return;
         saveNow();
         if (tabs.isEmpty()) {
@@ -562,6 +584,9 @@ public class BrowserActivity extends Activity {
 
     private void destroyWebView(Tab t) {
         if (t.webView == null) return;
+        if (t.media != null) {
+            try { t.media.destroy(); } catch (Exception ignored) {}
+        }
         try {
             webFrame.removeView(t.webView);
             t.webView.stopLoading();
@@ -827,6 +852,12 @@ public class BrowserActivity extends Activity {
         // YouTube 防沉迷：先于通用脚本注册（通用脚本之后每次都会重新注册到最后）
         t.ytFocus = new YouTubeFocus(this, wv);
         t.ytFocus.install();
+        // 媒体：YouTube 脚本（SponsorBlock / MediaSession）、后台播放通知、Widevine 权限（MioMedia.java）
+        t.media = new MioMedia(this, wv);
+        t.media.install();
+        t.pageTools = new PageTools(this, wv);
+        t.readerDummy = new View(this);
+        t.pageTools.setReaderButton(t.readerDummy);
         installGenericScript(t);
 
         wv.setOnLongClickListener(v -> onLongPress(t));
@@ -862,6 +893,7 @@ public class BrowserActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 t.topUrl = url;
+                t.pageTools.onPageStarted(url);
                 prepare(t, url);
                 t.ytFocus.onPage(url);
                 if (t == current) {
@@ -880,6 +912,7 @@ public class BrowserActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 t.ytFocus.onPage(url);
                 t.ytFocus.reportState(url);
+                t.pageTools.onPageFinished();
                 if (tabs.update(t.id, TabsCore.isHttp(url) ? url : null, view.getTitle())) scheduleSave();
                 if (t == current) {
                     updateAddress();
@@ -890,6 +923,7 @@ public class BrowserActivity extends Activity {
             @Override
             public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
                 t.topUrl = url;
+                t.pageTools.onUrlChanged();
                 if (tabs.update(t.id, TabsCore.isHttp(url) ? url : null, null)) scheduleSave();
                 if (t == current) {
                     updateButtons();
@@ -945,6 +979,12 @@ public class BrowserActivity extends Activity {
             @Override
             public void onHideCustomView() {
                 hideCustomView();
+            }
+
+            @Override
+            public void onPermissionRequest(android.webkit.PermissionRequest request) {
+                // 只放行 RESOURCE_PROTECTED_MEDIA_ID（Widevine，Spotify 等 DRM）；其它资源照旧拒绝
+                MioMedia.onPermissionRequest(request);
             }
 
             @Override
@@ -1460,6 +1500,7 @@ public class BrowserActivity extends Activity {
         box.addView(allow);
 
         xyz.mio.app.update.UpdateUi.addSettingsSection(this, box);
+        if (media != null) media.addSettings(box);
 
         TextView lic = new TextView(this);
         lic.setText("\n开源组件：Brave adblock-rust（MPL-2.0）、AdGuard Scriptlets / ExtendedCss（GPL-3.0）；过滤列表：AdGuard（GPL-3.0）、EasyList / EasyPrivacy（GPL-3.0 / CC BY-SA 3.0）。详见仓库 NOTICE。");

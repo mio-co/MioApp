@@ -95,3 +95,7 @@ body.offline { display: flex; align-items: center; justify-content: center; min-
 .offline-box { max-width: 420px; padding: 24px; }
 .offline-box img { width: 72px; height: 72px; border-radius: 16px; }
 .offline-box p { color: var(--muted); overflow-wrap: anywhere; }
+/* 阅读模式 / 存到 Mio（page-tools.js） */
+.icon[hidden] { display: none; }
+#addrForm .icon.reader { width: 26px; height: 26px; margin-right: -8px; }
+#addrForm .icon.reader svg { width: 16px; height: 16px; }

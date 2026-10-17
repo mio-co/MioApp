@@ -127,6 +127,8 @@ function render(s) {
   const shield = $('shield');
   shield.classList.toggle('off', !active);
   $('count').textContent = active && s.blocked ? (s.blocked > 99 ? '99+' : String(s.blocked)) : '';
+  $('reader').hidden = !s.readerable;
+  $('mio').hidden = !s.pageTools;
   shield.title = !s.adblockEnabled ? '广告拦截已关闭' : s.siteWhitelisted ? `已在 ${s.host} 停用拦截` : !s.adblockReady ? '正在准备拦截规则…' : `已拦截 ${s.blocked} 个请求`;
   renderTabs(s);
 }
@@ -154,6 +156,8 @@ $('stripNew').addEventListener('contextmenu', (e) => {
 $('tabstrip').addEventListener('dblclick', (e) => {
   if (e.target === $('tabstrip') || e.target === $('tabs')) window.mioToolbar.cmd('newTab');
 });
+$('mio').onclick = () => window.mioToolbar.cmd('pageMenu');
+$('reader').onclick = () => window.mioToolbar.cmd('reader');
 
 addr.addEventListener('focus', () => {
   editing = true;
