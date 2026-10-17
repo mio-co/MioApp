@@ -5,9 +5,7 @@
 import Common
 import Foundation
 import Shared
-#if !MIO_NO_SYNC
-import Sync // Mio: not linked in the app (MIO_NO_SYNC); RustSyncManagerAPI.TogglableEngine comes from MioNoSync.swift
-#endif
+import Sync
 
 import class Account.RustFirefoxAccounts
 

@@ -2,10 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-// Mio: not compiled into the Mio app (MIO_NO_SYNC, Firefox.xcconfig): Sync.framework is only weak-linked and removed
-// from the .app (slim-app.sh); Profile uses MioNoSyncManager instead. App extensions (not shipped in the ipa) still build it.
-#if !MIO_NO_SYNC
-
 import Shared
 import Storage
 import Sync
@@ -744,4 +740,3 @@ public class RustSyncManager: NSObject, SyncManager, @unchecked Sendable {
         return syncRustEngines(why: .user, engines: ["history"])
     }
 }
-#endif
