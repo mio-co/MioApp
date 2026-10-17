@@ -393,9 +393,12 @@ enum MioWebCompat {
     static let youtubeFocusDefaultInterval = 60
     static let youtubeFocusIntervalChoices = [30, 60, 120, 300, 600]
 
-    static func youtubeFocusScript(intervalSeconds: Int) -> String {
+    /// 模板来自 shared/scripts/youtube-focus.js（三端共用；`node scripts/sync-shared-scripts.mjs` 同步到下面的 MIO_JS 段，CI 校验一致）
+    static func youtubeFocusScript(intervalSeconds: Int, hidePlayables: Bool = true) -> String {
         let s = max(5, min(3600, intervalSeconds))
-        return youtubeFocusScriptTemplate.replacingOccurrences(of: "__MIO_YT_INTERVAL_MS__", with: String(s * 1000))
+        return youtubeFocusScriptTemplate
+            .replacingOccurrences(of: "__MIO_YT_INTERVAL_MS__", with: String(s * 1000))
+            .replacingOccurrences(of: "__MIO_YT_PLAYABLES__", with: hidePlayables ? "1" : "0")
     }
 
     /// 只在这些主机上注入（脚本自己也会再检查一次 location.hostname）
@@ -409,6 +412,9 @@ enum MioWebCompat {
     (function () {
       'use strict';
       // YouTube 防沉迷（内置浏览器，*.youtube.com 主框架，document-start）
+      // 单一来源：shared/scripts/youtube-focus.js。Android 从 APK assets 读、Windows/Electron 从 resources 读；
+      // iOS / Mac 内嵌在 MioWebCompat.swift（MIO_JS_BEGIN youtubeFocus），由 `node scripts/sync-shared-scripts.mjs` 同步、CI --check 校验一致。
+      // 占位符（各端加载时替换）：提醒间隔毫秒 MIO_YT_INTERVAL_MS、是否屏蔽游戏大本营 / Playables MIO_YT_PLAYABLES（"1" / "0"），两侧各带两个下划线。
       // 不轮询、不常驻观察整份文档：路由变化靠 yt-navigate-finish / yt-page-data-updated / state-navigateend / popstate / history 钩子；
       // 文本识别 Shorts 导航项只在路由变化时和导航容器自己的（节流）观察器里做。
       var w = window, d = document;
@@ -419,11 +425,17 @@ enum MioWebCompat {
 
       var INTERVAL = Number('__MIO_YT_INTERVAL_MS__');
       if (!(INTERVAL >= 5000)) INTERVAL = 60000;
+      var PLAYABLES = '__MIO_YT_PLAYABLES__' !== '0';   // 占位符没替换时默认屏蔽
       var SHOW_MS = 4000;
       var root = d.documentElement;
       var NAV_ITEMS = 'ytm-pivot-bar-item-renderer, ytd-guide-entry-renderer, ytd-mini-guide-entry-renderer';
       var NAV_CONTAINERS = 'ytm-pivot-bar-renderer, ytd-guide-renderer, ytd-mini-guide-renderer, tp-yt-app-drawer#guide';
       var NC = 'html:not(.mio-channel-page) ';
+      // 游戏大本营（Playables）：html.mio-hide-playables 开关；直接访问 /playables 页面时（html.mio-playables-page）不隐藏页面内容
+      var PG = 'html.mio-hide-playables:not(.mio-playables-page) ';
+      var PNAV = 'html.mio-hide-playables ';
+      var PLAY = ['a[href^="/playables"]', 'a[href*="youtube.com/playables"]', 'mini-game-card-view-model'];
+      function hasPlay(tag) { return PLAY.map(function (x) { return PG + tag + ':has(' + x + ')'; }).join(',\n'); }
 
       var css = [
         // ---- 首页 / 推荐 / 搜索里的 Shorts 区块和卡片（频道页 html.mio-channel-page 保留）----
@@ -433,6 +445,20 @@ enum MioWebCompat {
         NC + 'ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts])',
         NC + 'ytd-rich-section-renderer:has(a[href^="/shorts/"])',
         NC + 'ytm-rich-section-renderer:has(a[href^="/shorts/"])',
+        // 2026 手机版首页 Shorts 架子：ytm-shorts-lockup-view-model(-v2) 卡片（链接不一定在 <a href> 上）
+        NC + 'ytm-rich-section-renderer:has(ytm-shorts-lockup-view-model)',
+        NC + 'ytm-rich-section-renderer:has(ytm-shorts-lockup-view-model-v2)',
+        NC + 'ytm-rich-section-renderer:has(ytm-reel-shelf-renderer)',
+        NC + 'ytd-rich-section-renderer:has(ytm-shorts-lockup-view-model)',
+        NC + 'ytd-rich-section-renderer:has(ytm-shorts-lockup-view-model-v2)',
+        NC + 'grid-shelf-view-model:has(ytm-shorts-lockup-view-model)',
+        NC + 'grid-shelf-view-model:has(ytm-shorts-lockup-view-model-v2)',
+        NC + 'ytm-rich-item-renderer:has(ytm-shorts-lockup-view-model)',
+        NC + 'ytm-rich-item-renderer:has(ytm-shorts-lockup-view-model-v2)',
+        NC + 'ytd-rich-item-renderer:has(ytm-shorts-lockup-view-model)',
+        NC + 'ytd-rich-item-renderer:has(ytm-shorts-lockup-view-model-v2)',
+        NC + 'ytm-shorts-lockup-view-model',
+        NC + 'ytm-shorts-lockup-view-model-v2',
         NC + 'grid-shelf-view-model:has(a[href^="/shorts/"])',
         NC + 'ytd-rich-item-renderer:has(a[href^="/shorts/"])',
         NC + 'ytm-rich-item-renderer:has(a[href^="/shorts/"])',
@@ -442,6 +468,7 @@ enum MioWebCompat {
         // ---- 导航里的 Shorts 入口（底部 pivot 栏 / 侧边 guide / mini guide）----
         'ytm-pivot-bar-item-renderer:has(a[href^="/shorts"])',
         'ytm-pivot-bar-item-renderer:has(.pivot-shorts)',
+        'ytm-pivot-bar-item-renderer:has([aria-label="Shorts"])',
         'ytd-guide-entry-renderer:has(a[href^="/shorts"])',
         'ytd-guide-entry-renderer:has(a[title="Shorts"])',
         'ytd-mini-guide-entry-renderer:has(a[href^="/shorts"])',
@@ -453,8 +480,25 @@ enum MioWebCompat {
         '.ytm-unplugged-app-promo-renderer',
         '#unplugged-app-promo',
         'ytm-bottom-sheet-promo-renderer',
-        '.ytm-promoted-app-install-action'
-      ].join(',\n') + ' { display: none !important; }\n' +
+        '.ytm-promoted-app-install-action',
+        // ---- 游戏大本营 / Playables：首页 / 推荐里的区块和卡片，guide / 探索里的入口 ----
+        hasPlay('ytd-rich-section-renderer'),
+        hasPlay('ytm-rich-section-renderer'),
+        hasPlay('ytd-rich-shelf-renderer'),
+        hasPlay('ytd-rich-item-renderer'),
+        hasPlay('ytm-rich-item-renderer'),
+        hasPlay('grid-shelf-view-model'),
+        PG + 'mini-game-card-view-model',
+        PNAV + 'ytd-guide-entry-renderer:has(a[href^="/playables"])',
+        PNAV + 'ytd-mini-guide-entry-renderer:has(a[href^="/playables"])',
+        PNAV + 'ytm-pivot-bar-item-renderer:has(a[href^="/playables"])',
+        PNAV + 'ytm-guide-entry-renderer:has(a[href^="/playables"])',
+        PNAV + 'ytm-compact-link-renderer:has(a[href^="/playables"])',
+        PNAV + 'yt-chip-cloud-chip-renderer:has(a[href^="/playables"])'
+      ].join(',\n').split(',\n').map(function (sel) {
+        // 每条选择器单独一条规则：旧版 WebView（Chromium < 105 不支持 :has）只丢掉不认识的那几条，不会整组失效
+        return sel + ' { display: none !important; }';
+      }).join('\n') + '\n' +
         '#mio-shorts-reminder { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 50%;' +
         ' transform: translate(-50%, calc(-100% - 40px)) scale(0.95); opacity: 0; z-index: 2147483647; pointer-events: none;' +
         ' box-sizing: border-box; max-width: calc(100vw - 24px); padding: 12px 24px; border-radius: 9999px;' +
@@ -498,11 +542,18 @@ enum MioWebCompat {
       dropAppMeta();
 
       // ---- 文本识别 Shorts 导航项（有些手机版底部栏的 Shorts 没有链接）----
+      // 手机版底部栏（ytm-pivot-bar-item-renderer）只有固定几个 tab，不会是频道名：沿用原版用户脚本的「包含 Shorts」匹配
+      // （标题后面可能紧跟角标文字，如 "Shortsnew"）；桌面 guide / mini guide 里还列着订阅的频道（如「Shorts Fan Club」），
+      // 只认整段文本 / title / aria-label 恰好是 Shorts。
+      var EXACT = /^\s*shorts\s*$/i, CONTAINS = /shorts/i;
       function isShortsNav(el) {
-        if (/^\s*shorts\s*$/i.test(el.textContent || '')) return true;
-        var t = el.querySelector('[title], [aria-label]');
-        if (el.getAttribute && /^\s*shorts\s*$/i.test(el.getAttribute('aria-label') || '')) return true;
-        if (t && (/^\s*shorts\s*$/i.test(t.getAttribute('title') || '') || /^\s*shorts\s*$/i.test(t.getAttribute('aria-label') || ''))) return true;
+        var re = String(el.tagName || '').toLowerCase() === 'ytm-pivot-bar-item-renderer' ? CONTAINS : EXACT;
+        if (re.test(el.textContent || '')) return true;
+        if (el.getAttribute && (re.test(el.getAttribute('aria-label') || '') || re.test(el.getAttribute('title') || ''))) return true;
+        var ts = el.querySelectorAll('[title], [aria-label]');
+        for (var i = 0; i < ts.length; i++) {
+          if (re.test(ts[i].getAttribute('title') || '') || re.test(ts[i].getAttribute('aria-label') || '')) return true;
+        }
         return false;
       }
       function markNav(scope) {
@@ -626,6 +677,8 @@ enum MioWebCompat {
         var p = location.pathname || '/';
         dropAppMeta();
         root.classList.toggle('mio-channel-page', /^\/(@|c\/|channel\/|user\/)/i.test(p));
+        root.classList.toggle('mio-hide-playables', PLAYABLES);
+        root.classList.toggle('mio-playables-page', /^\/playables(\/|$)/i.test(p));
         setShorts(/^\/shorts(\/|$)/i.test(p));
         if (p !== lastPath) { lastPath = p; scanNavSoon(); }
       }

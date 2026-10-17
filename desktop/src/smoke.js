@@ -59,7 +59,7 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
       blocked: adblock.blockedCount(wc.id),
       page: JSON.parse(
         await wc.executeJavaScript(
-          "JSON.stringify({ hidden: document.hidden, visibility: document.visibilityState, hasPlayerResponse: typeof window.ytInitialPlayerResponse === 'object' && window.ytInitialPlayerResponse !== null, adPlacements: window.ytInitialPlayerResponse ? typeof window.ytInitialPlayerResponse.adPlacements : 'n/a', playerAds: window.ytInitialPlayerResponse ? typeof window.ytInitialPlayerResponse.playerAds : 'n/a' })",
+          "JSON.stringify({ hidden: document.hidden, visibility: document.visibilityState, hasPlayerResponse: typeof window.ytInitialPlayerResponse === 'object' && window.ytInitialPlayerResponse !== null, adPlacements: window.ytInitialPlayerResponse ? typeof window.ytInitialPlayerResponse.adPlacements : 'n/a', playerAds: window.ytInitialPlayerResponse ? typeof window.ytInitialPlayerResponse.playerAds : 'n/a', ytFocus: !!window.__mioYTFocus, ytFocusStyle: !!document.getElementById('mio-yt-focus-style'), ytPlayables: document.documentElement.classList.contains('mio-hide-playables') })",
         ),
       ),
     };
@@ -85,6 +85,8 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
       JSON.parse(s.main.bridge).open === 'function' &&
       s.youtube.blocked > 0 &&
       s.youtube.page.hidden === false &&
+      s.youtube.page.ytFocus === true &&
+      s.youtube.page.ytFocusStyle === true &&
       blockedOn > 0 &&
       blockedOff === 0;
     clearTimeout(guard);

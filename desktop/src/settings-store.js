@@ -10,6 +10,10 @@ const DEFAULTS = {
   whitelist: [],
   preferSystemBrowser: false,
   backgroundPlayback: true,
+  // YouTube 防沉迷（共享脚本 shared/scripts/youtube-focus.js）
+  youtubeFocus: true,
+  youtubeFocusInterval: 60,
+  youtubeFocusPlayables: true,
 };
 
 class SettingsStore extends EventEmitter {
@@ -46,6 +50,7 @@ class SettingsStore extends EventEmitter {
   set(key, value) {
     if (!(key in DEFAULTS) || key === 'whitelist') throw new Error(`unknown setting ${key}`);
     if (typeof value !== typeof DEFAULTS[key]) throw new Error(`bad value for ${key}`);
+    if (key === 'youtubeFocusInterval' && !(Number.isFinite(value) && value >= 5 && value <= 3600)) throw new Error(`bad value for ${key}`);
     this.data[key] = value;
     this.save();
   }

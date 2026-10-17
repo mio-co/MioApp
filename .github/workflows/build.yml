@@ -32,6 +32,9 @@ jobs:
       - name: Fetch adblock assets (audit the lists that ship)
         run: node scripts/fetch-adblock-assets.mjs ios/App/App/AdblockBundle
 
+      - name: Shared injected scripts in sync (shared/scripts ↔ MioWebCompat.swift)
+        run: node scripts/sync-shared-scripts.mjs --check
+
       - name: Injected JS tests
         run: node --test tools/MioAppTests/js/*.test.mjs
 
@@ -283,6 +286,7 @@ jobs:
             unzip -l "$f" | grep -E 'lib/(arm64-v8a|x86_64)/libmioadblock.so' 
             unzip -l "$f" | grep -E 'assets/adblock/(filter-2.txt|filter-0.txt|scriptlets.corelibs.json|extended-css.min.js|manifest.json)' | wc -l | grep -qx 5
             unzip -l "$f" | grep -q classes.dex
+            unzip -l "$f" | grep -q 'assets/scripts/youtube-focus.js'
           done
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/aapt2" dump badging "out/Mio-$V-android-debug.apk" | head -5
@@ -322,7 +326,9 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: bash scripts/android-emulator-smoke.sh "$(ls apk/*-android-debug.apk | head -1)" android-smoke
+          script: |
+            bash scripts/android-emulator-smoke.sh "$(ls apk/*-android-debug.apk | head -1)" android-smoke
+            bash scripts/android-ytfocus-smoke.sh android-smoke/ytfocus
 
       - uses: actions/upload-artifact@v4
         if: always()

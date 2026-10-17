@@ -131,6 +131,8 @@ class Adblock {
       try {
         if (isBrowserSender(event)) {
           result.background = !!this.settings.get('backgroundPlayback') && event.senderFrame && event.senderFrame.parent === null;
+          // YouTube 防沉迷：只给顶层 frame（脚本自己也检查 window.top / 主机名），与拦截开关、白名单无关
+          if (event.senderFrame && event.senderFrame.parent === null) result.ytFocus = require('./youtube-focus').scriptFor(url, this.settings);
           const top = event.senderFrame && event.senderFrame.top ? event.senderFrame.top.url : topUrlOf(event);
           if (this.activeFor(top || url)) {
             const parsed = require('tldts-experimental').parse(url);
