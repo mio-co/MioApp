@@ -312,6 +312,7 @@ class BrowserManager {
         }
         if (!s.adblockEnabled) items.push({ label: '打开广告拦截', click: () => this.settings.set('adblockEnabled', true) });
         if (this.webrtc) items.push(...this.webrtc.menuItems(s.host, () => wc.reload()));
+        if (this.userscripts) items.push(...this.userscripts.menuItems(wc, s.host));
         items.push({ label: '拦截设置…', click: () => this.command('settings') });
         const { width } = this.win.getContentBounds();
         Menu.buildFromTemplate(items).popup({ window: this.win, x: Math.max(0, width - 260), y: TOOLBAR_HEIGHT });

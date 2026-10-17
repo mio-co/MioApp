@@ -755,6 +755,44 @@ enum MioUserScriptRuntime {
       var label = '[Mio 用户脚本] ' + C.name;
       var handler = null;
       try { handler = C.isolated && w.webkit && w.webkit.messageHandlers && w.webkit.messageHandlers[C.handler] || null; } catch (e) { handler = null; }
+      // Android（WebMessageListener，页面世界 + 每脚本 token）/ Windows（Electron 隔离 world 里 contextBridge 暴露的 invoke）
+      if (!handler && C.isolated && C.bridge) handler = nativeBridge(C.bridge);
+      function nativeBridge(name) {
+        var b = null;
+        try { b = w[name]; } catch (e) { b = null; }
+        if (!b) return null;
+        var def = Object.defineProperty, str = JSON.stringify, parse = JSON.parse;
+        if (typeof b.invoke === 'function') {
+          var inv = b.invoke;
+          return { postMessage: function (m) { return inv(m); } };
+        }
+        if (typeof b.postMessage !== 'function') return null;
+        var send = b.postMessage.bind(b);
+        var pending = {};
+        var n = 0;
+        var onMsg = function (ev) {
+          var r;
+          try { r = parse(ev && ev.data); } catch (e) { return; }
+          if (!r || r.sid !== C.id || !pending[r.seq]) return;
+          var p = pending[r.seq];
+          delete pending[r.seq];
+          clearTimeout(p[2]);
+          if (r.error) p[1](new Error(String(r.error))); else p[0](r.result);
+        };
+        if (typeof b.addEventListener === 'function') b.addEventListener('message', onMsg); else b.onmessage = onMsg;
+        return {
+          postMessage: function (m) {
+            return new Promise(function (resolve, reject) {
+              var seq = ++n;
+              var timer = setTimeout(function () { if (pending[seq]) { delete pending[seq]; reject(new Error('timeout')); } }, 120000);
+              pending[seq] = [resolve, reject, timer];
+              def(m, 'seq', { value: seq, enumerable: true });
+              def(m, 'token', { value: String(C.token || ''), enumerable: true });
+              try { send(str(m)); } catch (e) { delete pending[seq]; clearTimeout(timer); reject(e); }
+            });
+          }
+        };
+      }
       function post(op, payload) {
         var msg = payload || {};
         msg.op = op;
@@ -1013,12 +1051,17 @@ enum MioUserScriptRuntime {
       }
       function unregisterMenuCommand(id) { delete menu[id]; syncMenu(); }
       if (C.isolated && isTop) {
+        var runMenu = function (id) { var m = menu[id]; if (m && typeof m.fn === 'function') { try { m.fn(); } catch (e) { console.error(label, e); } } };
         try {
-          Object.defineProperty(w, '__mioUserScriptMenu', {
-            configurable: true,
-            value: function (id) { var m = menu[id]; if (m && typeof m.fn === 'function') { try { m.fn(); } catch (e) { console.error(label, e); } } }
-          });
+          Object.defineProperty(w, '__mioUserScriptMenu', { configurable: true, value: runMenu });
         } catch (e) {}
+        // Android 所有脚本共用页面世界：按脚本 id 分开（原生执行 __mioUserScriptMenus[id](命令)）
+        if (C.bridge) {
+          try {
+            if (!w.__mioUserScriptMenus) Object.defineProperty(w, '__mioUserScriptMenus', { configurable: true, value: {} });
+            w.__mioUserScriptMenus[C.id] = runMenu;
+          } catch (e) {}
+        }
       }
       function notification(details, title, image, onclick) {
         var o = typeof details === 'string' ? { text: details, title: title, image: image, onclick: onclick } : (details || {});

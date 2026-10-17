@@ -240,6 +240,8 @@ if (!app.requestSingleInstanceLock()) {
     // WebRTC 控制（webrtc.js）：frame preload 注入脚本 + 按站点设置 IP 处理策略；盾牌菜单里开关 / 放行（所有容器会话）
     browser.webrtc = new (require('./webrtc').WebRtcControl)(path.join(app.getPath('userData'), 'webrtc.json'));
     browser.webrtc.attach({ app, ipcMain, browserSession, isBrowserSession: (ses) => containers.isBrowserSession(ses) });
+    // 用户脚本管理器（userscripts.js）：frame preload 注入、隔离 world GM 桥、盾牌菜单「用户脚本…」（所有容器会话）
+    browser.userscripts = new (require('./userscripts').UserScripts)({ session: browserSession, icon, uiPartition: UI_PARTITION, appVersion: app.getVersion(), openUrl: (u) => browser.open(u), isBrowserSession: (ses) => containers.isBrowserSession(ses) });
 
     // 主会话、浏览器会话都不需要的权限一律拒绝；常见的（通知、剪贴板、全屏、媒体自动播放）放行
     const allow = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'notifications', 'pointerLock', 'media', 'window-management']);
@@ -250,6 +252,7 @@ if (!app.requestSingleInstanceLock()) {
       ses.setPermissionRequestHandler((wc, permission, callback) => callback(allow.has(permission)));
       adblock.attachSession(ses);
       browser.translate.attachSession(ses);
+      browser.userscripts.attachSession(ses);
     });
     containers.installIpc((event) => !!(settingsWindow.win && !settingsWindow.win.isDestroyed() && event.sender === settingsWindow.win.webContents));
 

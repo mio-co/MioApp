@@ -95,6 +95,25 @@ async function runSmoke({ out, adblock, browser, containers, getMainWindow }) {
       rtc.setAllowed('example.com', false);
     }
 
+    // 用户脚本（userscripts.js）：装一个隔离 world 脚本（@grant GM_setValue）+ 一个页面世界脚本（@grant none），
+    // 打开 example.com 检查两个都运行、隔离 world 看不到页面变量、GM_setValue 落到主进程存储
+    const us = browser.userscripts;
+    if (us) {
+      const iso = "// ==UserScript==\n// @name Mio smoke isolated\n// @namespace mio.smoke\n// @match https://example.com/*\n// @run-at document-end\n// @grant GM_setValue\n// ==/UserScript==\ndocument.documentElement.setAttribute('data-mio-us-iso', typeof window.__mioUsPage + ':' + typeof GM_setValue + ':' + typeof GM_info);\nGM_setValue('smoke', 42);\n";
+      const pg = "// ==UserScript==\n// @name Mio smoke page\n// @namespace mio.smoke\n// @match https://example.com/*\n// @run-at document-start\n// @grant none\n// ==/UserScript==\nwindow.__mioUsPage = 1;\n";
+      const { prepare } = require('./userscripts');
+      const a = us.store.install(await prepare(iso, null, us.fetch));
+      const b = us.store.install(await prepare(pg, null, us.fetch));
+      browser.open('https://example.com/');
+      await waitLoad(wc, 30000);
+      await wait(2000);
+      const page = JSON.parse(await wc.executeJavaScript("JSON.stringify({ iso: document.documentElement.getAttribute('data-mio-us-iso'), page: typeof window.__mioUsPage, bridge: typeof window.mioUserScriptNative })"));
+      const stored = us.store.values(a.id).smoke;
+      us.store.delete(a.id);
+      us.store.delete(b.id);
+      result.steps.userscripts = { page, stored, ok: page.iso === 'undefined:function:object' && page.page === 'number' && page.bridge === 'undefined' && stored === '42' };
+    }
+
     // 白名单后同一页面不再拦截
     adblock.resetCount(wc.id);
     browser.open('https://www.speedtest.net/');
@@ -126,6 +145,7 @@ async function runSmoke({ out, adblock, browser, containers, getMainWindow }) {
       blockedOff === 0 &&
       s.webrtc.blocked === 'undefined' &&
       s.webrtc.allowed === 'function' &&
+      (!s.userscripts || s.userscripts.ok === true) &&
       (!containers || (s.containers && s.containers.ok === true));
     clearTimeout(guard);
     finish(result.ok ? 0 : 1);

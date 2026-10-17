@@ -111,6 +111,8 @@ public class BrowserActivity extends Activity {
     private TranslateBridge translate;
     /** WebRTC 控制（WebRtcGuard.java，与 iOS 同一段脚本） */
     private final WebRtcGuard rtcGuard = new WebRtcGuard();
+    /** 用户脚本管理器（UserScripts.java，运行时与 iOS 同一段） */
+    private UserScripts userScripts;
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -129,6 +131,8 @@ public class BrowserActivity extends Activity {
         buildUi();
         setupWebView();
         rtcGuard.install(this, webView);
+        userScripts = new UserScripts(this, webView);
+        userScripts.install();
 
         String url = getIntent().getStringExtra(EXTRA_URL);
         boolean settings = getIntent().getBooleanExtra(EXTRA_SETTINGS, false);
@@ -163,10 +167,17 @@ public class BrowserActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (userScripts != null) userScripts.onActivityResult(requestCode, resultCode, data, userScripts::showManager);
+    }
+
+    @Override
     protected void onDestroy() {
         worker.shutdownNow();
         if (media != null) media.destroy();
         if (translate != null) translate.shutdown();
+        if (userScripts != null) userScripts.shutdown();
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();
@@ -363,6 +374,7 @@ public class BrowserActivity extends Activity {
                 Uri uri = request.getUrl();
                 String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
                 if (scheme.equals("http") || scheme.equals("https")) {
+                    if (request.isForMainFrame() && userScripts != null && userScripts.maybeOfferInstall(uri.toString())) return true;
                     if (request.isForMainFrame()) prepare(uri.toString());
                     return false;
                 }
@@ -388,6 +400,10 @@ public class BrowserActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 topUrl = url;
+                if (userScripts != null) {
+                    userScripts.onPageStarted();
+                    if (userScripts.maybeOfferInstall(url)) view.stopLoading();
+                }
                 pageTools.onPageStarted(url);
                 prepare(url);
                 ytFocus.onPage(url);
@@ -704,6 +720,7 @@ public class BrowserActivity extends Activity {
             items.add(rtcAllowed ? "此站点恢复屏蔽 WebRTC" : "此站点允许 WebRTC（网页通话）");
             actions.add(() -> { WebRtcGuard.setAllowed(this, host, !rtcAllowed); rtcGuard.install(this, webView); webView.reload(); });
         }
+        if (userScripts != null) userScripts.addMenuItems(webView.getUrl(), items, actions);
         items.add("拦截设置…");
         actions.add(() -> showSettings(false));
         new AlertDialog.Builder(this)
@@ -782,6 +799,7 @@ public class BrowserActivity extends Activity {
         box.addView(system);
 
         rtcGuard.addSettingsRows(this, box, host, webView);
+        if (userScripts != null) userScripts.addSettingsRow(box);
 
         TextView title = new TextView(this);
         title.setText("\n过滤规则（AdGuard 官方源，超过 24 小时自动检查更新）");
