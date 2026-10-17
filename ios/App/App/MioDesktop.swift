@@ -239,6 +239,8 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             var ytFocus: [String: Any]?
             var media: [String: Any]?
             var translate: [String: Any]?
+            // 用户脚本 + WebRTC 控制（MioUserScripts.swift 的 MioUserScriptSmoke）
+            var extrasOK = false
             func finish() {
                 let presented = MioBrowserViewController.topPresenter(self) is MioBrowserViewController
                 report["browserPresented"] = presented
@@ -282,7 +284,7 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 let translateOK = (translate?["installed"] as? Bool) == true && (translate?["bridge"] as? Bool) == true
                 report["translateOK"] = translateOK
                 let page = report["page"] as? [String: Any]
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
@@ -301,7 +303,12 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                             media = m
                             MioTranslate.smokeCheck(network: true) { t in
                                 translate = t
-                                finish()
+                                MioUserScriptSmoke.run { r, ok in
+                                    report["userscriptsWebRTC"] = r
+                                    extrasOK = ok
+                                    NSLog("⚡️ Mio smoke: userscripts/WebRTC %@ %@", ok ? "OK" : "FAILED", "\(r)")
+                                    finish()
+                                }
                             }
                         }
                     }
