@@ -195,7 +195,8 @@ final class MioSmoke {
     }
 
     private func log(_ s: String) {
-        print("[mio-smoke] \(s)")
+        // unbuffered (stdout is a file under simctl launch --stdout, print() would sit in the buffer)
+        FileHandle.standardOutput.write(Data("[mio-smoke] \(s)\n".utf8))
     }
 
     private func write() {
@@ -255,7 +256,8 @@ final class MioSmoke {
         let request = dir.appendingPathComponent("shot-request")
         try? Data(name.utf8).write(to: request, options: .atomic)
         var waited = 0
-        while FileManager.default.fileExists(atPath: request.path) && waited < 40 {
+        // simctl screenshots can take a minute on CI runners
+        while FileManager.default.fileExists(atPath: request.path) && waited < 450 {
             try? await Task.sleep(nanoseconds: 200_000_000); waited += 1
         }
         try? FileManager.default.removeItem(at: request)

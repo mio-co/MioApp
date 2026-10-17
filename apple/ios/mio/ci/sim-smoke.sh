@@ -65,7 +65,7 @@ alive() {
 run_to() {
   local secs="$1"; shift
   "$@" & local p=$!
-  ( sleep "$secs"; kill "$p" 2>/dev/null ) & local w=$!
+  ( sleep "$secs"; kill "$p" 2>/dev/null ) >/dev/null 2>&1 </dev/null & local w=$!
   wait "$p"; local rc=$?
   kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
   return $rc
@@ -95,15 +95,24 @@ step 01-launch-home "$WAIT" || true
 
 # App 内 MioKit 断言：mio://home → MioCore、example.com 调本机桥被拒 / mio://about 可用、广告请求被拦、Mio 扩展设置页
 kit_smoke() {
-  local data smoke i name
-  data=$(run_to 30 xcrun simctl get_app_container "$DEV" "$BID" data 2>/dev/null) || { echo "kit-smoke NO_CONTAINER" | tee -a "$SUMMARY"; FAIL=1; return 1; }
-  smoke="$data/Documents/mio-smoke"
+  local smoke i name
+  # 不用 `simctl get_app_container`（CI 上 simctl 很慢，30 s 也没返回）：App 启动时自己建 Documents/mio-smoke，直接在宿主机上找
+  local apps="$HOME/Library/Developer/CoreSimulator/Devices/$DEV/data/Containers/Data/Application"
+  smoke=""
+  for i in $(seq 1 120); do
+    smoke=$(ls -dt "$apps"/*/Documents/mio-smoke 2>/dev/null | head -n 1)
+    [ -n "$smoke" ] && break
+    alive || break
+    sleep 1
+  done
+  [ -n "$smoke" ] || { echo "kit-smoke NO_CONTAINER" | tee -a "$SUMMARY"; FAIL=1; return 1; }
+  echo "kit-smoke dir: $smoke"
   mkdir -p "$smoke"; rm -f "$smoke/report.json"; touch "$smoke/go"
-  for i in $(seq 1 "${KIT_SMOKE_TIMEOUT:-300}"); do
+  for i in $(seq 1 "${KIT_SMOKE_TIMEOUT:-900}"); do
     if ! alive; then echo "kit-smoke CRASHED (gone after ~${i}s)" | tee -a "$SUMMARY"; FAIL=1; break; fi
     if [ -f "$smoke/shot-request" ]; then
       name=$(cat "$smoke/shot-request")
-      run_to 30 xcrun simctl io "$DEV" screenshot "$OUT/$name.png" >/dev/null 2>&1 || true
+      run_to 60 xcrun simctl io "$DEV" screenshot "$OUT/$name.png" >/dev/null 2>&1 || echo "screenshot $name timed out (in-app copy: $name-app.png)"
       rm -f "$smoke/shot-request"
     fi
     [ -f "$smoke/report.json" ] && break
