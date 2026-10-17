@@ -518,7 +518,9 @@ jobs:
 
       - name: WebKit MSE baseline (AppKit WKWebView on this runner, informational)
         continue-on-error: true
-        run: timeout 90 swift scripts/mac-appkit-mse-probe.swift https://example.com/ || true
+        run: |
+          # macOS 没有 timeout 命令；脚本自己 40 秒超时退出
+          swift scripts/mac-appkit-mse-probe.swift https://example.com/ || true
 
       - name: Smoke test (public site page → window.MioDesktop.browser.open → in-app browser + adblock ready)
         run: |

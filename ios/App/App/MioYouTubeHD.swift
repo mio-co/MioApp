@@ -41,6 +41,7 @@ enum MioYouTubeHD {
         r.adaptiveFormats = af.length;
         r.maxHeight = af.reduce((m, f) => Math.max(m, f.height || 0), 0);
         r.progressive = (sd.formats || []).map(f => f.qualityLabel || f.itag);
+        r.hlsManifest = !!sd.hlsManifestUrl;
       } else if (pr) { r.streamingData = 'missing'; r.playability = pr.playabilityStatus && pr.playabilityStatus.status; }
       if (p && typeof p.getAvailableQualityLevels === 'function') r.qualityLevels = p.getAvailableQualityLevels();
       if (p && typeof p.getPlaybackQuality === 'function') r.playbackQuality = p.getPlaybackQuality();
