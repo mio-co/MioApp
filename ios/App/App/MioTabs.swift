@@ -67,6 +67,7 @@ enum MioTabContainers {
         connected = true
         list = { MioContainerStore.shared.containers.map { .init(id: $0.id, name: $0.name, color: MioContainerStore.color($0.color)) } }
         dataStore = { MioContainerStore.shared.dataStore(for: $0) }
+        MioContainerUX.installTip()
     }
 
     /// 新标签的容器：锁定的打开者 > 显式指定 > 站点默认容器 > 未锁定的打开者 > 默认容器
@@ -203,7 +204,10 @@ final class MioTabsViewController: UIViewController {
         let target = MioTabStore.isHTTP(url) ? url : MioTabsSettings.newTabURL
         let fromActive = from != nil && from?.tabID == store.activeID
         let opener = from?.tabID.flatMap { store.tab($0) }
-        let c = MioTabContainers.forNewTab(url: MioTabStore.isHTTP(url) ? url : nil, opener: opener, requested: containerID)
+        // 无痕标签打开的链接 / 弹窗仍是无痕（MioContainerUX.swift）
+        let c = opener?.containerID == MioTabStore.privateContainer || containerID == MioTabStore.privateContainer
+            ? MioTabContainer(containerId: MioTabStore.privateContainer, locked: true)
+            : MioTabContainers.forNewTab(url: MioTabStore.isHTTP(url) ? url : nil, opener: opener, requested: containerID)
         guard let tab = store.add(target, activate: activate, fromActive: fromActive, containerID: c.containerId, locked: c.locked) else {
             toast("最多同时打开 \(store.maxTabs) 个标签")
             return nil
@@ -390,7 +394,7 @@ final class MioTabsViewController: UIViewController {
         for id in store.toUnload(maxLoaded: Self.maxLoaded, isLoaded: { controllers[$0.id] != nil }) { unload(id) }
     }
 
-    private func showActive() {
+    func showActive() {
         guard isViewLoaded, let id = store.activeID, let vc = ensureController(id) else { return }
         for (tid, c) in controllers { c.view.isHidden = tid != id }
         MioBrowserViewController.current = vc
@@ -547,10 +551,8 @@ extension MioBrowserViewController {
         let chrome = MioTabChrome(browser: self)
         tabChrome = chrome
         guard Self.usesTopChrome else {
-            var items = toolbar.items ?? []
-            items.append(UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil))
-            items.append(chrome.tabsItem)
-            toolbar.items = items
+            // iPhone：Safari（iOS 27）式布局，原来的顶栏 / 底部工具栏隐藏（MioMobileChrome.swift）
+            MioMobileChrome.install(on: self)
             return
         }
         chrome.installTop()
@@ -619,7 +621,11 @@ final class MioTabChrome {
 
     private func menu() -> UIMenu {
         UIMenu(children: [
-            UIAction(title: "新建标签页", image: UIImage(systemName: "plus")) { [weak self] _ in self?.browser?.tabsController?.mioNewTab(nil) },
+            // 新建标签页 / 新建无痕 / 在容器中新建 ▸ / 新建容器…
+            UIDeferredMenuElement.uncached { [weak self] done in
+                guard let b = self?.browser, let tabs = b.tabsController else { done([]); return }
+                done(MioContainerUX.newTabMenuElements(tabs, from: b))
+            },
             UIAction(title: "重新打开关闭的标签页", image: UIImage(systemName: "arrow.uturn.backward")) { [weak self] _ in self?.browser?.tabsController?.reopenClosed() },
             UIAction(title: "关闭此标签页", image: UIImage(systemName: "xmark"), attributes: .destructive) { [weak self] _ in
                 guard let b = self?.browser else { return }
@@ -643,6 +649,7 @@ final class MioTabChrome {
         if !isTop {
             let img = (1...50).contains(count) ? UIImage(systemName: "\(count).square") : nil
             tabsItem.image = img ?? UIImage(systemName: "square.on.square")
+            browser?.mobileChrome?.tabCountChanged(count)
         }
         strip?.reload()
     }
@@ -683,7 +690,10 @@ final class MioTabChrome {
         newTab.accessibilityLabel = "新建标签页"
         // 长按 / 右键「+」：在某个容器里新建标签页（按当前容器列表生成；只有默认容器时为空）
         newTab.menu = UIMenu(title: "新建标签页（选择容器）", children: [
-            UIDeferredMenuElement.uncached { [weak self] done in done(self?.browser?.tabsController?.newTabContainerItems() ?? []) },
+            UIDeferredMenuElement.uncached { [weak self] done in
+                guard let b = self?.browser, let tabs = b.tabsController else { done([]); return }
+                done(MioContainerUX.newTabMenuElements(tabs, from: b))
+            },
         ])
         let flex = { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
         let right = parityExtraItems() + buttons + [shieldItem, tabsItem, newTab]
@@ -929,6 +939,14 @@ final class MioTabOverviewViewController: UIViewController, UICollectionViewData
     private weak var tabs: MioTabsViewController?
     private var collection: UICollectionView!
     private let countLabel = UILabel()
+    /// 容器切换器（Safari 描述文件 / 标签组式）：nil = 全部；选中后只显示该容器的标签，「+」在该容器里新建
+    private(set) var filter: String?
+    private var filterItem: UIBarButtonItem?
+    private var visible: [MioTab] {
+        guard let tabs = tabs else { return [] }
+        guard let f = filter else { return tabs.store.tabs }
+        return tabs.store.tabs.filter { $0.containerID == f }
+    }
 
     init(tabs: MioTabsViewController) {
         self.tabs = tabs
@@ -963,8 +981,17 @@ final class MioTabOverviewViewController: UIViewController, UICollectionViewData
         reopen.accessibilityLabel = "重新打开关闭的标签页"
         reopen.isEnabled = tabs?.store.hasClosed ?? false
         let add = UIBarButtonItem(title: nil, image: UIImage(systemName: "plus"), primaryAction: UIAction { [weak self] _ in
-            self?.dismiss(animated: true) { self?.tabs?.mioNewTab(nil) }
-        }, menu: nil)
+            guard let self = self else { return }
+            let f = self.filter
+            let t = self.tabs
+            self.dismiss(animated: true) {
+                if f == MioContainerUX.privateId { t?.openPrivateTab() } else if let f = f { t?.newTab(containerID: f) } else { t?.mioNewTab(nil) }
+            }
+        }, menu: UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in
+            // 长按「+」：新建标签页 / 新建无痕 / 在容器中新建 ▸ / 新建容器…（选完先收起概览）
+            guard let self = self, let tabs = self.tabs else { done([]); return }
+            done(MioContainerUX.newTabMenuElements(tabs, from: self))
+        }]))
         add.accessibilityLabel = "新建标签页"
         let hide = UIBarButtonItem(title: nil, image: UIImage(systemName: "chevron.down"), primaryAction: UIAction { [weak self] _ in
             let t = self?.tabs
@@ -974,7 +1001,11 @@ final class MioTabOverviewViewController: UIViewController, UICollectionViewData
         let done = UIBarButtonItem(title: "完成", image: nil, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) }, menu: nil)
         done.style = .done
         let flex = { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
-        bar.items = [hide, reopen, flex(), UIBarButtonItem(customView: countLabel), flex(), add, done]
+        let filterItem = UIBarButtonItem(title: "全部", image: UIImage(systemName: "person.2.square.stack"), primaryAction: nil, menu: nil)
+        filterItem.accessibilityLabel = "容器"
+        self.filterItem = filterItem
+        updateFilterMenu()
+        bar.items = [hide, reopen, flex(), filterItem, flex(), UIBarButtonItem(customView: countLabel), flex(), add, done]
 
         NSLayoutConstraint.activate([
             collection.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -988,25 +1019,57 @@ final class MioTabOverviewViewController: UIViewController, UICollectionViewData
         reload()
     }
 
+    /// 容器切换器菜单：全部 / 默认 / 各容器 / 无痕（有无痕标签时）
+    private func updateFilterMenu() {
+        guard let item = filterItem else { return }
+        var entries: [(id: String?, name: String, color: UIColor?)] = [(nil, "全部", nil)]
+        for c in MioTabContainers.all { entries.append((c.id, c.name, c.color)) }
+        if tabs?.store.tabs.contains(where: { $0.containerID == MioContainerUX.privateId }) ?? false { entries.append((MioContainerUX.privateId, "无痕", .systemGray)) }
+        if MioTabContainers.all.isEmpty { entries.append((MioTabStore.defaultContainer, "默认", .systemGray)) }
+        item.menu = UIMenu(title: "显示哪个容器的标签", children: entries.map { e in
+            UIAction(title: e.name, image: e.color.flatMap { MioContainerUX.dotImage($0) } ?? UIImage(systemName: "square.grid.2x2"),
+                     state: e.id == filter ? .on : .off) { [weak self] _ in
+                self?.filter = e.id
+                self?.reload()
+            }
+        } + [UIAction(title: "管理容器…", image: UIImage(systemName: "gearshape")) { [weak self] _ in
+            let nav = UINavigationController(rootViewController: MioContainersViewController())
+            nav.topViewController?.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak nav] _ in nav?.dismiss(animated: true) })
+            self?.present(nav, animated: true)
+        }])
+        let current = entries.first { $0.id == filter }
+        item.title = current?.name ?? "全部"
+        item.image = current?.color.flatMap { MioContainerUX.dotImage($0) } ?? UIImage(systemName: "person.2.square.stack")
+    }
+
+    func setFilterForSmoke(_ id: String?) {
+        filter = id
+        reload()
+    }
+
+    var visibleCountForSmoke: Int { visible.count }
+
     func reload() {
         guard isViewLoaded else { return }
         let n = tabs?.store.count ?? 0
-        countLabel.text = "\(n) 个标签页"
+        updateFilterMenu()
+        countLabel.text = filter == nil ? "\(n) 个标签页" : "\(visible.count) / \(n) 个标签页"
         countLabel.sizeToFit()
         collection.reloadData()
         if n == 0 { dismiss(animated: true) }
     }
 
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { tabs?.store.count ?? 0 }
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { visible.count }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "card", for: indexPath) as! MioTabCard
-        guard let tabs = tabs, tabs.store.tabs.indices.contains(indexPath.item) else { return cell }
-        let t = tabs.store.tabs[indexPath.item]
+        let list = visible
+        guard let tabs = tabs, list.indices.contains(indexPath.item) else { return cell }
+        let t = list[indexPath.item]
         let host = MioTabStore.displayHost(t.url)
         let title = (tabs.controller(for: t.id)?.webView?.title).flatMap { $0.isEmpty ? nil : $0 } ?? (t.title.isEmpty ? host : t.title)
         cell.configure(title: title.isEmpty ? "新标签页" : title, host: host, image: tabs.snapshot(for: t.id), active: t.id == tabs.store.activeID,
-                       container: t.containerID == MioTabStore.defaultContainer ? nil : MioTabContainers.info(t.containerID))
+                       container: MioContainerUX.badge(for: t.containerID))
         cell.onClose = { [weak self] in
             self?.tabs?.closeTab(t.id)
             self?.reload()
@@ -1022,8 +1085,9 @@ final class MioTabOverviewViewController: UIViewController, UICollectionViewData
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        guard let tabs = tabs, tabs.store.tabs.indices.contains(indexPath.item) else { return }
-        let id = tabs.store.tabs[indexPath.item].id
+        let list = visible
+        guard let tabs = tabs, list.indices.contains(indexPath.item) else { return }
+        let id = list[indexPath.item].id
         dismiss(animated: true) { tabs.select(id) }
     }
 }
@@ -1068,7 +1132,9 @@ final class MioTabCard: UICollectionViewCell {
         contentView.layer.borderWidth = active ? 3 : 0
         contentView.layer.borderColor = UIColor.tintColor.cgColor
         bar.backgroundColor = container?.color ?? .clear
-        accessibilityLabel = "\(t)，\(h)" + (active ? "，当前标签" : "")
+        host.text = container.map { "● \($0.name) · \(h)" } ?? h
+        host.textColor = container?.color ?? .secondaryLabel
+        accessibilityLabel = "\(t)，\(h)" + (container.map { "，容器 \($0.name)" } ?? "") + (active ? "，当前标签" : "")
         isAccessibilityElement = true
     }
 
@@ -1077,7 +1143,7 @@ final class MioTabCard: UICollectionViewCell {
         let b = contentView.bounds
         image.frame = CGRect(x: 0, y: 0, width: b.width, height: b.height - 40)
         placeholder.frame = image.frame
-        bar.frame = CGRect(x: 0, y: b.height - 40, width: b.width, height: 3)
+        bar.frame = CGRect(x: 0, y: 0, width: b.width, height: 5)   // 容器色条在卡片顶部
         title.frame = CGRect(x: 10, y: b.height - 37, width: b.width - 20, height: 18)
         host.frame = CGRect(x: 10, y: b.height - 19, width: b.width - 20, height: 14)
         close.frame = CGRect(x: b.width - 34, y: 4, width: 30, height: 30)

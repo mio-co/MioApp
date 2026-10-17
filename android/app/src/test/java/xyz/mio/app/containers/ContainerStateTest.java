@@ -9,6 +9,7 @@ import static org.junit.Assert.fail;
 import org.junit.Test;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Deque;
@@ -27,6 +28,21 @@ public class ContainerStateTest {
         s.ids = () -> q.isEmpty() ? java.util.UUID.randomUUID().toString() : q.poll();
         s.clock = () -> 1000L;
         return s;
+    }
+
+    /** 新建容器自动配色：高对比顺序，跳过已在用的颜色，全用过才循环（与 iOS / Windows 同样的用例） */
+    @Test
+    public void autoColorOrderHighContrastAndSkipsUsed() {
+        assertEquals(Arrays.asList("blue", "orange", "green", "pink", "purple", "yellow", "red", "turquoise", "gray"), ContainerState.COLORS);
+        ContainerState s = state();
+        List<String> got = new ArrayList<>();
+        for (int i = 0; i < 9; i++) got.add(s.create("c" + i, null).color);
+        assertEquals(ContainerState.COLORS, got);
+        assertEquals("blue", s.create("c9", null).color);
+        ContainerState t = state();
+        assertEquals("orange", t.create("a", "orange").color);
+        assertEquals("blue", t.create("b", null).color);
+        assertEquals("green", t.create("c", null).color);
     }
 
     static ContainerState.TabContainer tc(String id, boolean locked) {
@@ -63,7 +79,7 @@ public class ContainerStateTest {
         assertEquals("blue", a.color);
         assertEquals(1000L, a.createdAt);
         assertEquals("red", s.create("小号", "red").color);
-        assertEquals("turquoise", s.nextColor());
+        assertEquals("orange", s.nextColor());
         assertThrowsMsg("不能为空", () -> s.create("   ", null));
         assertThrowsMsg("无效的颜色", () -> s.update(ID1, null, "black"));
         assertEquals("公司", s.update(ID1, "公司", "green").name);

@@ -18,8 +18,8 @@ const DEFAULT_NAME = '默认';
 const DEFAULT_COLOR = 'gray';
 const MAX_CONTAINERS = 20;
 const MAX_NAME = 32;
-// Firefox Multi-Account Containers 的配色
-const COLORS = ['blue', 'turquoise', 'green', 'yellow', 'orange', 'red', 'pink', 'purple'];
+// 配色（Firefox Multi-Account Containers 色值）。顺序 = 新建容器自动分配的顺序：相邻两个对比强（v0.3.4 起；四端一致）
+const COLORS = ['blue', 'orange', 'green', 'pink', 'purple', 'yellow', 'red', 'turquoise', 'gray'];
 const COLOR_HEX = {
   blue: '#37ADFF',
   turquoise: '#00C79A',

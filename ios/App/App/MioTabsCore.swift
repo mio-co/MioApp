@@ -29,6 +29,8 @@ struct MioClosedTab: Equatable {
 
 final class MioTabStore {
     static let defaultContainer = "default"
+    /// 无痕标签：不落盘的临时数据存储；会话里不保存、不进「最近关闭」
+    static let privateContainer = "private"
     static let defaultMaxTabs = 50
     static let defaultMaxClosed = 20
     static let maxTitle = 300
@@ -215,7 +217,7 @@ final class MioTabStore {
         guard let i = index(of: id) else { return nil }
         let t = tabs.remove(at: i)
         if MioTabStore.isHTTP(t.url) {
-            closed.append(MioClosedTab(url: t.url, title: t.title, index: i, containerID: t.containerID, locked: t.locked))
+            if t.containerID != MioTabStore.privateContainer { closed.append(MioClosedTab(url: t.url, title: t.title, index: i, containerID: t.containerID, locked: t.locked)) }
             if closed.count > maxClosed { closed.removeFirst(closed.count - maxClosed) }
         }
         for k in tabs.indices where tabs[k].openerID == id { tabs[k].openerID = nil }
@@ -254,7 +256,7 @@ final class MioTabStore {
     // MARK: persistence（与 Windows browser-tabs.json 同格式）
 
     func serialize() -> Data {
-        let keep = tabs.filter { MioTabStore.isHTTP($0.url) }
+        let keep = tabs.filter { MioTabStore.isHTTP($0.url) && $0.containerID != MioTabStore.privateContainer }
         let active = keep.firstIndex { $0.id == activeID } ?? 0
         let items: [[String: Any]] = keep.map { t in
             var o: [String: Any] = ["url": t.url, "title": t.title]
@@ -276,6 +278,7 @@ final class MioTabStore {
         activeID = nil
         for x in items {
             var c = MioTabStore.cleanContainer(x["container"] as? String)
+            if c == MioTabStore.privateContainer { continue }
             var locked = (x["locked"] as? Bool) ?? false
             if let known = knownContainers, c != MioTabStore.defaultContainer, !known.contains(c) {
                 c = MioTabStore.defaultContainer // 容器已删除：回到默认容器，不再锁定
