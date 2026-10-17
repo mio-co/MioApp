@@ -17,10 +17,26 @@ public struct MioConversionResult: Equatable {
     public var sourceRules: Int
     /// 因超过上限被丢掉的条数（> 0 时拆分器会对半拆）
     public var discarded: Int
-    /// 内容规则表达不了的（scriptlet / 扩展 CSS / 高级修饰符），交给高级规则引擎或忽略
+    /// 跳过的：内容规则和高级规则引擎都表达不了（转换出错 / 不支持的修饰符），计入设置页的「跳过 M 条」
     public var unsupported: Int
-    public init(json: String, ruleCount: Int, sourceRules: Int, discarded: Int, unsupported: Int) {
+    /// 高级规则（scriptlet `#%#//scriptlet`、扩展 CSS `#?#` / `#$#`、`+js`、JS 规则 `#%#`）：由 FilterEngine 在页面里注入
+    public var advancedRules: Int
+    /// 高级规则原文（AdGuard 语法，一行一条），交给 MioAdvancedEngine
+    public var advancedText: String?
+    public init(json: String, ruleCount: Int, sourceRules: Int, discarded: Int, unsupported: Int, advancedRules: Int = 0, advancedText: String? = nil) {
         self.json = json; self.ruleCount = ruleCount; self.sourceRules = sourceRules; self.discarded = discarded; self.unsupported = unsupported
+        self.advancedRules = advancedRules; self.advancedText = advancedText
+    }
+}
+
+/// 过滤列表文本 → 行。注意 Swift 把 "\r\n" 当成一个 Character（字素簇），`$0 == "\n"` 不会命中它：
+/// filters.adtidy.org 的列表全是 CRLF，v0.4.0 用 Character 比较拆行，整份列表变成一行注释 → 0 条规则（广告拦截基本不生效的根因）。
+/// 这里按 UTF-8 字节拆，\r\n、\n、\r 都认。
+public enum MioFilterText {
+    public static func lines(_ text: String) -> [String] {
+        // 按 UTF-8 字节拆（\n = 10，\r = 13）：快，也不受字素簇影响；空行丢掉
+        text.utf8.split(omittingEmptySubsequences: true, whereSeparator: { $0 == 10 || $0 == 13 })
+            .map { String(decoding: $0, as: UTF8.self) }
     }
 }
 
@@ -50,7 +66,8 @@ public struct MioAdGuardFilterConverter: MioFilterConverting {
         let r = ContentBlockerConverter().convertArray(rules: lines, safariVersion: SafariVersion.autodetect(), advancedBlocking: true,
                                                       maxJsonSizeBytes: nil, progress: nil)
         return MioConversionResult(json: r.safariRulesJSON, ruleCount: r.safariRulesCount, sourceRules: r.sourceRulesCount,
-                                   discarded: r.discardedSafariRules, unsupported: r.advancedRulesCount)
+                                   discarded: r.discardedSafariRules, unsupported: r.errorsCount,
+                                   advancedRules: r.advancedRulesCount, advancedText: r.advancedRulesText)
     }
 }
 #endif
@@ -77,6 +94,7 @@ public struct MioBasicFilterConverter: MioFilterConverting {
         var globalCSS: [String] = []
         var unsupported = 0
         var source = 0
+        var advanced: [String] = []
         for raw in lines {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("!") || line.hasPrefix("[") { continue }
@@ -85,6 +103,7 @@ public struct MioBasicFilterConverter: MioFilterConverting {
                 switch r {
                 case .global(let sel): globalCSS.append(sel)
                 case .rule(let rule): blocks.append(rule)
+                case .advanced: advanced.append(line)
                 case .unsupported: unsupported += 1
                 }
                 continue
@@ -111,21 +130,24 @@ public struct MioBasicFilterConverter: MioFilterConverting {
         }
         let data = (try? JSONSerialization.data(withJSONObject: all, options: [.sortedKeys])) ?? Data("[]".utf8)
         return MioConversionResult(json: String(data: data, encoding: .utf8) ?? "[]", ruleCount: all.count, sourceRules: source,
-                                   discarded: discarded, unsupported: unsupported)
+                                   discarded: discarded, unsupported: unsupported,
+                                   advancedRules: advanced.count, advancedText: advanced.isEmpty ? nil : advanced.joined(separator: "\n"))
     }
 
-    enum Cosmetic { case global(String), rule([String: Any]), unsupported }
+    enum Cosmetic { case global(String), rule([String: Any]), advanced, unsupported }
 
     func cosmetic(_ line: String) -> Cosmetic? {
-        // 高级 / 扩展语法：#%# #$# #?# #@%# #@$# #@?# ##+js $$ ##^
-        for marker in ["#%#", "#$#", "#?#", "#@%#", "#@$#", "#@?#", "##+js", "$$", "##^", "#@#"] where line.contains(marker) {
-            // #@# 例外隐藏：内容规则里没有对应写法，忽略
-            return .unsupported
-        }
+        // HTML 过滤（$$ / ##^）WebKit 做不到；#@# 例外隐藏内容规则里没有对应写法（AdGuard 转换器能处理）
+        for marker in ["$$", "##^", "#@#"] where line.contains(marker) { return .unsupported }
+        // 高级规则：scriptlet / JS（#%#）、CSS 注入（#$#）、扩展 CSS（#?#）、+js，以及它们的例外 → 交给高级规则引擎（页面里注入）
+        for marker in ["#%#", "#$#", "#?#", "#@%#", "#@$#", "#@?#", "##+js"] where line.contains(marker) { return .advanced }
         guard let r = line.range(of: "##") else { return nil }
         let domains = String(line[..<r.lowerBound])
         let selector = String(line[r.upperBound...]).trimmingCharacters(in: .whitespaces)
-        guard !selector.isEmpty, !selector.contains(":has("), !selector.contains(":-abp-"), !selector.contains(":contains(") else { return .unsupported }
+        guard !selector.isEmpty else { return .unsupported }
+        // 扩展 CSS 伪类（:has / :-abp- / :contains …）WebKit 选择器做不到 → 高级规则引擎（ExtendedCss）
+        if selector.contains(":has(") || selector.contains(":-abp-") || selector.contains(":contains(") || selector.contains(":upward(")
+            || selector.contains(":xpath(") || selector.contains(":matches-css") { return .advanced }
         if domains.isEmpty { return .global(selector) }
         let (ifd, unless) = domainLists(domains.split(separator: ",").map(String.init))
         var trigger: [String: Any] = ["url-filter": ".*"]

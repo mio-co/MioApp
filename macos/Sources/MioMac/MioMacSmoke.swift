@@ -139,6 +139,10 @@ final class MioMacSmoke {
         report["miokit"] = kitReport
         let blockOK = (kitReport["blockOK"] as? Bool) ?? false
         let toggleOK = (kitReport["toggleOK"] as? Bool) ?? false
+        // 4c. 广告拦截深度检查（MioMacAdblockSmoke.swift）：订阅 >1 万条、请求被拦、## 元素隐藏、scriptlet；真实网站打分 + 截图
+        let adblockReport = await MioMacAdblockSmoke.run(host: host, shotsDir: ProcessInfo.processInfo.environment["MIO_SMOKE_SHOTS"] ?? (outPath as NSString).deletingLastPathComponent)
+        report["adblock"] = adblockReport
+        let adblockOK = (adblockReport["ok"] as? Bool) ?? false
 
         // 5. Firefox 式界面 + 动画证据
         try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -517,7 +521,8 @@ final class MioMacSmoke {
         report["bridgeOK"] = bridgeOK
         // 门槛：原有（MSE / 缩放 / 容器 / 快捷键 / 模块）+ Firefox 布局 + MioKit 桥来源校验 + 广告拦截生效 + 扩展开关生效；
         // 动画 / 截图 / 首页（依赖外网）/ 用户脚本注入只记录
-        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK && modulesOK && bridgeOK && blockOK && toggleOK
+        report["adblockOK"] = adblockOK
+        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK && modulesOK && bridgeOK && blockOK && toggleOK && adblockOK
         report["pass"] = pass
         report["seconds"] = Int(Date().timeIntervalSince(started))
         write()

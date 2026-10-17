@@ -11,15 +11,15 @@ iOS / Mac Catalyst
   依赖：PunycodeSwift (MIT, https://github.com/gumob/PunycodeSwift)、swift-psl (MIT, https://github.com/ameshkov/swift-psl，
   内含 Mozilla Public Suffix List，MPL-2.0)
 - AdGuard Scriptlets — AdGuard Software Ltd. — GPL-3.0
-  https://github.com/AdguardTeam/Scriptlets   （npm @adguard/scriptlets，内置 dist/scriptlets.corelibs.json，可远程更新）
+  https://github.com/AdguardTeam/Scriptlets   （npm @adguard/scriptlets，内置 dist/scriptlets.corelibs.json；v0.4 起在 apple/MioKit/Sources/MioKit/Resources/adguard/）
 - AdGuard ExtendedCss — AdGuard Software Ltd. — GPL-3.0
-  https://github.com/AdguardTeam/ExtendedCss   （npm @adguard/extended-css，内置 dist/extended-css.min.js）
+  https://github.com/AdguardTeam/ExtendedCss   （npm @adguard/extended-css，内置 dist/extended-css.min.js；v0.4 起在 apple/MioKit/Sources/MioKit/Resources/adguard/）
 
 过滤列表（构建时 / App 运行时从 https://filters.adtidy.org 下载，iOS 优化版）
 ------------------------------------------------------------------------
 - AdGuard Base (2)、AdGuard Mobile Ads (11)、AdGuard Tracking Protection (3)、AdGuard Chinese (224)
   — AdGuard — GPL-3.0（列表头部声明；部分列表另注 CC BY-SA 3.0），https://github.com/AdguardTeam/AdguardFilters
-- EasyList (101)、EasyPrivacy (118) — The EasyList authors — GPL-3.0 / CC BY-SA 3.0（双许可），https://easylist.to
+- EasyList (101)、EasyPrivacy (118)、EasyList China (104，可选) — The EasyList authors — GPL-3.0 / CC BY-SA 3.0（双许可），https://easylist.to
 - filter-0.txt「Mio YouTube 补充规则」— 本仓库自写，GPL-3.0
 
 本仓库自身代码中与上述组件链接的部分（ios/App/App/MioAdblockCore.swift 等）按 GPL-3.0 提供。
