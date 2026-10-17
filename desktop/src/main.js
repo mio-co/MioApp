@@ -8,6 +8,8 @@ const { SettingsStore } = require('./settings-store');
 const { Adblock } = require('./adblock');
 const { BrowserManager, SettingsWindow } = require('./browser');
 const { Updater } = require('./updater');
+const { PageTools } = require('./page-tools');
+const pageToolsStore = require('./page-tools-store');
 
 app.setAppUserModelId('xyz.mio.desktop');
 
@@ -200,7 +202,15 @@ if (!app.requestSingleInstanceLock()) {
     const browserSession = session.fromPartition(config.BROWSER_PARTITION);
     adblock = new Adblock({ settings, browserSession });
     settingsWindow = new SettingsWindow({ adblock, settings, icon, appVersion: app.getVersion() });
-    browser = new BrowserManager({ adblock, settings, browserSession, icon, openSettings: (host) => settingsWindow.open(host) });
+    // 阅读模式 / 强制深色 / 存到 Mio（脚本与 iOS / Android 共用 www/mio-browser）
+    const pageTools = new PageTools({
+      store: new pageToolsStore.PageToolsStore(path.join(app.getPath('userData'), 'page-tools.json')),
+      scripts: pageToolsStore.loadScripts(pageToolsStore.scriptDirCandidates(app.isPackaged ? process.resourcesPath : null, __dirname)),
+      browserSession,
+      getMainWebContents: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null),
+      icon,
+    });
+    browser = new BrowserManager({ adblock, settings, browserSession, icon, pageTools, openSettings: (host) => settingsWindow.open(host) });
 
     // 主会话、浏览器会话都不需要的权限一律拒绝；常见的（通知、剪贴板、全屏、媒体自动播放）放行
     const allow = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'notifications', 'pointerLock', 'media', 'window-management']);

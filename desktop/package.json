@@ -54,6 +54,13 @@
         "from": "../shared/scripts",
         "to": "mio-scripts",
         "filter": ["*.js"]
+      },
+      {
+        "from": "../www/mio-browser",
+        "to": "mio-browser",
+        "filter": [
+          "*.js"
+        ]
       }
     ],
     "win": {
