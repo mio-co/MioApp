@@ -7,7 +7,8 @@ PROJ=apple/ios/firefox-ios/Client.xcodeproj
 xcodebuild -resolvePackageDependencies -onlyUsePackageVersionsFromResolvedFile \
   -project "$PROJ" -scheme Firefox -derivedDataPath "$DD" -skipPackagePluginValidation -skipMacroValidation 2>&1 | tail -n 30
 if [ "$KIND" = sim ]; then
-  ARGS=(-sdk iphonesimulator -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
+  # 不传 -sdk iphonesimulator：命令行 -sdk 会让 Swift 宏（ModifiedCopyMacros）也按模拟器 SDK 构建，编译器加载不了（"malformed response"）
+  ARGS=(-destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
         CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=)
 else
   ARGS=(-sdk iphoneos -destination 'generic/platform=iOS'

@@ -27,8 +27,7 @@ class NewTabHomePageAccessors {
 class HomeButtonHomePageAccessors {
     static func getHomePage(_ prefs: Prefs) -> URL? {
         // Mio: fall back to mio://home content
-        let string = prefs.stringForKey(PrefsKeys.HomeButtonHomePageURL) ?? MioBuild.homeContentURL.absoluteString
-        guard let urlString = string else { return nil }
+        let urlString = prefs.stringForKey(PrefsKeys.HomeButtonHomePageURL) ?? MioBuild.homeContentURL.absoluteString
         return URL(string: urlString)
     }
 }
