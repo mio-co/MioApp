@@ -10,6 +10,9 @@ const { BrowserManager, SettingsWindow } = require('./browser');
 const { Updater } = require('./updater');
 const { PageTools } = require('./page-tools');
 const pageToolsStore = require('./page-tools-store');
+const { ContainerStore } = require('./containers-store');
+const { ContainerSessions } = require('./containers');
+const { COLOR_HEX } = require('./containers-core');
 
 app.setAppUserModelId('xyz.mio.desktop');
 
@@ -21,6 +24,7 @@ if (!app.requestSingleInstanceLock()) {
   let settingsWindow = null;
   let settings = null;
   let adblock = null;
+  let containers = null;
 
   const iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
   const icon = nativeImage.createFromPath(iconPath);
@@ -199,7 +203,14 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     settings = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'));
-    const browserSession = session.fromPartition(config.BROWSER_PARTITION);
+    // 容器（登录状态隔离）：默认容器 = 原来的 persist:mio-browser 会话；其他容器各自一个 persist:mio-c-<id> 会话（desktop/src/containers.js）
+    containers = new ContainerSessions({
+      store: new ContainerStore(path.join(app.getPath('userData'), 'containers.json')),
+      defaultPartition: config.BROWSER_PARTITION,
+      userDataDir: app.getPath('userData'),
+    });
+    containers.purgePending();
+    const browserSession = containers.defaultSession();
     adblock = new Adblock({ settings, browserSession });
     settingsWindow = new SettingsWindow({ adblock, settings, icon, appVersion: app.getVersion() });
     // 阅读模式 / 强制深色 / 存到 Mio（脚本与 iOS / Android 共用 www/mio-browser）
@@ -207,16 +218,33 @@ if (!app.requestSingleInstanceLock()) {
       store: new pageToolsStore.PageToolsStore(path.join(app.getPath('userData'), 'page-tools.json')),
       scripts: pageToolsStore.loadScripts(pageToolsStore.scriptDirCandidates(app.isPackaged ? process.resourcesPath : null, __dirname)),
       browserSession,
+      isBrowserSession: (ses) => containers.isBrowserSession(ses),
       getMainWebContents: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null),
       icon,
     });
-    browser = new BrowserManager({ adblock, settings, browserSession, icon, pageTools, openSettings: (host) => settingsWindow.open(host) });
+    browser = new BrowserManager({
+      adblock,
+      settings,
+      browserSession,
+      containers,
+      // 多标签接入点（feat/tabs-top-toolbar）：标签的容器会话、容器列表（颜色为 #hex）
+      sessionForContainer: (id) => containers.sessionFor(id),
+      listContainers: () => containers.store.list().map((c) => ({ id: c.id, name: c.name, color: COLOR_HEX[c.color] || COLOR_HEX.gray })),
+      icon,
+      pageTools,
+      openSettings: (host) => settingsWindow.open(host),
+    });
 
     // 主会话、浏览器会话都不需要的权限一律拒绝；常见的（通知、剪贴板、全屏、媒体自动播放）放行
     const allow = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'notifications', 'pointerLock', 'media', 'window-management']);
-    for (const ses of [session.fromPartition(config.MAIN_PARTITION), browserSession]) {
+    session.fromPartition(config.MAIN_PARTITION).setPermissionRequestHandler((wc, permission, callback) => callback(allow.has(permission)));
+    // 每个浏览器会话（默认容器 + 每个容器）都走同一个配置：权限、广告拦截（webRequest + frame preload）。
+    // 新的会话级功能请加在这里，容器会话会自动得到同样的配置
+    containers.configure(function configureBrowserSession(ses) {
       ses.setPermissionRequestHandler((wc, permission, callback) => callback(allow.has(permission)));
-    }
+      adblock.attachSession(ses);
+    });
+    containers.installIpc((event) => !!(settingsWindow.win && !settingsWindow.win.isDestroyed() && event.sender === settingsWindow.win.webContents));
 
     installMainIpc();
     buildMenu();
@@ -224,7 +252,7 @@ if (!app.requestSingleInstanceLock()) {
     adblock.start();
 
     if (process.env.MIO_SMOKE_OUT) {
-      require('./smoke').runSmoke({ out: process.env.MIO_SMOKE_OUT, adblock, browser, getMainWindow: () => mainWindow });
+      require('./smoke').runSmoke({ out: process.env.MIO_SMOKE_OUT, adblock, browser, containers, getMainWindow: () => mainWindow });
     } else {
       // 软件内更新（GitHub Releases）：冒烟测试时不启动
       new Updater({ getWindow: () => mainWindow, icon }).start();

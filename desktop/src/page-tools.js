@@ -19,10 +19,12 @@ const SAVE_KINDS = [
 ];
 
 class PageTools {
-  constructor({ store, scripts, browserSession, getMainWebContents, icon }) {
+  constructor({ store, scripts, browserSession, getMainWebContents, icon, isBrowserSession }) {
     this.store = store;
     this.scripts = scripts;
     this.session = browserSession;
+    // 容器（containers.js）：每个容器一个会话，都算浏览器会话
+    this.isBrowserSession = isBrowserSession || ((ses) => ses === this.session);
     this.getMainWebContents = getMainWebContents;
     this.icon = icon;
     this.readerable = new Map();
@@ -31,7 +33,7 @@ class PageTools {
   }
 
   installIpc() {
-    const fromBrowser = (event) => event && event.sender && event.sender.session === this.session;
+    const fromBrowser = (event) => !!(event && event.sender && this.isBrowserSession(event.sender.session));
     ipcMain.on('mio-pagetools:dark-script', (event, url) => {
       let code = '';
       try {
@@ -168,7 +170,7 @@ class PageTools {
       icon: this.icon,
       autoHideMenuBar: false,
       backgroundColor: this.background(),
-      webPreferences: { session: this.session, contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
+      webPreferences: { session: (wc && wc.session) || this.session, contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
     });
     this.readers.add(win);
     win.on('closed', () => this.readers.delete(win));

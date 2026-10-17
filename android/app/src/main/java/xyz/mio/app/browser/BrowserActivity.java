@@ -106,6 +106,8 @@ public class BrowserActivity extends Activity {
     /** 阅读模式 / 强制深色 / 存到 Mio（PageTools.java） */
     private PageTools pageTools;
     private Button readerBtn;
+    /** 这个 WebView 用的容器（登录状态隔离，xyz.mio.app.containers.ContainerManager）；默认 = 原来的浏览数据 */
+    private String containerId = xyz.mio.app.containers.ContainerState.DEFAULT_ID;
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -240,6 +242,8 @@ public class BrowserActivity extends Activity {
         col.addView(progress, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
 
         webView = new WebView(this);
+        // 容器 Profile 必须在 WebView 首次使用前设置（默认容器 / 系统不支持时什么都不做）
+        containerId = xyz.mio.app.containers.ContainerManager.get(this).apply(webView, containerId);
         col.addView(webView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
         LinearLayout bottom = new LinearLayout(this);
@@ -801,6 +805,8 @@ public class BrowserActivity extends Activity {
         allow.setText("白名单（" + BrowserPrefs.allowlist(this).size() + "）…");
         allow.setOnClickListener(v -> showAllowlist(allow));
         box.addView(allow);
+
+        xyz.mio.app.containers.ContainerUi.addSettingsButton(this, box);
 
         xyz.mio.app.update.UpdateUi.addSettingsSection(this, box);
         if (media != null) media.addSettings(box);

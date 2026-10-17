@@ -18,6 +18,19 @@
     <div class="row"><div class="label">浏览数据<div class="sub">内置浏览器有独立的 Cookie / 登录状态，与 MioCore 主窗口互不影响</div></div><button class="btn danger" id="clearData">清除浏览数据</button></div>
   </div>
 
+  <h2>容器（登录状态隔离）</h2>
+  <div class="card" id="ctrList"></div>
+  <div class="card" style="margin-top:10px">
+    <form class="row" id="ctrForm" autocomplete="off"><input class="text" id="ctrName" maxlength="32" placeholder="新容器名称，如 工作 / 小号 2"><select id="ctrColor"></select><button class="btn" type="submit">新建容器</button></form>
+  </div>
+  <p class="note">每个容器有独立的 Cookie、LocalStorage、IndexedDB 和缓存，同一网站可以在不同容器里登录不同账号。「默认」容器就是原来的浏览数据。删除容器会关闭它的标签并清除其中全部数据。</p>
+  <h2>站点默认容器</h2>
+  <div class="card">
+    <form class="row" id="ctrRuleForm" autocomplete="off"><input class="text" id="ctrRuleHost" placeholder="域名，如 github.com（含子域名）"><select id="ctrRuleContainer"></select><button class="btn" type="submit">添加</button></form>
+    <div id="ctrRules"></div>
+  </div>
+  <p class="note" id="ctrError"></p>
+
   <h2>YouTube 防沉迷</h2>
   <div class="card">
     <label class="row"><div class="label">YouTube 防沉迷<div class="sub">隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏 Shorts 入口（频道页保留）；看 Shorts 时立即提醒，之后按间隔提醒</div></div><span class="switch"><input type="checkbox" id="youtubeFocus"><span></span></span></label>
@@ -58,5 +71,6 @@
   <p class="note" id="about"></p>
 <script src="settings.js"></script>
 <script src="update-settings.js"></script>
+<script src="containers-settings.js"></script>
 </body>
 </html>
