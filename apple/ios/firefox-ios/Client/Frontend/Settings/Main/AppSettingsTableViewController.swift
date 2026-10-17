@@ -390,7 +390,8 @@ class AppSettingsTableViewController: SettingsTableViewController,
         }
 
         // For users whose devices support alternate app icons, add the App Icon setting
-        if UIApplication.shared.supportsAlternateIcons {
+        // Mio: single app icon (MioBuild.alternateAppIconsEnabled)
+        if MioBuild.alternateAppIconsEnabled, UIApplication.shared.supportsAlternateIcons {
             generalSettings.append(
                 AppIconSetting(
                     theme: currentTheme(),

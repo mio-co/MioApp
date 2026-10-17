@@ -9,7 +9,7 @@ import Security
 #endif
 
 public enum MioKitInfo {
-    public static let version = "0.4.0-dev"
+    public static let version = "0.4.1"
 
     /// 注入脚本里的 platform 字段（与 v0.3.x 一致：ios / mac）
     public static var platform: String {

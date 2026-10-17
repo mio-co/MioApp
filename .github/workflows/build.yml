@@ -12,6 +12,11 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      legacy:
+        description: '也构建 v0.3.x 旧工程（legacy-* job）'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -57,8 +62,8 @@ jobs:
           head -c 2048 /dev/urandom > "$D/Mio-$V-mac.dmg"
           node scripts/release-manifests.mjs --dist "$D" --tag "v$V"
           (cd "$D" && sha256sum -c SHA256SUMS.txt)
-          # SideStore 源：bundle id 不变（xyz.mio.app）、指向 Mio.ipa、版本 / 构建号来自 apple/ios fork（0.4.0 / 10）
-          node -e "const s=require(process.argv[1]);const v=s.apps[0].versions[0];if(s.apps[0].bundleIdentifier!=='xyz.mio.app'||!v.downloadURL.endsWith('/Mio.ipa')||v.size!==4096||v.version!==process.argv[2]||v.buildVersion!=='10')process.exit(1);console.log(JSON.stringify(v))" "$D/altstore-source.json" "$V"
+          # SideStore 源：bundle id 不变（xyz.mio.app）、指向 Mio.ipa、版本 / 构建号来自 apple/ios fork（0.4.1 / 11）
+          node -e "const s=require(process.argv[1]);const v=s.apps[0].versions[0];if(s.apps[0].bundleIdentifier!=='xyz.mio.app'||!v.downloadURL.endsWith('/Mio.ipa')||v.size!==4096||v.version!==process.argv[2]||v.buildVersion!=='11')process.exit(1);console.log(JSON.stringify(v))" "$D/altstore-source.json" "$V"
 
       # 翻译：真实免费接口（微软 Bing / 谷歌）是否还能用。只记录，不阻塞（单测里全部是 mock）
       - name: Translate engines live probe (non-blocking)
@@ -104,15 +109,47 @@ jobs:
           P=Payload/Mio.app/Info.plist
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$P")" = xyz.mio.app
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$P")" = "$V"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$P")" = 10
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$P")" = 11
           test ! -e Payload/Mio.app/PlugIns
+          # v0.4.1 瘦身门槛：只剩中英文本地化、没有引导视频 / GIF、没有备用图标、没有测试计划 / swiftmodule
+          L=$(find Payload/Mio.app -type d -name '*.lproj' -prune | sed 's#.*/##' | sort -u | tr '\n' ' ')
+          echo "lproj: $L"
+          test -z "$(find Payload/Mio.app -type d -name '*.lproj' -prune | sed 's#.*/##' | grep -v -E '^(Base|en|en-US|zh-CN|zh-TW|zh-Hans|zh-Hant)\.lproj$')"
+          test ! -e Payload/Mio.app/kitHeroGif.gif
+          test ! -e Payload/Mio.app/BrowserKit_OnboardingKit.bundle/IntroVideo.mp4
+          test -z "$(find Payload/Mio.app -name '*.xctestplan' -o -name '*.swiftmodule' -o -name '*.xcconfig')"
+          if otool -l Payload/Mio.app/Client | grep -q -E '__LLVM_COV|__llvm_prf'; then echo 'coverage instrumentation in Client'; exit 1; fi
+          # v0.4.1：不带 Sentry
+          test ! -e Payload/Mio.app/Frameworks/Sentry.framework
+          ls Payload/Mio.app/Frameworks
           mkdir -p out && mv Mio.ipa out/
           ls -l out
+
+      - name: Size report (vs v0.4.0 release)
+        run: |
+          set -euo pipefail
+          mkdir -p size-report
+          curl -fsSL -o "$RUNNER_TEMP/v0.4.0.ipa" https://github.com/mio-co/MioApp/releases/download/v0.4.0/Mio.ipa
+          python3 apple/ios/mio/ci/size-report.py measure "$RUNNER_TEMP/v0.4.0.ipa" size-report/v0.4.0.json > /dev/null
+          python3 apple/ios/mio/ci/size-report.py measure out/Mio.ipa size-report/this.json
+          python3 apple/ios/mio/ci/size-report.py compare size-report/v0.4.0.json size-report/this.json size-report/size.md
+          cat size-report/size.md >> "$GITHUB_STEP_SUMMARY"
+          # Assets.car 详情（assetutil）
+          xcrun --sdk iphoneos assetutil --info Payload/Mio.app/Assets.car > size-report/Assets.car.info.json || true
+          if [ -d build/dSYMs ]; then (cd build && zip -qry ../size-report/dSYMs.zip dSYMs); ls -l size-report/dSYMs.zip; fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: Mio-ios
           path: out/Mio.ipa
+          retention-days: 14
+
+      # 报告 + dSYM（不叫 Mio-*，release job 不会把它当发布产物）
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-size-report
+          path: size-report
           retention-days: 14
 
       - uses: actions/upload-artifact@v4
@@ -219,13 +256,13 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -version
-          MIO_MAC_RELEASE=1 MIO_MAC_BUILD_NUMBER=10 MIO_MAC_XCODE_ARGS="ONLY_ACTIVE_ARCH=NO" \
+          MIO_MAC_RELEASE=1 MIO_MAC_BUILD_NUMBER=11 MIO_MAC_XCODE_ARGS="ONLY_ACTIVE_ARCH=NO" \
             bash macos/scripts/bundle.sh "$PWD/mac-native-dist"
           APP="mac-native-dist/Mio.app"
           V=$(node -p "require('./package.json').version")
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = xyz.mio.app
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$V"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")" = 10
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")" = 11
           test -f "$APP/Contents/Resources/AppIcon.icns"
           # 打包前留一份没跑过的 .app（冒烟不改 .app，但保险起见发布用原样）
           ditto "$APP" mac-native-pristine/Mio.app
@@ -367,7 +404,7 @@ jobs:
 
   legacy-ios:
     # v0.3.x 旧工程（Capacitor iOS / Mac Catalyst）：源码保留，v0.4.0 起不进 Release；只在手动运行（workflow_dispatch）时构建
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.legacy
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -430,7 +467,7 @@ jobs:
 
   legacy-ios-sim-smoke:
     # v0.3.x 旧工程（Capacitor iOS / Mac Catalyst）：源码保留，v0.4.0 起不进 Release；只在手动运行（workflow_dispatch）时构建
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.legacy
     # iOS 模拟器冷启动冒烟：原包 + 模拟免费 Apple ID 侧载（bundle id 改成 xyz.mio.app.<TEAMID>、BGTask identifiers 不变、ad-hoc 重签）
     # 任一场景 20 秒内退出 / 崩溃即失败
     runs-on: macos-26
@@ -487,7 +524,7 @@ jobs:
 
   legacy-adblock-check:
     # v0.3.x 旧工程（Capacitor iOS / Mac Catalyst）：源码保留，v0.4.0 起不进 Release；只在手动运行（workflow_dispatch）时构建
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.legacy
     # 在 macOS 上用同一份 MioAdblockCore.swift：转换 + 编译全部列表、查询 YouTube 规则、WKWebView 开/关对比
     runs-on: macos-26
     timeout-minutes: 30
@@ -523,7 +560,7 @@ jobs:
 
   legacy-mac:
     # v0.3.x 旧工程（Capacitor iOS / Mac Catalyst）：源码保留，v0.4.0 起不进 Release；只在手动运行（workflow_dispatch）时构建
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.legacy
     # Mac Catalyst（同一个 Xcode 工程；Capacitor 只链接到 iOS，Mac 用纯 WKWebView 根控制器 MioDesktop.swift），ad-hoc 签名
     runs-on: macos-26
     timeout-minutes: 45

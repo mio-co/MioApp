@@ -17,7 +17,7 @@
 //   bridgeOK  example.com: window.Mio undefined and the bridge answers forbidden; mio://about: ping → pong
 //   blockOK   example.com: Mio ad-block rule lists attached, doubleclick request blocked, same-origin request loads
 //   settingsOK  Settings → "Mio 扩展" page (MioExtensionsView) renders with module rows
-//   (recorded only) tab overview via the app's own deep link
+//   (recorded only) tab overview via the app's own deep link; tabTrayOK = only normal + private panes (v0.4.1)
 
 import Foundation
 @preconcurrency import MioKit
@@ -201,6 +201,17 @@ final class MioSmoke {
             _ = await UIApplication.shared.open(tray, options: [:])
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             await shot("08-tab-tray")
+            // v0.4.1: the tab overview has only normal + private tabs (no upstream "Synced tabs" pane)
+            var tray: [String: Any] = ["found": false]
+            if let vc = MioSmoke.find(TabTrayViewController.self, from: MioKitHost.topViewController()) {
+                tray["found"] = true
+                tray["panels"] = vc.childPanelControllers.count
+                tray["remoteTabsPanel"] = vc.childPanelControllers.contains { $0.topViewController is RemoteTabsPanel }
+                tray["ok"] = vc.childPanelControllers.count == 2
+                    && !vc.childPanelControllers.contains { $0.topViewController is RemoteTabsPanel }
+            }
+            report["tabTray"] = tray
+            report["tabTrayOK"] = (tray["ok"] as? Bool) ?? false
         }
 
         let homePassed = (homeOK as? Bool) == true || (homeOK as? String) == "access-login"
@@ -216,6 +227,17 @@ final class MioSmoke {
     }
 
     // MARK: - Helpers
+
+    /// First view controller of `type` in the presented / child hierarchy starting at `root`.
+    private static func find<T: UIViewController>(_ type: T.Type, from root: UIViewController?) -> T? {
+        guard let root else { return nil }
+        if let hit = root as? T { return hit }
+        var next: [UIViewController] = root.children
+        if let presented = root.presentedViewController { next.append(presented) }
+        if let nav = root as? UINavigationController { next.append(contentsOf: nav.viewControllers) }
+        for vc in next { if let hit = find(type, from: vc) { return hit } }
+        return nil
+    }
 
     private func orNull(_ s: String?) -> Any {
         if let s { return s }
