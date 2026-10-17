@@ -59,7 +59,8 @@ public class UserScriptCoreTest {
             assertEquals(p, want.getString("source"), r.source);
             assertEquals(p, want.getBoolean("ignoreCase"), r.ignoreCase);
             JSONObject urls = c.getJSONObject("urls");
-            for (String u : urls.keySet()) {
+            for (java.util.Iterator<String> it = urls.keys(); it.hasNext(); ) {
+                String u = it.next();
                 String test = c.getString("kind").equals("match") ? u.split("#", -1)[0] : u;
                 assertEquals(p + " vs " + u, urls.getBoolean(u), r.test(test));
             }
