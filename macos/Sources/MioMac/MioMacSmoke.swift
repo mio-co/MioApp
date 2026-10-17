@@ -139,6 +139,9 @@ final class MioMacSmoke {
         self.dir = dir
         let c = controller
         var ui: [String: Any] = [:]
+        // GitHub 的 macOS 机器默认开了「减少动态效果」：CI 用 MIO_REDUCE_MOTION=0 强制开动画来录证据（减少动态效果的路径在 5q 单独测）
+        ui["systemReduceMotion"] = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        ui["forceReduceMotion"] = orNull(MioMotion.forceReduce)
         var shots: [String: Any] = [:]
         shots["main"] = await screenshot(window: c.window, webView: c.activeWebView, dir: dir, name: "mac-native-window-cache", chrome: false)
         shot("mac-native-window", &shots)
@@ -247,6 +250,8 @@ final class MioMacSmoke {
         strips["zoomHUD"] = await strip("anim-zoom-hud", title: "⌘+ 缩放：中央 HUD 淡入 + 微缩放，地址栏滑出 115%", chromeOnly: false, count: 8, intervalMs: 40, region: .window) {
             c.zoomIn(nil)
         }
+        c.zoomIn(nil) // 再放大一档：HUD 在显示中（0.9 秒后淡出）时读状态、截图
+        try? await Task.sleep(nanoseconds: 250_000_000)
         ui["zoomHUDShown"] = c.zoomHUD.isShowing
         ui["zoomPill"] = c.navBar.urlBar.zoomButton.titleLabel.stringValue
         shot("mac-native-zoom-hud", &shots)
@@ -424,7 +429,7 @@ final class MioMacSmoke {
             ui["reduceMotionOK"] = wNow > 30 && MioMotion.duration(MioMotion.normal) == 0
             c.closeTab(r.id)
         }
-        MioMotion.forceReduce = nil
+        MioMotion.forceReduce = ProcessInfo.processInfo.environment["MIO_REDUCE_MOTION"].map { $0 == "1" }
 
         // 5r. 布局结构（Firefox：标签条在导航栏上方、与红绿灯同一行）
         if let w = c.window, let cv = w.contentView {

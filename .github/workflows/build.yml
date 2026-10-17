@@ -582,7 +582,8 @@ jobs:
           set +e -u
           mkdir -p mac-native-smoke
           OUT="$PWD/mac-native-smoke/smoke.json"
-          MIO_SMOKE_OUT="$OUT" MIO_SMOKE_SHOTS="$PWD/mac-native-smoke" "mac-native-dist/Mio Preview.app/Contents/MacOS/MioMac" > mac-native-smoke/app.log 2>&1 &
+          # MIO_REDUCE_MOTION=0：runner 系统开着「减少动态效果」，强制打开动画录证据（App 平时跟随系统设置）
+          MIO_REDUCE_MOTION=0 MIO_SMOKE_OUT="$OUT" MIO_SMOKE_SHOTS="$PWD/mac-native-smoke" "mac-native-dist/Mio Preview.app/Contents/MacOS/MioMac" > mac-native-smoke/app.log 2>&1 &
           PID=$!
           SHOT=0
           for i in $(seq 1 420); do
@@ -598,7 +599,7 @@ jobs:
           echo "--- summary ---"
           jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, modulesOK, missingKeys, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
           echo "--- Firefox UI ---"
-          jq -c '.ui | {homeOK, homeAddressBar, bridge, pinnedOK, dragOK, detachOK, overflow, dropdownRows, zoomHUDShown, zoomPill, findStatus, verticalMode, reduceMotionOK, tabsAboveNav, trafficLightsInTabRow, layout}' "$OUT" 2>/dev/null
+          jq -c '.ui | {systemReduceMotion, homeOK, homeAddressBar, bridge, pinnedOK, dragOK, detachOK, overflow, dropdownRows, zoomHUDShown, zoomPill, findStatus, verticalMode, reduceMotionOK, tabsAboveNav, trafficLightsInTabRow, layout}' "$OUT" 2>/dev/null
           jq -c '.ui | {animation, recording, fullscreen}' "$OUT" 2>/dev/null
           jq -c '.ui.strips | to_entries | map({(.key): {frames: .value.frames, changed: .value.framesThatChanged}}) | add' "$OUT" 2>/dev/null
           ls -la mac-native-smoke
