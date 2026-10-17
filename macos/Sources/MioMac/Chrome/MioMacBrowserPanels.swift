@@ -287,7 +287,7 @@ extension MioMacBrowserWindowController {
         store.fetchDataRecords(ofTypes: types) { records in
             let hit = records.filter { $0.displayName == base || base.hasSuffix("." + $0.displayName) || $0.displayName.hasSuffix(base) }
             store.removeData(ofTypes: types, for: hit) {
-                MainActor.assumeIsolated { wv.reload() }
+                MainActor.assumeIsolated { _ = wv.reload() }
             }
         }
     }

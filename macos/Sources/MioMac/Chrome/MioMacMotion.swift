@@ -15,15 +15,15 @@ enum MioMotion {
     static var reduce: Bool { forceReduce ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     // Firefox 的节奏：标签开 / 关约 200ms，悬停 100–150ms，面板 150–200ms
-    static let fast: TimeInterval = 0.12
-    static let normal: TimeInterval = 0.2
-    static let slow: TimeInterval = 0.28
+    nonisolated static let fast: TimeInterval = 0.12
+    nonisolated static let normal: TimeInterval = 0.2
+    nonisolated static let slow: TimeInterval = 0.28
 
     static func duration(_ d: TimeInterval) -> TimeInterval { reduce ? 0 : d }
 
-    static let easeOut = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)   // 进入：快起慢收
-    static let easeInOut = CAMediaTimingFunction(name: .easeInEaseOut)
-    static let easeIn = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
+    nonisolated(unsafe) static let easeOut = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)   // 进入：快起慢收
+    nonisolated(unsafe) static let easeInOut = CAMediaTimingFunction(name: .easeInEaseOut)
+    nonisolated(unsafe) static let easeIn = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
 
     /// NSAnimationContext 包装：allowsImplicitAnimation 让 layout()/resizeSubviews 里的子视图位移一起动
     static func animate(_ d: TimeInterval = normal, timing: CAMediaTimingFunction = easeOut,
