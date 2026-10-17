@@ -72,7 +72,11 @@ final class MioContainerStore {
     // MARK: WebKit 数据
 
     /// 容器的数据存储（同一容器的所有标签共用一个实例）。旧系统 → .default()
+    /// 无痕标签共用的不落盘数据存储（App 退出即清除）
+    private lazy var privateStore = WKWebsiteDataStore.nonPersistent()
+
     func dataStore(for containerId: String?) -> WKWebsiteDataStore {
+        if containerId == MioTabStore.privateContainer { return privateStore }
         purgePendingIfNeeded()
         let id = resolve(containerId)
         if let s = stores[id] { return s }
@@ -248,6 +252,7 @@ final class MioContainersViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "容器"
+        MioContainerUX.installTip()
         observer = NotificationCenter.default.addObserver(forName: .mioContainersDidChange, object: nil, queue: .main) { [weak self] _ in
             self?.rebuild()
         }
@@ -288,7 +293,6 @@ final class MioContainersViewController: UITableViewController {
             cell.textLabel?.text = c.name
             if c.isDefault {
                 cell.detailTextLabel?.text = "原来的浏览数据，不能删除"
-                cell.selectionStyle = .none
             } else {
                 let n = store.tabs(in: c.id).count
                 cell.detailTextLabel?.text = (MioContainerCore.colorNames[c.color] ?? c.color) + (n > 0 ? " · \(n) 个标签" : "")
@@ -314,8 +318,19 @@ final class MioContainersViewController: UITableViewController {
         tableView.deselectRow(at: indexPath, animated: true)
         let cell = tableView.cellForRow(at: indexPath)
         switch sections[indexPath.section].rows[indexPath.row] {
+        case .container(let c) where c.isDefault:
+            let a = MioActionList(title: c.name)
+            a.add("打开此容器（新标签页）") { [weak self] in
+                guard let self = self else { return }
+                MioContainerUX.openContainer(c.id, from: self)
+            }
+            a.present(from: self, sourceView: cell)
         case .container(let c) where !c.isDefault:
             let a = MioActionList(title: c.name)
+            a.add("打开此容器（新标签页）") { [weak self] in
+                guard let self = self else { return }
+                MioContainerUX.openContainer(c.id, from: self)
+            }
             a.add("重命名") { [weak self] in self?.askName(title: "重命名容器", initial: c.name) { _ = try self?.store.update(c.id, name: $0) } }
             a.add("更改颜色") { [weak self] in self?.pickColor(current: c.color, from: cell) { _ = try self?.store.update(c.id, color: $0) } }
             a.add("删除容器…", style: .destructive) { [weak self] in self?.confirmDelete(c) }

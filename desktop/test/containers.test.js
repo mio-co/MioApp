@@ -40,7 +40,7 @@ test('create / rename / recolor; validation; colors rotate', () => {
   assert.deepEqual(a, { id: ID1, name: '工作 账号', color: 'blue', createdAt: 1000, isDefault: false });
   const b = s.create({ name: '小号', color: 'red' });
   assert.equal(b.color, 'red');
-  assert.equal(s.nextColor(), 'turquoise');
+  assert.equal(s.nextColor(), 'orange');
   assert.throws(() => s.create({ name: '   ' }), /不能为空/);
   assert.throws(() => s.update(ID1, { color: 'black' }), /无效的颜色/);
   assert.equal(s.update(ID1, { name: '公司', color: 'green' }).name, '公司');
@@ -312,11 +312,26 @@ test('IPC rejects other senders; snapshot shape for settings UI', async () => {
   assert.equal(store.list().length, 1);
   const s = await handlers.get('mio-containers:create')(ok, 'X', 'red');
   assert.deepEqual(s.containers.map((c) => [c.name, c.hex]), [['默认', '#8E8E93'], ['X', '#FF613D']]);
-  assert.equal(s.colors.length, 8);
+  assert.equal(s.colors.length, 9);
   await handlers.get('mio-containers:update')(ok, ID1, { name: 'Y' });
   assert.equal(store.get(ID1).name, 'Y');
   await handlers.get('mio-containers:site-rule-set')(ok, 'x.com', ID1);
   assert.equal(store.containerForUrl('https://x.com'), ID1);
   await handlers.get('mio-containers:remove')(ok, ID1);
   assert.equal(store.get(ID1), null);
+});
+
+// 新建容器自动配色：高对比顺序，跳过已在用的颜色，全用过才循环（与 iOS / Android 同样的用例）
+test('auto color order is high contrast and skips used colors', () => {
+  const order = ['blue', 'orange', 'green', 'pink', 'purple', 'yellow', 'red', 'turquoise', 'gray'];
+  const uuid = () => require('node:crypto').randomUUID();
+  const s = new ContainerState(null, { newId: uuid, now: () => 1000 });
+  const got = [];
+  for (let i = 0; i < 9; i++) got.push(s.create({ name: 'c' + i }).color);
+  assert.deepEqual(got, order);
+  assert.equal(s.create({ name: 'c9' }).color, 'blue');
+  const t = new ContainerState(null, { newId: uuid, now: () => 1000 });
+  assert.equal(t.create({ name: 'a', color: 'orange' }).color, 'orange');
+  assert.equal(t.create({ name: 'b' }).color, 'blue');
+  assert.equal(t.create({ name: 'c' }).color, 'green');
 });

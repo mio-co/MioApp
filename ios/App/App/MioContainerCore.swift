@@ -54,8 +54,8 @@ enum MioContainerCore {
     static let defaultColor = "gray"
     static let maxContainers = 20
     static let maxName = 32
-    /// Firefox Multi-Account Containers 的配色
-    static let colors = ["blue", "turquoise", "green", "yellow", "orange", "red", "pink", "purple"]
+    /// 配色（Firefox Multi-Account Containers 色值）。顺序 = 新建容器自动分配的顺序：相邻两个对比强（v0.3.4 起；四端一致）
+    static let colors = ["blue", "orange", "green", "pink", "purple", "yellow", "red", "turquoise", "gray"]
     static let colorHex: [String: UInt32] = [
         "blue": 0x37ADFF, "turquoise": 0x00C79A, "green": 0x51CD00, "yellow": 0xFFCB00,
         "orange": 0xFF9F00, "red": 0xFF613D, "pink": 0xFF4BDA, "purple": 0xAF51F5, "gray": 0x8E8E93,
@@ -200,6 +200,7 @@ struct MioContainerState: Equatable {
 
     var canCreate: Bool { containers.count < MioContainerCore.maxContainers }
 
+    /// 自动分配：按 colors 顺序取第一个没有被已有容器（不含默认容器）用的颜色；全被用过才循环。已建容器的颜色不变
     func nextColor() -> String {
         let used = Set(containers.map { $0.color })
         return MioContainerCore.colors.first { !used.contains($0) } ?? MioContainerCore.colors[containers.count % MioContainerCore.colors.count]

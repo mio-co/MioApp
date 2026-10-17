@@ -16,6 +16,23 @@ final class ContainerCoreTests: XCTestCase {
         return s
     }
 
+    /// 新建容器自动配色：高对比顺序，跳过已在用的颜色，全用过才循环；已建容器颜色不变（Android / Windows 同样的用例）
+    func testAutoColorOrderHighContrastAndSkipsUsed() throws {
+        XCTAssertEqual(MioContainerCore.colors, ["blue", "orange", "green", "pink", "purple", "yellow", "red", "turquoise", "gray"])
+        var s = state(ids: [])
+        var got: [String] = []
+        for i in 0..<9 { got.append(try s.create(name: "c\(i)").color) }
+        XCTAssertEqual(got, MioContainerCore.colors)
+        XCTAssertEqual(try s.create(name: "c9").color, "blue", "全用过才循环")
+        var t = state(ids: [])
+        XCTAssertEqual(try t.create(name: "a", color: "orange").color, "orange")
+        XCTAssertEqual(try t.create(name: "b").color, "blue")
+        XCTAssertEqual(try t.create(name: "c").color, "green", "跳过已在用的橙色")
+        let firstID = t.all[1].id
+        _ = try t.create(name: "d")
+        XCTAssertEqual(t.get(firstID)?.color, "orange", "已建容器颜色不改")
+    }
+
     func testDefaultContainerImmutable() {
         var s = MioContainerState()
         XCTAssertEqual(s.all.map { $0.id }, ["default"])
@@ -32,7 +49,7 @@ final class ContainerCoreTests: XCTestCase {
         XCTAssertEqual(a, MioContainer(id: Self.id1, name: "工作 账号", color: "blue", createdAt: 1000))
         let b = try s.create(name: "小号", color: "red")
         XCTAssertEqual(b.color, "red")
-        XCTAssertEqual(s.nextColor(), "turquoise")
+        XCTAssertEqual(s.nextColor(), "orange")
         XCTAssertThrowsError(try s.create(name: "   ")) { XCTAssertEqual($0 as? MioContainerError, .emptyName) }
         XCTAssertThrowsError(try s.update(Self.id1, color: "black")) { XCTAssertEqual($0 as? MioContainerError, .badColor) }
         XCTAssertEqual(try s.update(Self.id1, name: "公司", color: "green").name, "公司")

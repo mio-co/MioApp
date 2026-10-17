@@ -1,7 +1,7 @@
 {
   "name": "mio-desktop",
   "productName": "Mio",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "description": "Mio desktop shell (Windows / macOS) for MioCore: main window + in-app browser with Ghostery adblocker",
   "author": "Smee238 <Smee238@users.noreply.github.com>",

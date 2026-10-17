@@ -1,0 +1,48 @@
+! Title: Mio 精简（内置）
+! Description: 离线可用的基础广告 / 跟踪拦截（常见广告网络与统计脚本）。完整拦截请在「Mio 扩展 › 广告拦截」里打开 AdGuard / EasyList 订阅。
+! Version: 1.0.0
+! Homepage: https://github.com/mio-co/MioApp
+!
+! —— 广告网络 ——
+||doubleclick.net^$third-party
+||googlesyndication.com^$third-party
+||googleadservices.com^$third-party
+||adservice.google.com^$third-party
+||amazon-adsystem.com^$third-party
+||adnxs.com^$third-party
+||criteo.com^$third-party
+||criteo.net^$third-party
+||taboola.com^$third-party
+||outbrain.com^$third-party
+||pubmatic.com^$third-party
+||rubiconproject.com^$third-party
+||openx.net^$third-party
+||casalemedia.com^$third-party
+||advertising.com^$third-party
+||adform.net^$third-party
+||smartadserver.com^$third-party
+||moatads.com^$third-party
+||media.net^$third-party
+||popads.net^$third-party
+||propellerads.com^$third-party
+||tanx.com^$third-party
+||pos.baidu.com^$third-party
+||cpro.baidustatic.com^$third-party
+||union.360.cn^$third-party
+! —— 统计 / 跟踪 ——
+||google-analytics.com^$third-party
+||scorecardresearch.com^$third-party
+||quantserve.com^$third-party
+||hotjar.com^$third-party
+||mixpanel.com^$third-party
+||hm.baidu.com^$third-party
+||cnzz.com^$third-party
+||mmstat.com^$third-party
+||connect.facebook.net/*/fbevents.js
+||bat.bing.com^$third-party
+! —— 元素隐藏（通用） ——
+##.adsbygoogle
+##ins.adsbygoogle
+##[id^="div-gpt-ad"]
+##.ad-banner
+##.advertisement

@@ -39,7 +39,7 @@ public final class ContainerState {
     public static final int MAX_CONTAINERS = 20;
     public static final int MAX_NAME = 32;
     /** Firefox Multi-Account Containers 的配色 */
-    public static final List<String> COLORS = Collections.unmodifiableList(Arrays.asList("blue", "turquoise", "green", "yellow", "orange", "red", "pink", "purple"));
+    public static final List<String> COLORS = Collections.unmodifiableList(Arrays.asList("blue", "orange", "green", "pink", "purple", "yellow", "red", "turquoise", "gray"));
     private static final Map<String, Integer> COLOR_RGB = new LinkedHashMap<>();
     private static final Map<String, String> COLOR_NAMES = new LinkedHashMap<>();
     static {
