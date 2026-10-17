@@ -259,8 +259,8 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["mediaSourcePrefs"] = MioWebKitCompat.mediaSourcePrefs
                 report["browserUserAgent"] = MioWebKitCompat.desktopUserAgent
                 // 内置浏览器打开 YouTube 后的诊断：门槛只看页面里的 UA 是桌面 Safari（不含 Mobile）且没被跳到 m.youtube.com。
-                // MediaSource/ManagedMediaSource 只记录不作门槛：GitHub macOS runner VM 无硬件解码，偏好已开时
-                // window.MediaSource 仍是 undefined；高清（MSE）要在真机上确认。
+                // MediaSource/ManagedMediaSource 只记录不作门槛：Mac Catalyst 版 WebKit 编译时就关掉了 ENABLE(MEDIA_SOURCE)
+                // （WTF/PlatformEnableCocoa.h：!PLATFORM(MACCATALYST)），偏好开了也没有 window.MediaSource，真机同样如此。
                 var desktopOK = false
                 if let probe = MioBrowserViewController.lastMediaProbe,
                    let obj = try? JSONSerialization.jsonObject(with: Data(probe.utf8)) as? [String: Any] {

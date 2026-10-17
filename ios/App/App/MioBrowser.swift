@@ -112,8 +112,10 @@ enum MioWebKitCompat {
 
     static var desktopUserAgent: String { MioWebCompat.desktopUserAgent(safariVersion: safariVersion) }
 
-    /// Mac 上确保 MediaSource（MSE）开启：没有 MSE 时 YouTube 只能给渐进式 mp4（最高 360p）。
-    /// iPad 布局的 Catalyst 默认应已开启；这里用 WKPreferences 的私有开关兜底（先 responds(to:) 检查，ObjC 异常也接住）。
+    /// Mac 上打开 MediaSource（MSE）偏好：没有 MSE 时 YouTube 只能给渐进式 mp4（最高 360p）。
+    /// 注意（v0.3.4 CI 诊断）：Mac Catalyst 的 WebKit 编译时就没有 ENABLE(MEDIA_SOURCE)（PlatformEnableCocoa.h 排除了 MACCATALYST），
+    /// 这个偏好能设成 true，但 window.MediaSource / ManagedMediaSource 仍不存在；保留它只为将来系统放开时自动生效。
+    /// 私有开关：先 responds(to:) 检查，ObjC 异常也接住。
     /// 免签名包不经 App Review，私有开关只在 Mac 上设置，iPhone 不动。
     @discardableResult
     static func enableMediaSource(_ prefs: WKPreferences) -> [String: Bool] {
