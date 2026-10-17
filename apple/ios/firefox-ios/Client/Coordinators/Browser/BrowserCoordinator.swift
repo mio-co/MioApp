@@ -294,6 +294,8 @@ final class BrowserCoordinator: BaseCoordinator,
 
     // Presents the day-based onboarding card over the current tab
     private func presentHardcodedOnboardingDripIfNeeded() {
+        // Mio: no Firefox onboarding cards (MioBuild.firefoxOnboardingEnabled; their images are not shipped)
+        guard MioBuild.firefoxOnboardingEnabled else { return }
         guard browserViewController.presentedViewController == nil else { return }
 
         let manager = IntroScreenManager(prefs: profile.prefs)

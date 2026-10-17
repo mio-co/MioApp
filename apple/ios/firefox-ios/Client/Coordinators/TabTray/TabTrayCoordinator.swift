@@ -67,15 +67,17 @@ final class TabTrayCoordinator: BaseCoordinator,
         let privateTabsPanel = TabDisplayPanelViewController(isPrivateMode: true,
                                                              windowUUID: windowUUID,
                                                              dragAndDropDelegate: dragAndDropDelegate)
-        let syncTabs = RemoteTabsPanel(windowUUID: windowUUID)
+        let syncTabs: UIViewController = MioBuild.syncedTabsPanelEnabled ? RemoteTabsPanel(windowUUID: windowUUID) : UIViewController()
 
-        let panels: [UIViewController]
+        var panels: [UIViewController]
         // Panels order is different for the experiment
         if tabTrayUtils.shouldDisplayExperimentUI() {
             panels = [privateTabsPanel, regularTabsPanel, syncTabs]
         } else {
             panels = [regularTabsPanel, privateTabsPanel, syncTabs]
         }
+        // Mio: no Mozilla account / Sync, so no "Synced tabs" pane (it is always the last one)
+        if !MioBuild.syncedTabsPanelEnabled { panels.removeLast() }
 
         return panels.map {
             ThemedNavigationController(rootViewController: $0, windowUUID: windowUUID)
@@ -97,6 +99,8 @@ final class TabTrayCoordinator: BaseCoordinator,
         case .privateTabs:
             makeTabsCoordinator(navigationController: navigationController)
         case .syncedTabs:
+            // Mio: the synced-tabs pane is not built (MioBuild.syncedTabsPanelEnabled)
+            guard MioBuild.syncedTabsPanelEnabled else { return }
             makeRemoteTabsCoordinator(navigationController: navigationController, for: tabManager.windowUUID)
         }
     }

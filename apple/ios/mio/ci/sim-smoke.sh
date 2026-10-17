@@ -132,6 +132,7 @@ for k in ("homeOK", "bridgeOK", "blockOK", "settingsOK"):
     v = r.get(k)
     # homeOK == "access-login": MioCore is behind Cloudflare Access and CI is not signed in (login page reached = OK)
     print(f"kit-smoke {k} {v if isinstance(v, str) else ('OK' if v else 'FAIL')}")
+print(f"kit-smoke tabTrayOK {'OK' if r.get('tabTrayOK') else 'FAIL'} (recorded) {json.dumps(r.get('tabTray'))}")
 h = r.get("home", {})
 if h.get("landing") == "access-login":
     print(f"kit-smoke access-login host={h.get('loginHost')} ruleLists={len(h.get('loginRuleLists') or [])} ua={h.get('loginUserAgent')}")
