@@ -238,6 +238,7 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             let started = Date()
             var ytFocus: [String: Any]?
             var media: [String: Any]?
+            var translate: [String: Any]?
             func finish() {
                 let presented = MioBrowserViewController.topPresenter(self) is MioBrowserViewController
                 report["browserPresented"] = presented
@@ -277,8 +278,11 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["media"] = media ?? "not checked"
                 let mediaOK = (media?["ok"] as? Bool) == true
                 report["mediaOK"] = mediaOK
+                report["translate"] = translate ?? ["checked": false]
+                let translateOK = (translate?["installed"] as? Bool) == true && (translate?["bridge"] as? Bool) == true
+                report["translateOK"] = translateOK
                 let page = report["page"] as? [String: Any]
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
@@ -295,7 +299,10 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                         }
                         MioMediaSmoke.run { m in
                             media = m
-                            finish()
+                            MioTranslate.smokeCheck(network: true) { t in
+                                translate = t
+                                finish()
+                            }
                         }
                     }
                 } else {
