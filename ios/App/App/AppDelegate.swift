@@ -65,7 +65,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         builder.insertChild(UIMenu(title: "", identifier: UIMenu.Identifier("xyz.mio.app.menu.tabs"), options: .displayInline, children: tabItems), atStartOfMenu: .file)
         // 页面缩放（MioDesktopParity.swift）：显示 › 放大 ⌘+ / 缩小 ⌘- / 实际大小 ⌘0（⌘= 也放大，隐藏项）
         let zoomPlus = UIKeyCommand(title: "放大", action: #selector(MioBrowserViewController.mioZoomIn(_:)), input: "+", modifierFlags: .command)
-        let zoomEq = UIKeyCommand(title: "放大", action: #selector(MioBrowserViewController.mioZoomIn(_:)), input: "=", modifierFlags: .command)
+        // 同一 action 的两条命令必须用不同 propertyList 区分，否则 UIMenuBuilder 抛 duplicate 异常
+        let zoomEq = UIKeyCommand(title: "放大", image: nil, action: #selector(MioBrowserViewController.mioZoomIn(_:)), input: "=", modifierFlags: .command, propertyList: "eq")
         zoomEq.attributes = .hidden
         let zoomItems: [UIKeyCommand] = [
             zoomPlus, zoomEq,
