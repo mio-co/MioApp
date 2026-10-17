@@ -315,12 +315,11 @@ final class MioContainersViewController: UITableViewController {
         let cell = tableView.cellForRow(at: indexPath)
         switch sections[indexPath.section].rows[indexPath.row] {
         case .container(let c) where !c.isDefault:
-            let a = UIAlertController(title: c.name, message: nil, preferredStyle: .actionSheet)
-            a.addAction(UIAlertAction(title: "重命名", style: .default) { [weak self] _ in self?.askName(title: "重命名容器", initial: c.name) { _ = try self?.store.update(c.id, name: $0) } })
-            a.addAction(UIAlertAction(title: "更改颜色", style: .default) { [weak self] _ in self?.pickColor(current: c.color, from: cell) { _ = try self?.store.update(c.id, color: $0) } })
-            a.addAction(UIAlertAction(title: "删除容器…", style: .destructive) { [weak self] _ in self?.confirmDelete(c) })
-            a.addAction(UIAlertAction(title: "取消", style: .cancel))
-            present(a, from: cell)
+            let a = MioActionList(title: c.name)
+            a.add("重命名") { [weak self] in self?.askName(title: "重命名容器", initial: c.name) { _ = try self?.store.update(c.id, name: $0) } }
+            a.add("更改颜色") { [weak self] in self?.pickColor(current: c.color, from: cell) { _ = try self?.store.update(c.id, color: $0) } }
+            a.add("删除容器…", style: .destructive) { [weak self] in self?.confirmDelete(c) }
+            a.present(from: self, sourceView: cell)
         case .add:
             askName(title: "新建容器", initial: "") { [weak self] name in
                 guard let self = self else { return }
@@ -351,14 +350,6 @@ final class MioContainersViewController: UITableViewController {
         }
     }
 
-    private func present(_ a: UIAlertController, from view: UIView?) {
-        if let pop = a.popoverPresentationController {
-            pop.sourceView = view ?? self.view
-            pop.sourceRect = (view ?? self.view).bounds
-        }
-        present(a, animated: true)
-    }
-
     private func showError(_ error: Error) {
         let a = UIAlertController(title: "操作失败", message: (error as? MioContainerError)?.description ?? error.localizedDescription, preferredStyle: .alert)
         a.addAction(UIAlertAction(title: "好", style: .default))
@@ -376,16 +367,13 @@ final class MioContainersViewController: UITableViewController {
     }
 
     private func pickColor(current: String, from view: UIView?, apply: @escaping (String) throws -> Void) {
-        let a = UIAlertController(title: "容器颜色", message: nil, preferredStyle: .actionSheet)
+        let a = MioActionList(title: "容器颜色")
         for col in MioContainerCore.colors {
-            let action = UIAlertAction(title: (MioContainerCore.colorNames[col] ?? col) + (col == current ? " ✓" : ""), style: .default) { [weak self] _ in
+            a.add(MioContainerCore.colorNames[col] ?? col, checked: col == current, image: MioContainerStore.dot(col).withRenderingMode(.alwaysOriginal)) { [weak self] in
                 do { try apply(col) } catch { self?.showError(error) }
             }
-            action.setValue(MioContainerStore.dot(col).withRenderingMode(.alwaysOriginal), forKey: "image")
-            a.addAction(action)
         }
-        a.addAction(UIAlertAction(title: "取消", style: .cancel))
-        present(a, from: view)
+        a.present(from: self, sourceView: view)
     }
 
     private func confirmDelete(_ c: MioContainer) {
@@ -409,16 +397,13 @@ final class MioContainersViewController: UITableViewController {
             guard let self = self else { return }
             let text = a.textFields?.first?.text ?? ""
             guard MioContainerCore.normalizeHost(text) != nil else { self.showError(MioContainerError.badHost); return }
-            let pick = UIAlertController(title: "在哪个容器打开？", message: MioContainerCore.normalizeHost(text), preferredStyle: .actionSheet)
+            let pick = MioActionList(title: "在哪个容器打开？", message: MioContainerCore.normalizeHost(text))
             for c in self.store.containers where !c.isDefault {
-                let action = UIAlertAction(title: c.name, style: .default) { [weak self] _ in
+                pick.add(c.name, image: MioContainerStore.dot(c.color).withRenderingMode(.alwaysOriginal)) { [weak self] in
                     do { _ = try self?.store.setSiteRule(text, containerId: c.id) } catch { self?.showError(error) }
                 }
-                action.setValue(MioContainerStore.dot(c.color).withRenderingMode(.alwaysOriginal), forKey: "image")
-                pick.addAction(action)
             }
-            pick.addAction(UIAlertAction(title: "取消", style: .cancel))
-            self.present(pick, from: view)
+            pick.present(from: self, sourceView: view)
         })
         present(a, animated: true)
     }

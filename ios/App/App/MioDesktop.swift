@@ -248,6 +248,7 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             var translate: [String: Any]?
             // 用户脚本 + WebRTC 控制（MioUserScripts.swift 的 MioUserScriptSmoke）
             var extrasOK = false
+            var actionListOK = false
             func finish() {
                 let top = MioBrowserViewController.topPresenter(self)
                 let presented = top is MioBrowserViewController || top is MioTabsViewController
@@ -293,7 +294,8 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["translateOK"] = translateOK
                 let page = report["page"] as? [String: Any]
                 report["tabsOK"] = tabsOK
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK && tabsOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK && tabsOK && actionListOK
+                report["actionListOK"] = actionListOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
@@ -325,7 +327,12 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                                         MioYouTubeHDSmoke.run { r, ok in
                                             report["youtubeHD"] = r
                                             report["youtubeHDOK"] = ok
-                                            finish()
+                                            // 翻译「翻译成」等选项列表（MioActionList.swift）：纵向 popover，不再是横向一排
+                                            MioActionListSmoke.run { r, ok in
+                                                report["actionList"] = r
+                                                actionListOK = ok
+                                                finish()
+                                            }
                                         }
                                     }
                                 }
