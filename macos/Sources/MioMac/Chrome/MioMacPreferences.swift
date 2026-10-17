@@ -583,6 +583,19 @@ struct MioMacStringListEditor: View {
 
 func mioContainerColor(_ c: MioContainer) -> Color { mioContainerColor(name: c.color) }
 
+/// 菜单按钮里的彩色圆点（Menu 的标签图片会被当成模板图渲染成单色，所以画成非模板 NSImage）
+func mioColorDot(_ name: String, size: CGFloat = 12) -> Image {
+    let hex = MioContainerCore.colorHex[name] ?? 0x8F8F9D
+    let color = NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
+        color.setFill()
+        NSBezierPath(ovalIn: r.insetBy(dx: 0.5, dy: 0.5)).fill()
+        return true
+    }
+    img.isTemplate = false
+    return Image(nsImage: img)
+}
+
 func mioContainerColor(name: String) -> Color {
     guard let hex = MioContainerCore.colorHex[name] else { return .gray }
     return Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
@@ -649,10 +662,10 @@ struct MioMacContainersPane: View {
     func colorMenu(selection: String, _ pick: @escaping (String) -> Void) -> some View {
         Menu {
             ForEach(MioContainerCore.colors, id: \.self) { col in
-                Button { pick(col) } label: { Label(MioContainerCore.colorNames[col] ?? col, systemImage: col == selection ? "checkmark.circle.fill" : "circle.fill") }
+                Button { pick(col) } label: { Label { Text(MioContainerCore.colorNames[col] ?? col) } icon: { mioColorDot(col) } }
             }
         } label: {
-            Image(systemName: "circle.fill").foregroundStyle(mioContainerColor(name: selection))
+            mioColorDot(selection)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -673,13 +686,13 @@ struct MioMacContainerRow: View {
             } else {
                 Menu {
                     ForEach(MioContainerCore.colors, id: \.self) { col in
-                        Button(MioContainerCore.colorNames[col] ?? col) {
+                        Button {
                             let id = container.id
                             model.run("改颜色") { _ = try model.kit.containers.update(id, color: col) }
-                        }
+                        } label: { Label { Text(MioContainerCore.colorNames[col] ?? col) } icon: { mioColorDot(col) } }
                     }
                 } label: {
-                    Image(systemName: "circle.fill").foregroundStyle(mioContainerColor(container))
+                    mioColorDot(container.color)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
