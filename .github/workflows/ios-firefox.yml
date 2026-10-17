@@ -43,26 +43,7 @@ jobs:
         run: bash apple/ios/mio/ci/bootstrap.sh
 
       - name: Build (iOS Simulator)
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -project apple/ios/firefox-ios/Client.xcodeproj \
-            -scheme Firefox \
-            -configuration Firefox \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build-sim \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            ONLY_ACTIVE_ARCH=YES ARCHS=arm64 \
-            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            build 2>&1 | tee build-sim.log | grep -E "error:|warning: .*Mio|\*\* BUILD|Signing|Touch .*\.app" | head -n 400
-          ls build-sim/Build/Products/Firefox-iphonesimulator/
-
-      - name: Build errors (on failure)
-        if: failure()
-        run: grep -n -B2 -A6 "error:" build-sim.log | head -n 300 || tail -n 200 build-sim.log
+        run: bash apple/ios/mio/ci/build.sh sim build-sim build-sim.log
 
       - name: Simulator smoke
         run: bash apple/ios/mio/ci/sim-smoke.sh build-sim/Build/Products/Firefox-iphonesimulator/Client.app sim-smoke
@@ -99,25 +80,7 @@ jobs:
         run: bash apple/ios/mio/ci/bootstrap.sh
 
       - name: Build (unsigned, iphoneos)
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -project apple/ios/firefox-ios/Client.xcodeproj \
-            -scheme Firefox \
-            -configuration Firefox \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
-            DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            build 2>&1 | tee build-dev.log | grep -E "error:|\*\* BUILD" | head -n 400
-
-      - name: Build errors (on failure)
-        if: failure()
-        run: grep -n -B2 -A6 "error:" build-dev.log | head -n 300 || tail -n 200 build-dev.log
+        run: bash apple/ios/mio/ci/build.sh device build build-dev.log
 
       - name: Package IPA
         run: bash apple/ios/mio/ci/package-ipa.sh build/Build/Products/Firefox-iphoneos/Client.app Mio-ios-firefox.ipa
@@ -127,3 +90,10 @@ jobs:
           name: Mio-ios-firefox-ipa
           path: Mio-ios-firefox.ipa
           retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: mio-ios-firefox-device-build-log
+          path: build-dev.log
+          retention-days: 7
