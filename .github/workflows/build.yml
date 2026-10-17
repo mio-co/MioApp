@@ -50,6 +50,12 @@ jobs:
           (cd "$D" && sha256sum -c SHA256SUMS.txt)
           node -e "const s=require(process.argv[1]);const v=s.apps[0].versions[0];if(s.apps[0].bundleIdentifier!=='xyz.mio.app'||!v.downloadURL.endsWith('/Mio.ipa')||v.size!==4096)process.exit(1);console.log(JSON.stringify(v))" "$D/altstore-source.json"
 
+      # 翻译：真实免费接口（微软 Bing / 谷歌）是否还能用。只记录，不阻塞（单测里全部是 mock）
+      - name: Translate engines live probe (non-blocking)
+        continue-on-error: true
+        timeout-minutes: 3
+        run: node tools/MioAppTests/js/translate-probe.mjs
+
       - name: Swift tests
         run: |
           swift --version
@@ -101,6 +107,7 @@ jobs:
           ls -la Payload/App.app/AdblockBundle
           test -f Payload/App.app/AdblockBundle/filter-2.txt
           test -f Payload/App.app/AdblockBundle/scriptlets.corelibs.json
+          test -f Payload/App.app/mio-translate.js
           # Capacitor 启动时要求本地 public/<server.appStartPath> 存在，否则 exit(1)（v0.1.2–v0.3.0 闪退）
           test -e Payload/App.app/public/mio/nav/index.html
           # 阅读模式 / 强制深色 / 存到 Mio 的页面脚本（www/mio-browser，iOS 与 Mac 共用）
@@ -289,6 +296,7 @@ jobs:
             unzip -l "$f" | grep -E 'assets/adblock/(filter-2.txt|filter-0.txt|scriptlets.corelibs.json|extended-css.min.js|manifest.json)' | wc -l | grep -qx 5
             unzip -l "$f" | grep -q classes.dex
             unzip -l "$f" | grep -q 'assets/scripts/youtube-focus.js'
+            unzip -l "$f" | grep -q 'assets/translate/mio-translate.js'
           done
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/aapt2" dump badging "out/Mio-$V-android-debug.apk" | head -5
@@ -396,6 +404,7 @@ jobs:
 
       - name: List artifacts (+ Authenticode status, expected NotSigned)
         run: |
+          test -f dist/win-unpacked/resources/translate/mio-translate.js
           ls -la dist
           powershell -NoProfile -Command "Get-ChildItem dist\*.exe | ForEach-Object { '{0}: {1}' -f \$_.Name, (Get-AuthenticodeSignature \$_.FullName).Status }"
 
@@ -454,6 +463,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist"
           test -f "$APP/Contents/Resources/AdblockBundle/filter-2.txt"
           test -f "$APP/Contents/Resources/AdblockBundle/scriptlets.corelibs.json"
+          test -f "$APP/Contents/Resources/mio-translate.js"
           lipo -info "$APP/Contents/MacOS/App"
           ! otool -L "$APP/Contents/MacOS/App" | grep -i capacitor
           codesign --force --deep --sign - --timestamp=none "$APP"
