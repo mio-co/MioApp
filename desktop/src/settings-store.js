@@ -14,6 +14,9 @@ const DEFAULTS = {
   youtubeFocus: true,
   youtubeFocusInterval: 60,
   youtubeFocusPlayables: true,
+  // YouTube SponsorBlock（src/media.js）：总开关 + 逗号分隔的分类
+  sponsorBlock: true,
+  sponsorBlockCategories: 'sponsor,selfpromo,interaction',
 };
 
 class SettingsStore extends EventEmitter {

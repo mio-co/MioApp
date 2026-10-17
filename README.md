@@ -159,6 +159,39 @@ YouTube 视频广告靠 AdGuard Base 里的 `set-constant ytInitialPlayerRespons
   隐藏时顶部保留域名条，点一下恢复。只认用户手势驱动的滚动，VoiceOver 开启或网页全屏时不隐藏。
   状态机是纯函数 `MioToolbarAutoHide`（`MioWebCompat.swift`），单测在 `tools/MioAppTests`。scroll delegate 挂在 WKScrollView 的外部 delegate 上（WebKit 自己的回调照常）。
 
+## 媒体：后台播放 / 画中画 / 锁屏控制 / SponsorBlock / DRM（0.3.3 起）
+
+源码：`ios/App/App/MioMediaScripts.swift`（纯逻辑 + 注入 JS，唯一源）、`ios/App/App/MioMedia.swift`（iOS / Mac 原生部分、设置页）；
+Android / Windows 用 `node scripts/sync-media-js.mjs` 从同一份 JS 生成的 `android/app/src/main/assets/mio/youtube-media.js`、`desktop/src/inject/youtube-media.js`（单测检查没过期）。
+设置：iOS / Mac 浏览器设置 › 浏览体验 › **媒体与 SponsorBlock**；Android 浏览器设置对话框；Windows 设置窗口「浏览」。
+
+- **后台播放**（沿用 v0.3.2 的「后台 / 锁屏继续播放」开关，默认开）：可见性伪造从 `MioBrowser.backgroundPlaybackScripts` 移到 `MioMediaScripts.visibilityScript`，
+  现在在 window 捕获阶段就拦掉 `visibilitychange`（之前只拦 document）。iOS 上 WebKit 切后台会停掉有画面的 `<video>`：
+  原生在 `didEnterBackground` 时通知页面（`__mioMedia.appState('background')`，0 / 0.5 / 1.5 秒，带后台任务），页面脚本在**真的不可见或刚切后台**、
+  暂停前确实在播放、不是用户暂停时自动 `play()`。锁屏 / 控制中心的暂停（MediaSession）、耳机拔出（`routeChange oldDeviceUnavailable`）、
+  来电 / 其他 App 抢占音频（`interruption began`）、画中画窗口里的暂停都算用户意图，不续播。`AVAudioSession .playback` + `UIBackgroundModes audio` 已有。
+  Android：从不调用 `webView.onPause`，播放中启动前台服务 `MioMediaService`（mediaPlayback 类型，媒体通知 + MediaSession：上一个 / 播放暂停 / 下一个；
+  Android 13+ 首次播放时请求一次通知权限）。Mac / Windows：窗口失焦本来不暂停（Windows `backgroundThrottling: false` + 同样的可见性伪造）。
+- **锁屏 Now Playing**：页面脚本设置 `navigator.mediaSession` 元数据（标题 / 频道 / 封面 `i.ytimg.com/vi/<id>/hqdefault.jpg`）、位置，
+  并包一层 `setActionHandler`：YouTube 自己的处理器照常调用，只是先记一下「用户要暂停」。页面没有 MediaSession 时，iOS 原生用
+  `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`（播放 / 暂停 / 切换 / 上一个 / 下一个 / 拖动进度）兜底，映射到 `__mioMedia.command(...)`。
+- **画中画**：YouTube 播放器左上角加一个按钮（点视频显示 3 秒），iOS / Mac 用 `video.webkitSetPresentationMode('picture-in-picture')`，
+  Windows 用 `requestPictureInPicture()`；Android WebView 不支持画中画，不显示。`allowsPictureInPictureMediaPlayback = true` 已有。
+- **SponsorBlock**（默认开，默认只跳 赞助 / 自我推广 / 互动提醒，片头 / 片尾可选）：`GET https://sponsor.ajay.app/api/skipSegments/<SHA-256(videoID) 前 4 位>?categories=[…]&actionTypes=["skip"]`，
+  只发哈希前缀，本地按 videoID 精确匹配。YouTube 的 CSP 没有 `connect-src`、API 返回 `Access-Control-Allow-Origin: *`，所以页面直接 `fetch`（`credentials: omit`）；
+  iOS 上 fetch 失败时经原生代取（只允许 `https://sponsor.ajay.app/api/skipSegments/<十六进制前缀>`）。播放进入片段自动跳到结尾，底部提示「已跳过…」+「撤销」
+  （回到跳过前的位置，本次不再自动跳）；用户手动拖进片段内部也不再跳；进度条上按分类颜色标出片段。全部 DOM API 构建（Trusted Types）。
+- **Spotify / DRM**（不改 UA）：Android `onPermissionRequest` 只放行 `RESOURCE_PROTECTED_MEDIA_ID`（Widevine），其它资源和以前一样拒绝；WebSettings 没有阻止 EME 的项。
+  iOS / Mac 的 WKWebView 只有 FairPlay（`com.apple.fps`），没有 Widevine；Mac CI 冒烟会记录 YouTube 和 open.spotify.com 上
+  `requestMediaKeySystemAccess`（Widevine / FairPlay / ClearKey）的结果（`smoke-mac.json` 的 `media.emeYouTube` / `media.emeSpotify`，不作门槛）。
+  Windows：官方 Electron 不带 Widevine CDM（只有 castlabs 的 Electron for Content Security 带），Spotify 网页播放器的 DRM 内容放不了；没有换 Electron，冒烟里记录 `widevine` 结果。
+- 测试：`tools/MioAppTests/js/media-youtube.test.mjs`（videoID 解析、哈希前缀匹配、跳过 / 撤销 / 手动 seek、续播判定、MediaSession、画中画、Trusted Types）、
+  `media-visibility.test.mjs`（可见性伪造 + 与防沉迷共存 + 生成文件没过期）、`MioMediaScriptsTests.swift`、Android `MioMediaTest`、`desktop/test/media.test.js`；
+  Mac 冒烟门槛 `mediaOK`（真实 YouTube 页面里脚本已注入、`crypto.subtle` 哈希前缀正确），Windows 冒烟门槛 `media`。
+
+SponsorBlock 数据由社区提交，来自 [SponsorBlock](https://sponsor.ajay.app)（作者 Ajay Ramachandran），按 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) 授权使用；
+Mio 只在播放时实时查询，不缓存到磁盘、不再分发数据。
+
 ## 已知限制
 
 - WKWebView 不支持网页里的文件下载，快传取件下载可能无效（后续可加原生下载插件）。

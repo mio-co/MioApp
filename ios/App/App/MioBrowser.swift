@@ -317,6 +317,14 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         wv.evaluateJavaScript(js, completionHandler: completion)
     }
 
+    /// 冒烟测试：当前内置浏览器打开另一个地址（MioMediaSmoke 用来检查 open.spotify.com 的 EME）
+    @discardableResult
+    static func smokeLoad(_ url: URL) -> Bool {
+        guard let vc = current else { return false }
+        vc.load(url)
+        return true
+    }
+
     static func topPresenter(_ base: UIViewController?) -> UIViewController? {
         var top = base ?? UIApplication.shared.connectedScenes
             .compactMap { ($0 as? UIWindowScene)?.windows.first(where: { $0.isKeyWindow })?.rootViewController }
@@ -352,6 +360,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     /// 桌面模式下 m.youtube.com → www 的改写记录（防止站点来回重定向时死循环）
     private var desktopRewrites: [Date] = []
     private var passkeyHintedHosts: Set<String> = []
+    /// 媒体（后台续播 / 锁屏控制兜底 / SponsorBlock 请求兜底），MioMedia.swift
+    private var media: MioMediaController?
 
     init(url: URL) {
         initialURL = url
@@ -366,6 +376,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         if let o = settingsObserver { NotificationCenter.default.removeObserver(o) }
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: Self.passkeyMessage)
         adblock?.detach()
+        media?.detach()
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .default }
@@ -418,6 +429,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         adblock = MioAdblockSession(configuration: config)
         adblock.webView = webView
         adblock.extraScripts = Self.extraScripts()
+        media = MioMediaController(webView: webView)
 
         buildLayout()
         observe()
@@ -644,21 +656,9 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         return scripts + backgroundPlaybackScripts()
     }
 
-    /// 后台播放：页面始终认为自己可见（YouTube 在 visibilitychange 时会暂停）
+    /// 后台播放（可见性伪造，所有站点）+ YouTube 媒体脚本（续播 / 锁屏控制 / 画中画 / SponsorBlock）：MioMedia.swift
     private static func backgroundPlaybackScripts() -> [WKUserScript] {
-        guard MioBrowserSettings.backgroundPlayback else { return [] }
-        let js = """
-        (function(){try{
-        Object.defineProperty(document,'hidden',{configurable:true,get:function(){return false;}});
-        Object.defineProperty(document,'visibilityState',{configurable:true,get:function(){return 'visible';}});
-        Object.defineProperty(document,'webkitHidden',{configurable:true,get:function(){return false;}});
-        Object.defineProperty(document,'webkitVisibilityState',{configurable:true,get:function(){return 'visible';}});
-        var stop=function(e){e.stopImmediatePropagation();};
-        document.addEventListener('visibilitychange',stop,true);
-        document.addEventListener('webkitvisibilitychange',stop,true);
-        }catch(e){}})();
-        """
-        return [WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: true)]
+        MioMediaSettings.userScripts()
     }
 
     // MARK: actions
@@ -1073,7 +1073,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
 final class MioBrowserSettingsViewController: UITableViewController {
     private enum Row {
-        case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, youtubeFocus, youtubeInterval, youtubePlayables, hideToolbars, passkeyInfo, openInSafari(URL), licenses, version
+        case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, youtubeFocus, youtubeInterval, youtubePlayables, hideToolbars, media, passkeyInfo, openInSafari(URL), licenses, version
         case updateAuto, updateCheck // 软件更新（MioUpdater.swift）
     }
 
@@ -1136,6 +1136,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
         var browse: [Row] = [.youtubeFocus]
         if MioBrowserSettings.youtubeFocus { browse.append(contentsOf: [.youtubeInterval, .youtubePlayables]) }
         browse.append(.hideToolbars)
+        browse.append(.media)
         s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留），可选屏蔽首页的游戏大本营（Playables，直接打开 /playables 不受影响）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
         s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的「用 Safari 打开」（\(Self.safariHint)）改用 Safari。", [.preferSafari, .backgroundPlayback]))
         var login: [Row] = [.passkeyInfo]
@@ -1249,6 +1250,11 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.textLabel?.text = "滚动时隐藏工具栏"
             cell.detailTextLabel?.text = MioWebKitCompat.isMac ? "Mac 默认关闭" : "向上滚动或点顶部域名条恢复"
             cell.accessoryView = makeSwitch(MioBrowserSettings.hideToolbarsOnScroll) { MioBrowserSettings.hideToolbarsOnScroll = $0 }
+        case .media:
+            cell.textLabel?.text = "媒体与 SponsorBlock"
+            cell.detailTextLabel?.text = "后台播放、锁屏控制、画中画按钮、跳过赞助片段"
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
         case .passkeyInfo:
             cell.textLabel?.text = "内置浏览器不支持通行密钥 / 钥匙串自动填充"
             cell.detailTextLabel?.text = "账号密码可手动输入；通行密钥登录请用 Safari"
@@ -1318,6 +1324,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case .updateCheck:
             MioUpdater.shared.check(manual: true, from: self) { [weak self] in self?.rebuild() }
             rebuild()
+        case .media:
+            navigationController?.pushViewController(MioMediaSettingsViewController(), animated: true)
         case .youtubeInterval:
             let current = MioBrowserSettings.youtubeFocusInterval
             let a = UIAlertController(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒", preferredStyle: .actionSheet)

@@ -58,6 +58,13 @@ public final class BrowserPrefs {
     public static void putBoolean(Context c, String key, boolean v) { JSONObject o = read(c); try { o.put(key, v); } catch (Exception ignored) {} write(c, o); }
     public static int getInt(Context c, String key, int def) { return read(c).optInt(key, def); }
     public static void putInt(Context c, String key, int v) { JSONObject o = read(c); try { o.put(key, v); } catch (Exception ignored) {} write(c, o); }
+    // 媒体（MioMedia）：SponsorBlock 总开关 / 分类，媒体通知权限只问一次
+    public static boolean sponsorBlock(Context c) { return read(c).optBoolean("sponsorBlock", true); }
+    public static void setSponsorBlock(Context c, boolean v) { JSONObject o = read(c); try { o.put("sponsorBlock", v); } catch (Exception ignored) {} write(c, o); }
+    public static boolean sponsorBlockCategory(Context c, String cat, boolean def) { return read(c).optBoolean("sb." + cat, def); }
+    public static void setSponsorBlockCategory(Context c, String cat, boolean v) { JSONObject o = read(c); try { o.put("sb." + cat, v); } catch (Exception ignored) {} write(c, o); }
+    public static boolean askedNotifications(Context c) { return read(c).optBoolean("askedNotifications", false); }
+    public static void setAskedNotifications(Context c, boolean v) { JSONObject o = read(c); try { o.put("askedNotifications", v); } catch (Exception ignored) {} write(c, o); }
 
     public static List<String> allowlist(Context c) {
         List<String> out = new ArrayList<>();

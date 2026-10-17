@@ -25,3 +25,11 @@ if (parts.length) {
 }
 // YouTube 防沉迷（共享脚本，只在 *.youtube.com 顶层 frame 有内容）：单独执行，不受前面 scriptlets 运行时异常影响
 if (result && result.ytFocus) webFrame.executeJavaScript(result.ytFocus).catch(() => undefined);
+// YouTube 媒体脚本（src/media.js）单独执行：不受拦截脚本里异常的影响；失败原因留在页面里便于冒烟 / 调试
+if (result && result.media) {
+  webFrame.executeJavaScript(result.media).catch((e) =>
+    webFrame.executeJavaScript(`window.__mioMediaError=${JSON.stringify(String((e && e.message) || e))}`).catch(() => undefined),
+  );
+} else if (result && result.mediaError) {
+  webFrame.executeJavaScript(`window.__mioMediaError=${JSON.stringify(result.mediaError)}`).catch(() => undefined);
+}
