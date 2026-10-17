@@ -56,7 +56,6 @@ async function tabsSmoke({ browser, ytWc, wc2, out, getMainWindow }) {
       browser.command('selectTab', String(second));
       await wait(800);
       fs.writeFileSync(path.join(dir, 'smoke-content.png'), (await browser.content.webContents.capturePage()).toPNG());
-      browser.command('selectTab', String(store.tabs[store.indexOf(bg.id) - 1].id));
     } catch (e) {
       r.screenshotError = String(e);
     }

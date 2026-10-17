@@ -391,6 +391,16 @@ jobs:
           echo "exit $CODE"
           test "$CODE" = 0
 
+      - name: Upload smoke result (JSON + toolbar / page screenshots)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke
+          path: |
+            ${{ runner.temp }}/smoke-win.json
+            ${{ runner.temp }}/smoke-*.png
+          retention-days: 14
+
       - name: List artifacts (+ Authenticode status, expected NotSigned)
         run: |
           ls -la dist
