@@ -57,9 +57,19 @@ LOUT=$(xcrun simctl launch --terminate-running-process --stdout="$OUT/stdout.txt
 echo "$LOUT" > "$OUT/launch.txt"
 PID=${LOUT##*: }
 
+# 模拟器里的 App 进程在宿主机上可见。不用 `simctl spawn launchctl list`（每次 ~30 s，25 秒的等待会拖成十几分钟）
 alive() {
-  kill -0 "$PID" 2>/dev/null && return 0
-  xcrun simctl spawn "$DEV" launchctl list 2>/dev/null | grep -q "UIKitApplication:${BID}\["
+  ps -p "$PID" >/dev/null 2>&1 && return 0
+  pgrep -qx "$EXE" 2>/dev/null
+}
+# 带超时执行（macOS 没有 timeout 命令）
+run_to() {
+  local secs="$1"; shift
+  "$@" & local p=$!
+  ( sleep "$secs"; kill "$p" 2>/dev/null ) & local w=$!
+  wait "$p"; local rc=$?
+  kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
+  return $rc
 }
 step() { # name, seconds
   local name="$1" secs="$2"
@@ -67,7 +77,7 @@ step() { # name, seconds
     if ! alive; then echo "$name CRASHED (gone after ~${i}s)" | tee -a "$SUMMARY"; FAIL=1; return 1; fi
     sleep 1
   done
-  xcrun simctl io "$DEV" screenshot "$OUT/$name.png" >/dev/null 2>&1 || true
+  run_to 30 xcrun simctl io "$DEV" screenshot "$OUT/$name.png" >/dev/null 2>&1 || true
   echo "$name OK" | tee -a "$SUMMARY"
 }
 crop_bottom() { # src dst fraction
@@ -81,19 +91,19 @@ crop_bottom() { # src dst fraction
 }
 
 if step 01-launch-home "$WAIT"; then
-  xcrun simctl openurl "$DEV" "mio://home" 2>&1 | tee -a "$OUT/openurl.txt" || true
+  run_to 30 xcrun simctl openurl "$DEV" "mio://home" >>"$OUT/openurl.txt" 2>&1 || echo "openurl mio://home rc=$?" >>"$OUT/openurl.txt"
   step 02-mio-home 10 || true
 fi
 if [ "$FAIL" = 0 ]; then
-  xcrun simctl openurl "$DEV" "${SCHEME}://open-url?url=https%3A%2F%2Fexample.com%2F" 2>&1 | tee -a "$OUT/openurl.txt" || true
+  run_to 30 xcrun simctl openurl "$DEV" "${SCHEME}://open-url?url=https%3A%2F%2Fexample.com%2F" >>"$OUT/openurl.txt" 2>&1 || echo "openurl open-url rc=$?" >>"$OUT/openurl.txt"
   step 03-webpage 12 && crop_bottom "$OUT/03-webpage.png" "$OUT/03-webpage-bottom-toolbar.png"
 fi
 if [ "$FAIL" = 0 ]; then
-  xcrun simctl openurl "$DEV" "${SCHEME}://deep-link?url=/action/show-tab-tray" 2>&1 | tee -a "$OUT/openurl.txt" || true
+  run_to 30 xcrun simctl openurl "$DEV" "${SCHEME}://deep-link?url=/action/show-tab-tray" >>"$OUT/openurl.txt" 2>&1 || echo "openurl tab-tray rc=$?" >>"$OUT/openurl.txt"
   step 04-tab-tray 6 || true
 fi
 
-xcrun simctl spawn "$DEV" log show --style compact --last 5m \
+run_to 90 xcrun simctl spawn "$DEV" log show --style compact --last 5m \
   --predicate "process == \"$EXE\" AND (messageType == error OR messageType == fault)" > "$OUT/oslog-errors.txt" 2>/dev/null || true
 REPORTS="$HOME/Library/Logs/DiagnosticReports"
 find "$REPORTS" -newer "$OUT/.start" -name "${EXE}*" -exec cp {} "$OUT/" \; 2>/dev/null || true
