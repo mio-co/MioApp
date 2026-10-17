@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>用 Cloudflare Workers 搭建个人导航页 - 小米的博客</title>
+<meta property="og:site_name" content="小米的博客">
+</head><body>
+<div class="top-menu"><a href="/">首页</a><a href="/archives">归档</a><a href="/about">关于</a></div>
+<main>
+<div class="post">
+<div class="post-header"><h1 class="post-title">用 Cloudflare Workers 搭建个人导航页</h1><span class="post-meta">2026-09-12</span></div>
+<div class="post-content">
+<p>最近把自己的导航页从传统服务器迁到了 Cloudflare Workers 上，省去了维护服务器的麻烦，访问速度也快了不少。这篇文章记录一下整个过程，以及踩过的一些坑。</p>
+<p>首先需要准备一个 Cloudflare 账号，并把域名托管到 Cloudflare。免费套餐每天有十万次请求的额度，对个人用途来说完全够用，而且自带全球加速。</p>
+<h2>部署步骤</h2>
+<ol><li>安装 wrangler 命令行工具</li><li>创建 D1 数据库并执行迁移</li><li>配置环境变量后部署</li></ol>
+<pre><code>npx wrangler d1 create mio
+npx wrangler deploy</code></pre>
+<p>部署完成后，在浏览器里打开绑定的域名，就能看到导航页了。如果遇到 403，多半是 Access 策略没有配置好，需要在 Zero Trust 面板里检查一下。</p>
+<p><img src="https://cdn.example.com/screenshot.png" alt="截图"></p>
+<p>整体来说，迁移过程比想象中顺利，唯一需要注意的是 D1 的写入限制和冷启动时间，后面有机会再详细写一写性能优化的经验。</p>
+</div>
+<div class="post-share social"><a href="#">微博</a><a href="#">微信</a></div>
+</div>
+</main>
+<div class="footer">© 2026 小米</div>
+</body></html>
