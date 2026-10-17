@@ -125,9 +125,8 @@ final class TabTrayViewController: UIViewController,
 
     private lazy var experimentSegmentControl: TabTraySelectorView = {
         let selectedIndex = experimentConvertSelectedIndex()
-        let titles = [TabTrayPanelType.privateTabs.label,
-                      TabTrayPanelType.tabs.label,
-                      TabTrayPanelType.syncedTabs.label]
+        // Mio: no "Synced tabs" pane
+        let titles = MioBuild.tabTrayPanels([.privateTabs, .tabs, .syncedTabs]).map { $0.label }
         let selector = TabTraySelectorView(selectedIndex: selectedIndex,
                                            theme: retrieveTheme(),
                                            buttonTitles: titles)
@@ -140,9 +139,8 @@ final class TabTrayViewController: UIViewController,
 
     private lazy var experimentiPadSegmentControl: TabTrayiPadSelectorView = {
         let selectedIndex = experimentConvertSelectedIndex()
-        let titles = [TabTrayPanelType.privateTabs.label,
-                      TabTrayPanelType.tabs.label,
-                      TabTrayPanelType.syncedTabs.label]
+        // Mio: no "Synced tabs" pane
+        let titles = MioBuild.tabTrayPanels([.privateTabs, .tabs, .syncedTabs]).map { $0.label }
         let selector = TabTrayiPadSelectorView(selectedIndex: selectedIndex,
                                                theme: retrieveTheme(),
                                                buttonTitles: titles)
@@ -174,17 +172,19 @@ final class TabTrayViewController: UIViewController,
     }()
 
     var segmentControlItems: [Any] {
-        let iPhoneItems = [
+        // Mio: no "Synced tabs" pane (MioBuild.syncedTabsPanelEnabled)
+        var iPhoneItems = [
             TabTrayPanelType.tabs.image!.overlayWith(image: countLabel),
-            TabTrayPanelType.privateTabs.image!,
-            TabTrayPanelType.syncedTabs.image!
+            TabTrayPanelType.privateTabs.image!
         ]
-
-        let regularLayoutItems = [
+        var regularLayoutItems = [
             TabTrayPanelType.tabs.label,
-            TabTrayPanelType.privateTabs.label,
-            TabTrayPanelType.syncedTabs.label,
+            TabTrayPanelType.privateTabs.label
         ]
+        if MioBuild.syncedTabsPanelEnabled {
+            iPhoneItems.append(TabTrayPanelType.syncedTabs.image!)
+            regularLayoutItems.append(TabTrayPanelType.syncedTabs.label)
+        }
 
         return isRegularLayout ? regularLayoutItems : iPhoneItems
     }
@@ -334,7 +334,8 @@ final class TabTrayViewController: UIViewController,
          logger: Logger = DefaultLogger.shared,
          windowUUID: WindowUUID,
          and notificationCenter: NotificationProtocol = NotificationCenter.default) {
-        self.tabTrayState = TabTrayState(windowUUID: windowUUID, panelType: panelType)
+        // Mio: the synced-tabs pane does not exist; open normal tabs instead
+        self.tabTrayState = TabTrayState(windowUUID: windowUUID, panelType: MioBuild.tabTrayPanel(panelType))
         self.tabTrayUtils = tabTrayUtils
         self.themeManager = themeManager
         self.logger = logger
@@ -854,6 +855,8 @@ final class TabTrayViewController: UIViewController,
 
     // MARK: Child panels
     func setupOpenPanel(panelType: TabTrayPanelType) {
+        // Mio: the synced-tabs pane does not exist; open normal tabs instead
+        let panelType = MioBuild.tabTrayPanel(panelType)
         tabTrayState.selectedPanel = panelType
 
         guard let currentPanel = currentPanel else { return }

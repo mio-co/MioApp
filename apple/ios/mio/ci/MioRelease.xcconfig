@@ -1,0 +1,29 @@
+// Mio (v0.4.1): release-size build settings for the firefox-ios fork, passed to xcodebuild with `-xcconfig`
+// (apple/ios/mio/ci/build.sh), so they apply to every target in the build, Swift packages included.
+// The simulator smoke build uses the same file, so CI tests what ships.
+
+// v0.4.0 shipped with LLVM code-coverage instrumentation (__LLVM_COV / __llvm_prf_* sections, ~9 MB in Client alone):
+// the Firefox scheme's UnitTest.xctestplan turns coverage on and `xcodebuild build -scheme Firefox` inherited it.
+CLANG_ENABLE_CODE_COVERAGE = NO
+CLANG_COVERAGE_MAPPING = NO
+
+// Common.xcconfig sets ENABLE_TESTABILITY = YES for every configuration (keeps internal symbols exported and
+// blocks dead-code stripping / inlining across files).
+ENABLE_TESTABILITY = NO
+
+// Size over speed: -Osize with whole-module optimisation (upstream Firefox config: -Owholemodule = -O + WMO).
+// A browser shell is UI / glue code; page rendering and JS run in WebKit, not in this binary.
+SWIFT_OPTIMIZATION_LEVEL = -Osize
+SWIFT_COMPILATION_MODE = wholemodule
+GCC_OPTIMIZATION_LEVEL = s
+LLVM_LTO = NO
+
+DEAD_CODE_STRIPPING = YES
+// Upstream's "Strip Symbols" run-script phase strips the app and frameworks (strip -rSTx); keep Xcode's own
+// install-time strip off so nothing is stripped twice. Debug info goes to dSYMs (collected as a CI artifact,
+// never copied into the .app / ipa).
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+STRIP_SWIFT_SYMBOLS = YES
+
+// Assertions off in release (upstream Release.xcconfig already sets ENABLE_NS_ASSERTIONS = NO)
+ENABLE_NS_ASSERTIONS = NO

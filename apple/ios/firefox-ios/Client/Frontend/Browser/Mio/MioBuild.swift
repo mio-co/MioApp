@@ -63,6 +63,27 @@ enum MioBuild {
     static let experimentsEnabled = false
     static let mozillaAccountsEnabled = false
     static let remoteSettingsSyncEnabled = false
+    /// The upstream "Synced tabs" pane of the tab overview needs a Mozilla account; Mio has no Sync, so the tab
+    /// overview only has normal + private tabs (v0.4.1).
+    static let syncedTabsPanelEnabled = false
+
+    /// Tab overview panel Mio can show: requests for the synced-tabs pane open the normal tabs instead.
+    static func tabTrayPanel(_ panel: TabTrayPanelType) -> TabTrayPanelType {
+        return (!syncedTabsPanelEnabled && panel == .syncedTabs) ? .tabs : panel
+    }
+
+    /// Tab overview panes in display order (upstream order without "Synced tabs" when it is off).
+    static func tabTrayPanels(_ panels: [TabTrayPanelType]) -> [TabTrayPanelType] {
+        return syncedTabsPanelEnabled ? panels : panels.filter { $0 != .syncedTabs }
+    }
+
+    /// Settings → App icon: Mio ships a single app icon (v0.4.1 removed the upstream alternate icons, ~45 MB of
+    /// compiled icon renditions), so the picker is hidden.
+    static let alternateAppIconsEnabled = false
+
+    /// Firefox onboarding (intro cards, video, "what's new" update cards): Mio never shows it, and its media
+    /// (OnboardingKit video / GIF / images) is not shipped since v0.4.1.
+    static let firefoxOnboardingEnabled = false
 
     // MARK: - Defaults
 

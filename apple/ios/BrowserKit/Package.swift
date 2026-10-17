@@ -340,8 +340,10 @@ let package = Package(
         .target(
             name: "OnboardingKit",
             dependencies: ["Common", "ComponentLibrary"],
+            // Mio: onboarding video / images removed (Mio never shows Firefox onboarding); Media.xcassets keeps the
+            // launch loader, logo, radio buttons and theme colours so Bundle.module and the launch screen still work.
             resources: [
-                .process("IntroVideo.mp4")
+                .process("Media.xcassets")
             ],
             swiftSettings: [
                 .unsafeFlags(["-enable-testing"]),
