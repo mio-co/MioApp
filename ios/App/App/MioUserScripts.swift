@@ -720,26 +720,21 @@ final class MioUserScriptsViewController: UITableViewController, UIDocumentPicke
     }
 
     private func showActions(_ sc: MioUserScript, cell: UITableViewCell?) {
-        let a = UIAlertController(title: sc.meta.displayName, message: summary(sc), preferredStyle: .actionSheet)
-        a.addAction(UIAlertAction(title: "查看代码", style: .default) { [weak self] _ in
+        let a = MioActionList(title: sc.meta.displayName, message: summary(sc))
+        a.add("查看代码") { [weak self] in
             self?.navigationController?.pushViewController(MioUserScriptCodeViewController(title: sc.meta.displayName, code: sc.code), animated: true)
-        })
-        a.addAction(UIAlertAction(title: "检查更新", style: .default) { [weak self] _ in self?.checkUpdate(sc) })
+        }
+        a.add("检查更新") { [weak self] in self?.checkUpdate(sc) }
         if let home = sc.meta.homepage, let u = URL(string: home), u.scheme?.hasPrefix("http") == true {
-            a.addAction(UIAlertAction(title: "打开主页", style: .default) { _ in MioBrowserViewController.open(u, from: self) })
+            a.add("打开主页") { MioBrowserViewController.open(u, from: self) }
         }
         if !sc.connectDecisions.isEmpty {
-            a.addAction(UIAlertAction(title: "重置跨域授权（\(sc.connectDecisions.count)）", style: .default) { _ in
+            a.add("重置跨域授权（\(sc.connectDecisions.count)）") {
                 for h in sc.connectDecisions.keys { MioUserScriptManager.shared.store.setConnectDecision(sc.id, host: h, allow: nil) }
-            })
+            }
         }
-        a.addAction(UIAlertAction(title: "删除", style: .destructive) { [weak self] _ in self?.confirmDelete(sc) })
-        a.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let pop = a.popoverPresentationController {
-            pop.sourceView = cell ?? view
-            pop.sourceRect = cell?.bounds ?? view.bounds
-        }
-        present(a, animated: true)
+        a.add("删除", style: .destructive) { [weak self] in self?.confirmDelete(sc) }
+        a.present(from: self, sourceView: cell)
     }
 
     private func summary(_ sc: MioUserScript) -> String {

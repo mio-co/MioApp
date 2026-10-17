@@ -726,16 +726,11 @@ final class MioPageToolsSettingsViewController: UITableViewController {
     }
 
     private func pick(_ title: String, _ options: [PickOption], from cell: UITableViewCell?) {
-        let a = UIAlertController(title: title, message: nil, preferredStyle: .actionSheet)
+        let a = MioActionList(title: title)
         for o in options {
-            a.addAction(UIAlertAction(title: o.title + (o.selected ? " ✓" : ""), style: .default) { _ in o.action() })
+            a.add(o.title, checked: o.selected) { o.action() }
         }
-        a.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let pop = a.popoverPresentationController, let cell = cell {
-            pop.sourceView = cell
-            pop.sourceRect = cell.bounds
-        }
-        present(a, animated: true)
+        a.present(from: self, sourceView: cell)
     }
 
     override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {

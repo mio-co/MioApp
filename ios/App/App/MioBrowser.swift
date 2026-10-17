@@ -927,42 +927,37 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     @objc private func shieldTapped() {
         let host = webView.url?.host
-        let alert = UIAlertController(title: host ?? "广告拦截", message: nil, preferredStyle: .actionSheet)
+        let alert = MioActionList(title: host ?? "广告拦截")
         if !MioAdblockSettings.enabled {
             alert.message = "广告拦截已关闭"
-            alert.addAction(UIAlertAction(title: "开启广告拦截", style: .default) { [weak self] _ in
+            alert.add("开启广告拦截") { [weak self] in
                 MioAdblockSettings.enabled = true
                 self?.webView.reload()
-            })
+            }
         } else if let host = host {
             if MioAdblockSettings.isAllowlisted(host) {
                 alert.message = "此站点在白名单中，不拦截"
-                alert.addAction(UIAlertAction(title: "恢复拦截此站点", style: .default) { [weak self] _ in
+                alert.add("恢复拦截此站点") { [weak self] in
                     MioAdblockSettings.setAllowlisted(host, false)
                     self?.webView.reload()
-                })
+                }
             } else {
                 alert.message = "正在拦截广告和跟踪器"
-                alert.addAction(UIAlertAction(title: "此站点不拦截（加入白名单）", style: .default) { [weak self] _ in
+                alert.add("此站点不拦截（加入白名单）") { [weak self] in
                     MioAdblockSettings.setAllowlisted(host, true)
                     self?.webView.reload()
-                })
+                }
             }
         }
         if let host = host, MioWebRTCSettings.enabled {
             let allowed = MioWebRTCSettings.isAllowed(host)
-            alert.addAction(UIAlertAction(title: allowed ? "此站点恢复屏蔽 WebRTC" : "此站点允许 WebRTC（网页通话）", style: .default) { [weak self] _ in
+            alert.add(allowed ? "此站点恢复屏蔽 WebRTC" : "此站点允许 WebRTC（网页通话）") { [weak self] in
                 MioWebRTCSettings.setAllowed(host, !allowed)
                 self?.webView.reload()
-            })
+            }
         }
-        alert.addAction(UIAlertAction(title: "拦截设置…", style: .default) { [weak self] _ in self?.settingsTapped() })
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = shieldButton
-            pop.sourceRect = shieldButton.bounds
-        }
-        present(alert, animated: true)
+        alert.add("拦截设置…") { [weak self] in self?.settingsTapped() }
+        alert.present(from: self, sourceView: shieldButton)
     }
 
     // MARK: address field
@@ -1474,18 +1469,13 @@ final class MioBrowserSettingsViewController: UITableViewController {
             navigationController?.pushViewController(MioWebRTCSettingsViewController(currentHost: currentHost), animated: true)
         case .youtubeInterval:
             let current = MioBrowserSettings.youtubeFocusInterval
-            let a = UIAlertController(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒", preferredStyle: .actionSheet)
+            let a = MioActionList(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒")
             for sec in MioWebCompat.youtubeFocusIntervalChoices {
-                a.addAction(UIAlertAction(title: Self.intervalText(sec) + (sec == current ? " ✓" : ""), style: .default) { _ in
+                a.add(Self.intervalText(sec), checked: sec == current) {
                     MioBrowserSettings.youtubeFocusInterval = sec
-                })
+                }
             }
-            a.addAction(UIAlertAction(title: "取消", style: .cancel))
-            if let pop = a.popoverPresentationController, let cell = tableView.cellForRow(at: indexPath) {
-                pop.sourceView = cell
-                pop.sourceRect = cell.bounds
-            }
-            present(a, animated: true)
+            a.present(from: self, sourceView: tableView.cellForRow(at: indexPath))
         default:
             break
         }
