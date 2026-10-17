@@ -273,7 +273,8 @@ final class MioUpdater: NSObject {
             NSLog("⚡️ Mio update: POSIX_SPAWN_SETSID not supported")
         }
         // 固定的最小环境（不依赖 App 进程的环境变量）
-        var cenv: [UnsafeMutablePointer<CChar>?] = ["PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=\(NSHomeDirectory())", "LANG=en_US.UTF-8"].map { strdup($0) }
+        let envStrings: [String] = ["PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=\(NSHomeDirectory())", "LANG=en_US.UTF-8"]
+        var cenv: [UnsafeMutablePointer<CChar>?] = envStrings.map { strdup($0) }
         cenv.append(nil)
         defer { for p in cenv { free(p) } }
         var pid: pid_t = 0
