@@ -235,7 +235,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
 
     func positionTrafficLights() {
         guard let w = window else { return }
-        MioTrafficLights.center(in: w, rowHeight: MioMacTabBar.height)
+        MioTrafficLights.keepCentered(w, rowHeight: MioMacTabBar.height)
     }
 
     // MARK: - 侧边栏（滑入滑出）
@@ -805,6 +805,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         if !store.tabs.isEmpty { saveSession() }
         for (_, wv) in webViews { wv.stopLoading() }
         audioTimer?.invalidate()
+        if let w = window { MioTrafficLights.stopObserving(w) }
         MioMacPopupPanel.current?.dismiss(animated: false)
         navBar.urlBar.dropdown.hide(animated: false)
         onClose?(self)

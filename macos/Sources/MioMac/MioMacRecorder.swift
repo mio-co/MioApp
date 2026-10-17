@@ -114,10 +114,11 @@ final class MioMacRecorder {
     // MARK: 连拍 → 帧条
 
     /// 每 intervalMs 毫秒抓一次 rect（屏幕坐标），共 count 帧
-    static func burst(count: Int, intervalMs: UInt64, rect: @escaping () -> NSRect) async -> [CGImage] {
-        var out: [CGImage] = []
+    static func burst(count: Int, intervalMs: UInt64, rect: @escaping () -> NSRect) async -> [(image: CGImage, ms: Int)] {
+        var out: [(image: CGImage, ms: Int)] = []
+        let t0 = CACurrentMediaTime()
         for _ in 0..<count {
-            if let img = capture(screenRect: rect()) { out.append(img) }
+            if let img = capture(screenRect: rect()) { out.append((img, Int((CACurrentMediaTime() - t0) * 1000))) }
             try? await Task.sleep(nanoseconds: intervalMs * 1_000_000)
         }
         return out
@@ -125,7 +126,7 @@ final class MioMacRecorder {
 
     /// 帧条：竖排（每帧一行，左侧标时间）
     @discardableResult
-    static func saveStrip(_ frames: [CGImage], intervalMs: Int, title: String, to path: String) -> Bool {
+    static func saveStrip(_ frames: [CGImage], times: [Int], title: String, to path: String) -> Bool {
         guard let first = frames.first else { return false }
         let w = CGFloat(first.width), h = CGFloat(first.height)
         let label: CGFloat = 70
@@ -143,7 +144,7 @@ final class MioMacRecorder {
         for (i, f) in frames.enumerated() {
             let y = total.height - header - h * CGFloat(i + 1)
             ctx.cgContext.draw(f, in: CGRect(x: label, y: y, width: w, height: h))
-            ("+\(i * intervalMs)ms" as NSString).draw(at: NSPoint(x: 6, y: y + h / 2 - 7), withAttributes: attrs)
+            ("+\(i < times.count ? times[i] : 0)ms" as NSString).draw(at: NSPoint(x: 6, y: y + h / 2 - 7), withAttributes: attrs)
             NSColor(white: 0.85, alpha: 1).setFill()
             NSRect(x: 0, y: y, width: total.width, height: 1).fill()
         }

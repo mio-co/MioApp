@@ -145,7 +145,7 @@ final class MioMacSmoke {
         shotChrome("mac-native-tabstrip", &shots)
 
         let rec = MioMacRecorder()
-        rec.start(path: (dir as NSString).appendingPathComponent("mac-native-anim.mov"), fps: 20) { [weak c] in c?.window?.frame ?? .zero }
+        rec.start(path: (dir as NSString).appendingPathComponent("mac-native-anim.mov"), fps: 10) { [weak c] in c?.window?.frame ?? .zero }
         let meter = MioFrameMeter()
         meter.start(on: c.tabBar)
         var strips: [String: Any] = [:]
@@ -223,7 +223,7 @@ final class MioMacSmoke {
         try? await Task.sleep(nanoseconds: 400_000_000)
 
         // 5f. 地址栏聚焦 + 下拉建议
-        strips["urlbarFocus"] = await strip("anim-urlbar-focus", title: "地址栏聚焦：突出放大 + 描边 + 阴影，下拉建议淡入下滑", chromeOnly: false, count: 8, intervalMs: 35) {
+        strips["urlbarFocus"] = await strip("anim-urlbar-focus", title: "地址栏聚焦：突出放大 + 描边 + 阴影，下拉建议淡入下滑", chromeOnly: false, count: 9, intervalMs: 35, region: .top(250)) {
             c.focusAddressBar()
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 120_000_000)
@@ -244,7 +244,7 @@ final class MioMacSmoke {
         // 5g. ⌘+ 缩放提示 HUD + 地址栏百分比
         if let ex = c.store.tabs.first(where: { $0.url.contains("example.com") && !$0.url.contains("container") }) { c.select(ex.id) }
         try? await Task.sleep(nanoseconds: 500_000_000)
-        strips["zoomHUD"] = await strip("anim-zoom-hud", title: "⌘+ 缩放：中央 HUD 淡入 + 微缩放，地址栏滑出 115%", chromeOnly: false, count: 8, intervalMs: 40) {
+        strips["zoomHUD"] = await strip("anim-zoom-hud", title: "⌘+ 缩放：中央 HUD 淡入 + 微缩放，地址栏滑出 115%", chromeOnly: false, count: 8, intervalMs: 40, region: .window) {
             c.zoomIn(nil)
         }
         ui["zoomHUDShown"] = c.zoomHUD.isShowing
@@ -255,7 +255,7 @@ final class MioMacSmoke {
         try? await Task.sleep(nanoseconds: 1_300_000_000)
 
         // 5h. 查找栏
-        strips["findbar"] = await strip("anim-findbar", title: "⌘F 查找栏从底部滑出", chromeOnly: false, count: 8, intervalMs: 35) {
+        strips["findbar"] = await strip("anim-findbar", title: "⌘F 查找栏从底部滑出", chromeOnly: false, count: 8, intervalMs: 35, region: .window) {
             c.showFindBar(nil)
         }
         c.findBar.field.stringValue = "Example"
@@ -268,7 +268,7 @@ final class MioMacSmoke {
         try? await Task.sleep(nanoseconds: 400_000_000)
 
         // 5i. Mio 扩展面板
-        strips["extensions"] = await strip("anim-extensions-panel", title: "Mio 扩展面板：淡入 + 下滑 + 微缩放", chromeOnly: false, count: 7, intervalMs: 35) {
+        strips["extensions"] = await strip("anim-extensions-panel", title: "Mio 扩展面板：淡入 + 下滑 + 微缩放", chromeOnly: false, count: 7, intervalMs: 35, region: .top(480)) {
             c.showExtensionsPanel()
         }
         try? await Task.sleep(nanoseconds: 400_000_000)
@@ -279,14 +279,14 @@ final class MioMacSmoke {
         try? await Task.sleep(nanoseconds: 400_000_000)
 
         // 5j. 应用菜单 + 子菜单滑动
-        strips["appMenu"] = await strip("anim-appmenu", title: "≡ 应用菜单打开", chromeOnly: false, count: 7, intervalMs: 35) {
+        strips["appMenu"] = await strip("anim-appmenu", title: "≡ 应用菜单打开", chromeOnly: false, count: 7, intervalMs: 35, region: .window) {
             c.showAppMenu()
         }
         try? await Task.sleep(nanoseconds: 400_000_000)
         ui["appMenuRows"] = rowTitles(MioMacPopupPanel.current?.contentView)
         shot("mac-native-appmenu", &shots)
         if let row = findRow("更多工具", in: MioMacPopupPanel.current?.contentView) {
-            strips["appMenuSub"] = await strip("anim-appmenu-subview", title: "应用菜单子视图左右滑动（更多工具）", chromeOnly: false, count: 8, intervalMs: 35) {
+            strips["appMenuSub"] = await strip("anim-appmenu-subview", title: "应用菜单子视图左右滑动（更多工具）", chromeOnly: false, count: 8, intervalMs: 35, region: .window) {
                 row.onClick?()
             }
             try? await Task.sleep(nanoseconds: 400_000_000)
@@ -303,13 +303,13 @@ final class MioMacSmoke {
         try? await Task.sleep(nanoseconds: 300_000_000)
 
         // 5l. 侧边栏（垂直标签）滑入 / 垂直标签模式
-        strips["sidebar"] = await strip("anim-sidebar", title: "侧边栏滑入（垂直标签页）", chromeOnly: false, count: 9, intervalMs: 40) {
+        strips["sidebar"] = await strip("anim-sidebar", title: "侧边栏滑入（垂直标签页）", chromeOnly: false, count: 9, intervalMs: 40, region: .top(360)) {
             c.setSidebar(visible: true, animated: true)
         }
         try? await Task.sleep(nanoseconds: 500_000_000)
         shot("mac-native-sidebar", &shots)
         UserDefaults.standard.set(true, forKey: MioMacPreferencesView.verticalTabsKey)
-        strips["verticalMode"] = await strip("anim-vertical-tabs-mode", title: "切换垂直标签模式：横向标签条收起，导航栏升到红绿灯一行", chromeOnly: false, count: 8, intervalMs: 40) {
+        strips["verticalMode"] = await strip("anim-vertical-tabs-mode", title: "切换垂直标签模式：横向标签条收起，导航栏升到红绿灯一行", chromeOnly: false, count: 8, intervalMs: 40, region: .top(300)) {
             c.applyPreferences()
         }
         try? await Task.sleep(nanoseconds: 500_000_000)
@@ -382,9 +382,39 @@ final class MioMacSmoke {
         ui["fullscreen"] = fullscreen
 
         meter.stop()
-        ui["animation"] = meter.report
+        ui["animationWhileRecording"] = meter.report
         ui["recording"] = await rec.stop()
         ui["strips"] = strips
+
+        // 5p2. 帧率（不录屏、不连拍，正常速度）：开 / 关标签、侧边栏、面板、地址栏聚焦
+        let perf = MioFrameMeter()
+        perf.start(on: c.tabBar)
+        for _ in 0..<3 {
+            c.newTab(url: "about:blank", activate: true)
+            try? await Task.sleep(nanoseconds: 350_000_000)
+        }
+        for t in c.store.tabs.reversed() where t.url == "about:blank" {
+            c.closeTab(t.id)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        c.setSidebar(visible: true, animated: true)
+        try? await Task.sleep(nanoseconds: 450_000_000)
+        c.setSidebar(visible: false, animated: true)
+        try? await Task.sleep(nanoseconds: 450_000_000)
+        c.showAppMenu()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        c.dismissPanel()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        c.focusAddressBar()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        if let wv = c.activeWebView { c.window?.makeFirstResponder(wv) }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        c.zoomIn(nil)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        c.zoomReset(nil)
+        try? await Task.sleep(nanoseconds: 1_300_000_000)
+        perf.stop()
+        ui["animation"] = perf.report
 
         // 5q. 减少动态效果：动画时长 0，新标签立即到位
         MioMotion.forceReduce = true
@@ -479,24 +509,37 @@ final class MioMacSmoke {
         return NSRect(x: w.frame.minX, y: w.frame.maxY - h, width: w.frame.width, height: h)
     }
 
-    /// 动作 + 连拍 → 帧条 PNG；返回 {path, frames, changed}
+    enum Region { case chrome, window, top(CGFloat), screen }
+
+    /// 动作 + 连拍 → 帧条 PNG；连拍期间动画放慢 4 倍（MioMotion.slowFactor），帧条里能看到中间帧。返回 {path, frames, changed}
     private func strip(_ name: String, title: String, chromeOnly: Bool, count: Int = 8, intervalMs: UInt64 = 30, screen: Bool = false,
-                       _ action: @escaping () -> Void) async -> [String: Any] {
+                       region: Region? = nil, _ action: @escaping () -> Void) async -> [String: Any] {
         guard let w = controller.window else { return ["error": "no window"] }
+        let reg = region ?? (screen ? .screen : (chromeOnly ? .chrome : .top(320)))
         let rect: () -> NSRect = { [weak w] in
             guard let w else { return .zero }
-            if screen { return w.screen?.frame ?? w.frame }
-            return chromeOnly ? self.chromeRect(w) : w.frame
+            switch reg {
+            case .screen: return w.screen?.frame ?? w.frame
+            case .chrome: return self.chromeRect(w)
+            case .window: return w.frame
+            case .top(let h): return NSRect(x: w.frame.minX, y: w.frame.maxY - min(h, w.frame.height), width: w.frame.width, height: min(h, w.frame.height))
+            }
         }
+        let slow = screen ? 1.0 : 4.0
+        MioMotion.slowFactor = slow
         let task = Task { @MainActor in await MioMacRecorder.burst(count: count, intervalMs: intervalMs, rect: rect) }
         try? await Task.sleep(nanoseconds: 5_000_000)
         action()
-        let frames = await task.value
+        let shots = await task.value
+        try? await Task.sleep(nanoseconds: UInt64(0.3 * slow * 1_000_000_000)) // 等放慢的动画走完
+        MioMotion.slowFactor = 1
+        let frames = shots.map(\.image)
         let path = (dir as NSString).appendingPathComponent("\(name).png")
-        let saved = MioMacRecorder.saveStrip(screen ? frames.map { scaled($0, 0.5) } : frames, intervalMs: Int(intervalMs), title: title, to: path)
+        let label = slow > 1 ? title + "（连拍时动画放慢 \(Int(slow))×）" : title
+        let saved = MioMacRecorder.saveStrip(screen ? frames.map { scaled($0, 0.5) } : frames, times: shots.map(\.ms), title: label, to: path)
         var changed = 0
         for i in 1..<max(1, frames.count) where MioMacRecorder.differs(frames[i - 1], frames[i]) { changed += 1 }
-        return ["path": saved ? path as Any : NSNull() as Any, "frames": frames.count, "framesThatChanged": changed]
+        return ["path": saved ? path as Any : NSNull() as Any, "frames": frames.count, "framesThatChanged": changed, "timesMs": shots.map(\.ms), "slowFactor": slow]
     }
 
     private func scaled(_ img: CGImage, _ f: CGFloat) -> CGImage {

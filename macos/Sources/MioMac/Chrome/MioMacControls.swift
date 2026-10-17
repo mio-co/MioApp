@@ -59,7 +59,7 @@ class MioMacToolbarButton: NSView {
         if animated, MioMotion.duration(MioMotion.fast) > 0, let l = imageView.layer {
             let t = CATransition()
             t.type = .fade
-            t.duration = MioMotion.fast
+            t.duration = MioMotion.duration(MioMotion.fast)
             l.add(t, forKey: "symbol")
         }
         imageView.image = img
@@ -126,7 +126,7 @@ class MioMacToolbarButton: NSView {
         let a = CAKeyframeAnimation(keyPath: "transform.scale")
         a.values = [1.0, 1.35, 0.9, 1.05, 1.0]
         a.keyTimes = [0, 0.3, 0.6, 0.85, 1]
-        a.duration = 0.38
+        a.duration = MioMotion.duration(0.38)
         l.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         l.position = CGPoint(x: imageView.frame.midX, y: imageView.frame.midY)
         l.add(a, forKey: "bounce")
@@ -174,16 +174,17 @@ final class MioMacPopupPanel: NSPanel {
         content?.removeFromSuperview()
         content = v
         let size = v.fittingSize
-        v.translatesAutoresizingMaskIntoConstraints = true
-        v.frame = NSRect(origin: .zero, size: size)
-        v.autoresizingMask = [.width, .height]
-        backing.addSubview(v)
-        backing.layer?.borderColor = MioTheme.cg(MioTheme.panelBorder, in: backing)
+        // 先把面板改成内容的尺寸，再放内容（反过来的话内容会跟着面板的高度变化被自动拉伸 → 整体错位）
         var f = frame
         let top = f.maxY
         f.size = size
         f.origin.y = top - size.height
-        setFrame(f, display: true, animate: false)
+        setFrame(f, display: false, animate: false)
+        v.translatesAutoresizingMaskIntoConstraints = true
+        v.frame = backing.bounds
+        v.autoresizingMask = [.width, .height]
+        backing.addSubview(v)
+        backing.layer?.borderColor = MioTheme.cg(MioTheme.panelBorder, in: backing)
     }
 
     /// 内容高度变了（子视图推入）：保持顶边不动，高度动画
@@ -194,7 +195,7 @@ final class MioMacPopupPanel: NSPanel {
         f.origin.y = top - size.height
         if MioMotion.duration(MioMotion.normal) > 0 {
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = MioMotion.normal
+                ctx.duration = MioMotion.duration(MioMotion.normal)
                 ctx.timingFunction = MioMotion.easeOut
                 self.animator().setFrame(f, display: true)
             }
@@ -350,7 +351,7 @@ final class MioMacPanelStack: NSView {
         views.append(v)
         v.translatesAutoresizingMaskIntoConstraints = true
         v.frame = NSRect(x: animated ? width : 0, y: 0, width: width, height: h)
-        v.autoresizingMask = [.height]
+        v.autoresizingMask = [] // 高度固定：面板高度动画时子视图不被拉伸（翻转坐标，贴顶）
         addSubview(v)
         transition(from: old, to: v, forward: true, animated: animated, height: h)
     }
@@ -361,6 +362,7 @@ final class MioMacPanelStack: NSView {
         guard let v = views.last else { return }
         let h = height(of: v)
         v.frame = NSRect(x: -width, y: 0, width: width, height: h)
+        v.autoresizingMask = []
         v.isHidden = false
         transition(from: old, to: v, forward: false, animated: animated, height: h, removeOld: true)
     }

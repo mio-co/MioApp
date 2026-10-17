@@ -77,6 +77,9 @@ final class MioMacTabBar: NSView {
         super.init(frame: frame)
         wantsLayer = true
         scroll.drawsBackground = false
+        // 标签条在透明标题栏下面：不要让 NSScrollView 自动加「标题栏高度」的内容边距（否则标签被推到可见区下方）
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsetsZero
         scroll.hasHorizontalScroller = false
         scroll.hasVerticalScroller = false
         scroll.horizontalScrollElasticity = .allowed
@@ -278,7 +281,7 @@ final class MioMacTabBar: NSView {
         let p = NSPoint(x: CGFloat(o), y: 0)
         if animated && MioMotion.duration(MioMotion.slow) > 0 {
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = MioMotion.slow
+                ctx.duration = MioMotion.duration(MioMotion.slow)
                 ctx.timingFunction = MioMotion.easeInOut
                 clip.animator().setBoundsOrigin(p)
             }
@@ -723,7 +726,7 @@ final class MioMacTabView: NSView {
         let s = CABasicAnimation(keyPath: "transform.scale")
         s.fromValue = on ? 1.0 : 1.03
         s.toValue = on ? 1.03 : 1.0
-        s.duration = MioMotion.fast
+        s.duration = MioMotion.duration(MioMotion.fast)
         s.fillMode = .forwards
         s.isRemovedOnCompletion = !on
         l.add(s, forKey: "lift")

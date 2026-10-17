@@ -206,7 +206,7 @@ final class MioMacZoomHUD: NSVisualEffectView {
                 let s = CABasicAnimation(keyPath: "transform.scale")
                 s.fromValue = 0.9
                 s.toValue = 1
-                s.duration = MioMotion.normal
+                s.duration = MioMotion.duration(MioMotion.normal)
                 s.timingFunction = MioMotion.easeOut
                 l.add(s, forKey: "pop")
             }
@@ -215,7 +215,7 @@ final class MioMacZoomHUD: NSVisualEffectView {
             let t = CATransition()
             t.type = .push
             t.subtype = zoomingIn == false ? .fromBottom : .fromTop
-            t.duration = MioMotion.fast
+            t.duration = MioMotion.duration(MioMotion.fast)
             l.add(t, forKey: "tick")
         }
         let work = DispatchWorkItem { [weak self] in

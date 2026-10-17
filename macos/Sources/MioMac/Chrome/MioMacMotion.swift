@@ -19,7 +19,10 @@ enum MioMotion {
     nonisolated static let normal: TimeInterval = 0.2
     nonisolated static let slow: TimeInterval = 0.28
 
-    static func duration(_ d: TimeInterval) -> TimeInterval { reduce ? 0 : d }
+    /// CI 连拍用：把动画放慢 N 倍，帧条里能看到中间帧（正常使用为 1）
+    static var slowFactor: Double = 1
+
+    static func duration(_ d: TimeInterval) -> TimeInterval { reduce ? 0 : d * slowFactor }
 
     nonisolated(unsafe) static let easeOut = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)   // 进入：快起慢收
     nonisolated(unsafe) static let easeInOut = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -185,4 +188,30 @@ enum MioTrafficLights {
 
     /// 红绿灯占的宽度（标签条左边留空）
     static let reservedWidth: CGFloat = 80
+
+    private static var observers: [ObjectIdentifier: [NSObjectProtocol]] = [:]
+
+    /// AppKit 会在布局 / 前后台切换时把按钮放回原位：监听按钮 frame 变化，变了就再居中一次（只在位置不同时才设，不会死循环）
+    static func keepCentered(_ window: NSWindow, rowHeight: CGFloat) {
+        let key = ObjectIdentifier(window)
+        if observers[key] == nil {
+            var obs: [NSObjectProtocol] = []
+            for t in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                guard let b = window.standardWindowButton(t) else { continue }
+                b.postsFrameChangedNotifications = true
+                obs.append(NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: b, queue: .main) { [weak window] _ in
+                    MainActor.assumeIsolated {
+                        guard let w = window else { return }
+                        center(in: w, rowHeight: rowHeight)
+                    }
+                })
+            }
+            observers[key] = obs
+        }
+        center(in: window, rowHeight: rowHeight)
+    }
+
+    static func stopObserving(_ window: NSWindow) {
+        for o in observers.removeValue(forKey: ObjectIdentifier(window)) ?? [] { NotificationCenter.default.removeObserver(o) }
+    }
 }

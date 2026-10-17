@@ -149,7 +149,7 @@ final class MioMacNavBar: NSView {
             let r = CABasicAnimation(keyPath: "transform.rotation.z")
             r.fromValue = Double.pi / 2
             r.toValue = 0
-            r.duration = MioMotion.normal
+            r.duration = MioMotion.duration(MioMotion.normal)
             r.timingFunction = MioMotion.easeOut
             l.add(r, forKey: "settle")
         }
