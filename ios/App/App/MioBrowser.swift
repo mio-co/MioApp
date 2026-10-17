@@ -692,7 +692,17 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     func openInSafari() {
         var url = webView.url ?? initialURL
         if let s = url.scheme?.lowercased(), s != "http" && s != "https" { url = initialURL }   // 错误页（about:blank）
-        UIApplication.shared.open(url)
+        // 跳转系统浏览器后自动关闭标签页（MioCloseAfterExternal.swift）：open 成功才关
+        MioCloseAfterExternal.handOff(url, enabled: MioCloseAfterExternal.enabled, open: { u, done in
+            UIApplication.shared.open(u, options: [:], completionHandler: done)
+        }, close: { [weak self] in self?.closeAfterExternalOpen() })
+    }
+
+    /// 与点 ✕ 相同：停止加载并收起内置浏览器回到主界面（上面可能还盖着设置页 / 提示框，一并收起）
+    private func closeAfterExternalOpen() {
+        guard let presenter = presentingViewController else { return }
+        webView.stopLoading()
+        presenter.dismiss(animated: true)
     }
 
     /// 菜单「浏览器 › 用 Safari 打开」（⌘⇧O，Mac 菜单栏 / AppDelegate.buildMenu）和 iPad 键盘快捷键
@@ -1075,6 +1085,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
     private enum Row {
         case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, youtubeFocus, youtubeInterval, youtubePlayables, hideToolbars, passkeyInfo, openInSafari(URL), licenses, version
         case updateAuto, updateCheck // 软件更新（MioUpdater.swift）
+        case closeAfterExternal
     }
 
     private let currentHost: String?
@@ -1138,6 +1149,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
         browse.append(.hideToolbars)
         s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留），可选屏蔽首页的游戏大本营（Playables，直接打开 /playables 不受影响）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
         s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的「用 Safari 打开」（\(Self.safariHint)）改用 Safari。", [.preferSafari, .backgroundPlayback]))
+        s.append((nil, "开启后，「用 Safari 打开」成功跳转后自动关闭内置浏览器的当前页面，回到 Mio 主界面；打开失败则保留。", [.closeAfterExternal]))
         var login: [Row] = [.passkeyInfo]
         if let u = currentURL { login.append(.openInSafari(u)) }
         s.append(("通行密钥与钥匙串", Self.passkeyFooter, login))
@@ -1260,6 +1272,9 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case .licenses:
             cell.textLabel?.text = "开源许可"
             cell.detailTextLabel?.text = "SafariConverterLib、AdGuard Scriptlets、ExtendedCss（GPL-3.0）；过滤列表：AdGuard（CC BY-SA 3.0 / GPL-3.0）、EasyList / EasyPrivacy（GPL-3.0 / CC BY-SA 3.0）。详见仓库 NOTICE。"
+        case .closeAfterExternal:
+            cell.textLabel?.text = "跳转系统浏览器后自动关闭标签页"
+            cell.accessoryView = makeSwitch(MioCloseAfterExternal.enabled) { MioCloseAfterExternal.enabled = $0 }
         case .version:
             cell.textLabel?.text = "Mio"
             cell.detailTextLabel?.text = MioBrowserSettings.appVersion
@@ -1314,7 +1329,12 @@ final class MioBrowserSettingsViewController: UITableViewController {
             })
             present(a, animated: true)
         case .openInSafari(let url):
-            UIApplication.shared.open(url)
+            // 从内置浏览器打开的设置页：走浏览器的「用 Safari 打开」（含跳转后自动关闭标签页）
+            if let browser = presentingViewController as? MioBrowserViewController {
+                browser.openInSafari()
+            } else {
+                UIApplication.shared.open(url)
+            }
         case .updateCheck:
             MioUpdater.shared.check(manual: true, from: self) { [weak self] in self?.rebuild() }
             rebuild()

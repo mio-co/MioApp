@@ -19,6 +19,7 @@ function render(s) {
   const ab = s.adblock;
   $('preferSystemBrowser').checked = !!st.preferSystemBrowser;
   $('backgroundPlayback').checked = !!st.backgroundPlayback;
+  $('closeTabAfterExternal').checked = !!st.closeTabAfterExternal;
   $('adblockEnabled').checked = !!st.adblockEnabled;
   $('youtubeFocus').checked = !!st.youtubeFocus;
   $('youtubeFocusPlayables').checked = !!st.youtubeFocusPlayables;
@@ -71,7 +72,7 @@ function render(s) {
 }
 
 $('youtubeFocusInterval').addEventListener('change', (e) => api.set('youtubeFocusInterval', Number(e.target.value)).then(render));
-for (const key of ['preferSystemBrowser', 'backgroundPlayback', 'adblockEnabled', 'youtubeFocus', 'youtubeFocusPlayables']) {
+for (const key of ['preferSystemBrowser', 'backgroundPlayback', 'closeTabAfterExternal', 'adblockEnabled', 'youtubeFocus', 'youtubeFocusPlayables']) {
   $(key).addEventListener('change', (e) => api.set(key, e.target.checked).then(render));
 }
 $('siteEnabled').addEventListener('change', (e) => snap && snap.currentHost && api.setSite(snap.currentHost, e.target.checked).then(render));

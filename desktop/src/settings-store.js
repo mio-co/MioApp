@@ -14,6 +14,7 @@ const DEFAULTS = {
   youtubeFocus: true,
   youtubeFocusInterval: 60,
   youtubeFocusPlayables: true,
+  closeTabAfterExternal: false, // 跳转系统浏览器后自动关闭标签页（close-after-external.js）
 };
 
 class SettingsStore extends EventEmitter {

@@ -6,6 +6,7 @@ const path = require('node:path');
 const { BaseWindow, BrowserWindow, WebContentsView, Menu, clipboard, shell, ipcMain, nativeTheme } = require('electron');
 const config = require('./config');
 const { hostOf, isHttpUrl, addressToUrl } = require('./util');
+const closeAfterExternal = require('./close-after-external');
 
 const TOOLBAR_HEIGHT = 44;
 const UI_PARTITION = 'mio-ui'; // 工具栏 / 设置页：内存会话，不带拦截 preload
@@ -272,7 +273,13 @@ class BrowserManager {
       }
       case 'openExternal': {
         const url = wc.getURL();
-        if (isHttpUrl(url)) shell.openExternal(url).catch(() => undefined);
+        if (!isHttpUrl(url)) break;
+        closeAfterExternal.openExternalThenMaybeClose({
+          url,
+          enabled: !!this.settings.get(closeAfterExternal.SETTING_KEY),
+          openExternal: (u) => shell.openExternal(u),
+          close: () => this.command('close'), // 与手动关闭一致（只关浏览器窗口）
+        });
         break;
       }
       case 'copyUrl':

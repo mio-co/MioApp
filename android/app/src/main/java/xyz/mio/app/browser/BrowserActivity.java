@@ -86,6 +86,7 @@ public class BrowserActivity extends Activity {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final CloseAfterExternal closeAfterExternal = new CloseAfterExternal();
     private AdblockStore store;
     private WebView webView;
     private EditText address;
@@ -144,12 +145,20 @@ public class BrowserActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        closeAfterExternal.onResume();
         // 主进程（WorkManager）可能更新了规则
         worker.execute(() -> {
             long before = store.builtAt();
             store.ensureEngine();
             if (store.builtAt() != before) main.post(this::invalidateHostScripts);
         });
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // 跳转系统浏览器后自动关闭标签页：外部浏览器盖住本页后关闭（与点 ✕ 相同）
+        if (closeAfterExternal.onStop(isChangingConfigurations())) finish();
     }
 
     @Override
@@ -642,10 +651,13 @@ public class BrowserActivity extends Activity {
 
     private void openExternal(String url) {
         if (url == null) return;
+        boolean launched = false;
         try {
             Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
             startActivity(Intent.createChooser(i, "用浏览器打开"));
+            launched = true;
         } catch (ActivityNotFoundException ignored) {}
+        closeAfterExternal.onLaunchResult(BrowserPrefs.closeTabAfterExternal(this), launched);
     }
 
     private void showShieldMenu() {
@@ -740,6 +752,12 @@ public class BrowserActivity extends Activity {
         system.setChecked(BrowserPrefs.preferSystemBrowser(this));
         system.setOnCheckedChangeListener((b, on) -> BrowserPrefs.setPreferSystemBrowser(this, on));
         box.addView(system);
+
+        Switch closeTab = new Switch(this);
+        closeTab.setText("跳转系统浏览器后自动关闭标签页");
+        closeTab.setChecked(BrowserPrefs.closeTabAfterExternal(this));
+        closeTab.setOnCheckedChangeListener((b, on) -> BrowserPrefs.setCloseTabAfterExternal(this, on));
+        box.addView(closeTab);
 
         TextView title = new TextView(this);
         title.setText("\n过滤规则（AdGuard 官方源，超过 24 小时自动检查更新）");
