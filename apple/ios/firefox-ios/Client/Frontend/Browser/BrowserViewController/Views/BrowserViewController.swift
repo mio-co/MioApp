@@ -4703,6 +4703,7 @@ extension BrowserViewController: TabManagerDelegate {
         // Failing to have a non-nil webView by this point will cause the toolbar scrolling behaviour to regress,
         // back/forward buttons never to become enabled, etc. on tab restore after launch. [FXIOS-9785, FXIOS-9781]
         assert(selectedTab.webView != nil, "Setup will fail if the webView is not initialized for selectedTab")
+        MioContainerUI.shared.updateAddressBarBadge(bvc: self, tab: selectedTab) // Mio: container color + name
 
         // Remove the old accessibilityLabel only when the selected tab isn't the previous tab.
         // When the previous webview isn't visible anymore we ensure proper clean up for tests.

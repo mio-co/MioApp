@@ -3,13 +3,15 @@
 //
 // 与 Windows 的 desktop/src/containers-core.js、Android 的 xyz.mio.app.containers.ContainerState 同一套规则、同一份 JSON：
 //   { "version": 1,
-//     "containers": [{ "id": "<uuid 小写>", "name": "工作", "color": "blue", "createdAt": <ms> }],
+//     "containers": [{ "id": "<uuid 小写>", "name": "工作", "color": "blue", "icon": "briefcase", "createdAt": <ms> }],
 //     "tabs": { "<tabKey>": { "containerId": "<id>", "locked": true } },
 //     "siteRules": [{ "host": "github.com", "containerId": "<id>" }],
 //     "pendingRemovals": ["<id>"] }
 // - 默认容器 id = "default"：就是原来内置浏览器的那份数据（固定 UUID 的 WKWebsiteDataStore，不迁移、不丢登录），不存进 containers、不能删除
 // - 未知 / 已删除的容器 id 一律按默认容器处理（resolve）
 // - 锁定继承：锁定标签打开的子标签 / 弹窗继承容器且同样锁定；未锁定标签的子标签默认继承容器（可被显式指定覆盖）
+// - "icon"（v0.4.1 起，可选）：Firefox Multi-Account Containers 的图标名（MioContainerCore.icons）；没有 / 未知 → "circle"。
+//   旧版本读到多出来的 icon 字段会忽略，但写回时会丢掉它（只影响图标，不影响隔离）
 
 import Foundation
 
@@ -18,7 +20,20 @@ public struct MioContainer: Equatable {
     public var name: String
     public var color: String
     public let createdAt: Int64 // 毫秒
+    /// MioContainerCore.icons 里的名字（v0.4.1 起）；SF Symbol 见 MioContainerCore.iconSymbol
+    public var icon: String = MioContainerCore.defaultIcon
     public var isDefault: Bool { id == MioContainerCore.defaultId }
+
+    public init(id: String, name: String, color: String, createdAt: Int64, icon: String = MioContainerCore.defaultIcon) {
+        self.id = id
+        self.name = name
+        self.color = color
+        self.createdAt = createdAt
+        self.icon = icon
+    }
+
+    /// SF Symbol 名（iOS 17 / macOS 14 都有）
+    public var symbol: String { MioContainerCore.iconSymbol(icon) }
 }
 
 public struct MioTabContainer: Equatable {
@@ -33,7 +48,7 @@ public struct MioSiteRule: Equatable {
 }
 
 public enum MioContainerError: Error, Equatable, CustomStringConvertible {
-    case emptyName, tooMany, notFound, defaultImmutable, badColor, badHost, badRuleContainer, emptyTabKey
+    case emptyName, tooMany, notFound, defaultImmutable, badColor, badIcon, badHost, badRuleContainer, emptyTabKey
     public var description: String {
         switch self {
         case .emptyName: return "容器名称不能为空"
@@ -41,6 +56,7 @@ public enum MioContainerError: Error, Equatable, CustomStringConvertible {
         case .notFound: return "容器不存在"
         case .defaultImmutable: return "默认容器不能修改或删除"
         case .badColor: return "无效的颜色"
+        case .badIcon: return "无效的图标"
         case .badHost: return "无效的域名"
         case .badRuleContainer: return "只能指定已有的非默认容器"
         case .emptyTabKey: return "tabKey 不能为空"
@@ -64,8 +80,33 @@ public enum MioContainerCore {
         "blue": "蓝", "turquoise": "青", "green": "绿", "yellow": "黄", "orange": "橙", "red": "红", "pink": "粉", "purple": "紫", "gray": "灰",
     ]
 
+    /// 图标（Firefox Multi-Account Containers 同一组名字）。顺序 = 设置页图标选择器的顺序
+    public static let icons = ["fingerprint", "briefcase", "dollar", "cart", "circle", "gift", "vacation", "food", "fruit", "pet", "tree", "chill", "fence"]
+    public static let defaultIcon = "circle"
+    /// 图标名 → SF Symbol（iOS 17 / macOS 14 起都有）
+    public static let iconSymbols: [String: String] = [
+        "fingerprint": "touchid", "briefcase": "briefcase.fill", "dollar": "dollarsign.circle.fill", "cart": "cart.fill",
+        "circle": "circle.fill", "gift": "gift.fill", "vacation": "airplane", "food": "fork.knife", "fruit": "carrot.fill",
+        "pet": "pawprint.fill", "tree": "tree.fill", "chill": "cup.and.saucer.fill", "fence": "square.grid.3x3.fill",
+    ]
+    public static let iconNames: [String: String] = [
+        "fingerprint": "指纹", "briefcase": "公文包", "dollar": "钱", "cart": "购物车", "circle": "圆点", "gift": "礼物",
+        "vacation": "度假", "food": "美食", "fruit": "水果", "pet": "宠物", "tree": "树", "chill": "休闲", "fence": "栅栏",
+    ]
+    public static func iconSymbol(_ icon: String?) -> String {
+        iconSymbols[icon ?? ""] ?? iconSymbols[defaultIcon]!
+    }
+
+    /// 预置容器（Firefox Multi-Account Containers 的默认四个，与 Mac 一致；首次启动、还没有任何自建容器时建一次）
+    public static let presets: [(name: String, color: String, icon: String)] = [
+        ("个人", "blue", "fingerprint"),
+        ("工作", "orange", "briefcase"),
+        ("购物", "pink", "cart"),
+        ("银行", "green", "dollar"),
+    ]
+
     public static var defaultContainer: MioContainer {
-        MioContainer(id: defaultId, name: defaultName, color: defaultColor, createdAt: 0)
+        MioContainer(id: defaultId, name: defaultName, color: defaultColor, createdAt: 0, icon: defaultIcon)
     }
 
     /// 小写 UUID（容器 id 同时是 WKWebsiteDataStore(forIdentifier:) 的 UUID）
@@ -148,8 +189,9 @@ public struct MioContainerState: Equatable {
             guard !name.isEmpty else { continue }
             let color = (c["color"] as? String).flatMap { MioContainerCore.colors.contains($0) ? $0 : nil } ?? MioContainerCore.colors[0]
             let created = (c["createdAt"] as? NSNumber)?.int64Value ?? 0
+            let icon = (c["icon"] as? String).flatMap { MioContainerCore.icons.contains($0) ? $0 : nil } ?? MioContainerCore.defaultIcon
             seen.insert(id)
-            containers.append(MioContainer(id: id, name: name, color: color, createdAt: created))
+            containers.append(MioContainer(id: id, name: name, color: color, createdAt: created, icon: icon))
         }
         for (k, v) in (root["tabs"] as? [String: Any]) ?? [:] {
             guard !k.isEmpty, let t = v as? [String: Any], let cid = t["containerId"] as? String, exists(cid) else { continue }
@@ -171,7 +213,7 @@ public struct MioContainerState: Equatable {
     public func jsonData() -> Data {
         let obj: [String: Any] = [
             "version": 1,
-            "containers": containers.map { ["id": $0.id, "name": $0.name, "color": $0.color, "createdAt": NSNumber(value: $0.createdAt)] as [String: Any] },
+            "containers": containers.map { ["id": $0.id, "name": $0.name, "color": $0.color, "icon": $0.icon, "createdAt": NSNumber(value: $0.createdAt)] as [String: Any] },
             "tabs": tabs.mapValues { ["containerId": $0.containerId, "locked": $0.locked] as [String: Any] },
             "siteRules": siteRules.map { ["host": $0.host, "containerId": $0.containerId] },
             "pendingRemovals": pendingRemovals,
@@ -207,20 +249,21 @@ public struct MioContainerState: Equatable {
     }
 
     @discardableResult
-    public mutating func create(name: String, color: String? = nil) throws -> MioContainer {
+    public mutating func create(name: String, color: String? = nil, icon: String? = nil) throws -> MioContainer {
         guard canCreate else { throw MioContainerError.tooMany }
         let n = MioContainerCore.cleanName(name)
         guard !n.isEmpty else { throw MioContainerError.emptyName }
+        if let icon = icon, !MioContainerCore.icons.contains(icon) { throw MioContainerError.badIcon }
         var id = newId().lowercased()
         while !MioContainerCore.isContainerId(id) || exists(id) || pendingRemovals.contains(id) { id = UUID().uuidString.lowercased() }
         let col = color.flatMap { MioContainerCore.colors.contains($0) ? $0 : nil } ?? nextColor()
-        let c = MioContainer(id: id, name: n, color: col, createdAt: now())
+        let c = MioContainer(id: id, name: n, color: col, createdAt: now(), icon: icon ?? MioContainerCore.defaultIcon)
         containers.append(c)
         return c
     }
 
     @discardableResult
-    public mutating func update(_ id: String, name: String? = nil, color: String? = nil) throws -> MioContainer {
+    public mutating func update(_ id: String, name: String? = nil, color: String? = nil, icon: String? = nil) throws -> MioContainer {
         guard let i = containers.firstIndex(where: { $0.id == id }) else {
             throw id == MioContainerCore.defaultId ? MioContainerError.defaultImmutable : MioContainerError.notFound
         }
@@ -232,6 +275,10 @@ public struct MioContainerState: Equatable {
         if let color = color {
             guard MioContainerCore.colors.contains(color) else { throw MioContainerError.badColor }
             containers[i].color = color
+        }
+        if let icon = icon {
+            guard MioContainerCore.icons.contains(icon) else { throw MioContainerError.badIcon }
+            containers[i].icon = icon
         }
         return containers[i]
     }

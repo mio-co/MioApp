@@ -51,15 +51,15 @@ public final class MioContainerManager {
     public func dataStoreUUID(for id: String?) -> UUID? { MioContainerIDs.dataStoreUUID(for: id, state: state) }
 
     @discardableResult
-    public func create(name: String, color: String? = nil) throws -> MioContainer {
-        let c = try state.create(name: name, color: color)
+    public func create(name: String, color: String? = nil, icon: String? = nil) throws -> MioContainer {
+        let c = try state.create(name: name, color: color, icon: icon)
         save()
         return c
     }
 
     @discardableResult
-    public func update(_ id: String, name: String? = nil, color: String? = nil) throws -> MioContainer {
-        let c = try state.update(id, name: name, color: color)
+    public func update(_ id: String, name: String? = nil, color: String? = nil, icon: String? = nil) throws -> MioContainer {
+        let c = try state.update(id, name: name, color: color, icon: icon)
         save()
         return c
     }
@@ -76,6 +76,23 @@ public final class MioContainerManager {
     }
 
     public var pendingRemovals: [String] { state.pendingRemovals }
+
+    public static let presetsSeededKey = "mio.containers.presetsSeeded"
+
+    /// 预置 个人 / 工作 / 购物 / 银行（MioContainerCore.presets）：只做一次（prefs 记一笔），而且只在还没有任何自建容器时建，
+    /// 不碰升级用户自己建的容器。返回新建的容器
+    @discardableResult
+    public func seedPresetsIfNeeded() -> [MioContainer] {
+        guard !prefs.bool(Self.presetsSeededKey, default: false) else { return [] }
+        prefs.set(true, forKey: Self.presetsSeededKey)
+        guard state.containers.isEmpty else { return [] }
+        var out: [MioContainer] = []
+        for p in MioContainerCore.presets {
+            if let c = try? state.create(name: p.name, color: p.color, icon: p.icon) { out.append(c) }
+        }
+        if !out.isEmpty { save() }
+        return out
+    }
     public func markRemoved(_ id: String) { state.markRemoved(id); save(notify: false) }
 
     // 标签映射（会话恢复用；变化频繁，不发通知）

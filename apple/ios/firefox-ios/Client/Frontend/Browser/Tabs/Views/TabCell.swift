@@ -152,6 +152,8 @@ final class TabCell: UICollectionViewCell,
                                  theme: theme)
 
         configureScreenshot(tabModel: tabModel)
+        // Mio: container color line + icon / name
+        MioContainerUI.decorate(backgroundHolder, tabUUID: tabModel.tabUUID, isPrivate: tabModel.isPrivate, style: .trayCell)
 
         if let theme {
             applyTheme(theme: theme)

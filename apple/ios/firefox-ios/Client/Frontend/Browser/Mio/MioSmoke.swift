@@ -22,6 +22,8 @@
 //   blockOK   example.com: Mio ad-block rule lists attached, doubleclick request blocked, same-origin request loads
 //   settingsOK  Settings → "Mio 扩展" page (MioExtensionsView) renders with module rows
 //   adblockOK   downloaded subscriptions > 10k rules; probe page in a real tab: ad request blocked, ## hidden, scriptlet applied
+//   containersOK  two containers on the same local page keep separate cookies / storage (MioContainerSmoke.swift);
+//             the relaunch phase (MIO_SMOKE_PHASE=restore) checks the tabs come back in the same containers
 //   (recorded only) tab overview via the app's own deep link; tabTrayOK = only normal + private panes (v0.4.1)
 
 import Foundation
@@ -160,6 +162,8 @@ final class MioSmoke {
     // MARK: - Run
 
     private func run() async {
+        // Relaunch phase of the container smoke (restore into the same container): MioContainerSmoke.swift
+        if MioContainerSmoke.isRestorePhase { return await MioContainerSmoke(dir: dir).runRestore() }
         log("waiting for go file in \(dir.path)")
         let go = dir.appendingPathComponent("go")
         var waited = 0
@@ -295,6 +299,11 @@ final class MioSmoke {
         settings["ok"] = settingsOK
         report["settings"] = settings
 
+        // 5. Containers (isolation, data stores, inheritance, picker / settings screenshots): MioContainerSmoke.swift
+        let containers = await MioContainerSmoke(dir: dir).run()
+        report["containers"] = containers
+        let containersOK = (containers["ok"] as? Bool) == true
+
         // Back to the first tab so the script's own steps start from the launch state
         if let firstTab, let manager = tabManager() {
             manager.selectTab(firstTab, previous: manager.selectedTab)
@@ -319,13 +328,14 @@ final class MioSmoke {
         }
 
         let homePassed = (homeOK as? Bool) == true || (homeOK as? String) == "access-login"
-        let pass = homePassed && bridgeOK && blockOK && settingsOK && newTabOK && adblockOK
+        let pass = homePassed && bridgeOK && blockOK && settingsOK && newTabOK && adblockOK && containersOK
         report["adblockOK"] = adblockOK
         report["homeOK"] = homeOK
         report["newTabOK"] = newTabOK
         report["bridgeOK"] = bridgeOK
         report["blockOK"] = blockOK
         report["settingsOK"] = settingsOK
+        report["containersOK"] = containersOK
         report["pass"] = pass
         report["seconds"] = Int(Date().timeIntervalSince(started))
         write()

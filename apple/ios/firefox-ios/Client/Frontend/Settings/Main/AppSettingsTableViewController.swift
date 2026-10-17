@@ -327,7 +327,7 @@ class AppSettingsTableViewController: SettingsTableViewController,
         var settings = [SettingSection]()
         // Mio: "Mio 扩展" first; no default-browser card (needs Apple's browser entitlement),
         // no Mozilla account / Sync section, no Mozilla support / feedback / telemetry toggles.
-        settings += [SettingSection(children: [MioExtensionsSetting()])]
+        settings += [SettingSection(children: [MioExtensionsSetting(), MioContainersSetting()])]
         settings += getGeneralSettings()
         settings += getPrivacySettings()
         settings += getAboutSettings()
