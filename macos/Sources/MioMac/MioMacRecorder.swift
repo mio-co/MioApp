@@ -7,6 +7,7 @@
 import AppKit
 import AVFoundation
 import CoreVideo
+import MioKit
 
 @MainActor
 final class MioMacRecorder {

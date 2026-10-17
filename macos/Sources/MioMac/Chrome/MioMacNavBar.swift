@@ -5,6 +5,7 @@
 
 import AppKit
 import QuartzCore
+import MioKit
 
 @MainActor
 final class MioMacNavBar: NSView {

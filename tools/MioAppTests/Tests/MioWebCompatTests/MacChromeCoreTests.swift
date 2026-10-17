@@ -57,30 +57,13 @@ final class MacChromeCoreTests: XCTestCase {
 
     // MARK: mio://home
 
-    func testHome() {
+    func testHomeAddressAliases() {
+        // 首页模型（mio://home → MioCore 首页、地址栏「Mio」）与本机桥来源校验已移到 apple/MioKit（MioHomeModel / MioCoreOrigin，有各自的单测）
         XCTAssertTrue(MioMacHome.isHomeAddress("mio://home"))
         XCTAssertTrue(MioMacHome.isHomeAddress(" About:Home "))
+        XCTAssertTrue(MioMacHome.isHomeAddress("about:newtab"))
         XCTAssertFalse(MioMacHome.isHomeAddress("mio://settings"))
-        XCTAssertEqual(MioMacHome.loadURL(custom: nil), "https://mio.300031.xyz/")
-        XCTAssertEqual(MioMacHome.loadURL(custom: "javascript:alert(1)"), "https://mio.300031.xyz/")
-        XCTAssertEqual(MioMacHome.loadURL(custom: "https://example.com/start"), "https://example.com/start")
-        let load = MioMacHome.defaultLoadURL
-        XCTAssertTrue(MioMacHome.isHomePage(URL(string: "https://mio.300031.xyz/"), loadURL: load))
-        XCTAssertTrue(MioMacHome.isHomePage(URL(string: "https://mio.300031.xyz"), loadURL: load))
-        XCTAssertTrue(MioMacHome.isHomePage(URL(string: "https://mio.300031.xyz/mio/nav"), loadURL: load))
-        XCTAssertFalse(MioMacHome.isHomePage(URL(string: "https://mio.300031.xyz/notes"), loadURL: load))
-        XCTAssertFalse(MioMacHome.isHomePage(URL(string: "https://mio.300031.xyz/?q=1"), loadURL: load))
-        XCTAssertTrue(MioMacHome.isHomePage(URL(string: "https://example.com/start/"), loadURL: "https://example.com/start"))
-    }
-
-    func testBridgeOnlyForMioCoreOrigin() {
-        XCTAssertTrue(MioMacHome.isTrustedOrigin(URL(string: "https://mio.300031.xyz/mio/nav")))
-        XCTAssertTrue(MioMacHome.isTrustedOrigin(URL(string: "mio://home")))
-        XCTAssertFalse(MioMacHome.isTrustedOrigin(URL(string: "http://mio.300031.xyz/")))
-        XCTAssertFalse(MioMacHome.isTrustedOrigin(URL(string: "https://mio.300031.xyz.evil.com/")))
-        XCTAssertFalse(MioMacHome.isTrustedOrigin(URL(string: "https://mio.300031.xyz:8443/")))
-        XCTAssertFalse(MioMacHome.isTrustedOrigin(URL(string: "https://example.com/")))
-        XCTAssertFalse(MioMacHome.isTrustedOrigin(nil))
+        XCTAssertFalse(MioMacHome.isHomeAddress("https://mio.300031.xyz/"))
     }
 
     // MARK: 地址栏显示

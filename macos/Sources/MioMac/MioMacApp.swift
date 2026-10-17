@@ -4,13 +4,14 @@
 import AppKit
 import SwiftUI
 import WebKit
+import MioKit
 
 @MainActor
 final class MioMacAppDelegate: NSObject, NSApplicationDelegate {
     private(set) var controllers: [MioMacBrowserWindowController] = []
     private var smoke: MioMacSmoke?
     private(set) var settingsWindow: NSWindow?
-    private(set) lazy var settingsModel: MioSettingsModel = makeSettingsModel()
+    private(set) lazy var settingsModel: MioMacSettingsModel = makeSettingsModel()
     let prefsState = MioMacPrefsState()
 
     static let smokeOut = ProcessInfo.processInfo.environment["MIO_SMOKE_OUT"]
@@ -18,6 +19,15 @@ final class MioMacAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MioMacMenu.build(target: self)
         applyAppearance()
+        // MioKit 宿主：桥 / 用户脚本打开标签到当前窗口；设置变了刷新窗口和设置页；广告拦截规则（CI 冒烟不查订阅更新，只编译内置列表）
+        let host = MioMacKit.shared
+        host.currentWindow = { [weak self] in self?.current }
+        host.onSettingsChanged = { [weak self] in
+            guard let self else { return }
+            self.settingsModel.refresh()
+            for c in self.controllers { c.refreshTabs(); c.refreshChrome() }
+        }
+        host.prepare(checkUpdates: Self.smokeOut == nil)
         if let out = Self.smokeOut {
             let c = makeWindow()
             c.newTab(url: "https://example.com/")
@@ -87,28 +97,22 @@ final class MioMacAppDelegate: NSObject, NSApplicationDelegate {
             ?? controllers.last
     }
 
-    // MARK: - 设置（about:preferences 风格；数据与 iOS 共用 MioSettingsModel）
+    // MARK: - 设置（about:preferences 风格；Mio 扩展的数据来自 MioKit）
 
-    private func makeSettingsModel() -> MioSettingsModel {
-        let m = MioSettingsModel(registry: MioMacWebKit.modules)
+    private func makeSettingsModel() -> MioMacSettingsModel {
+        let m = MioMacSettingsModel(kit: MioMacKit.shared.kit)
         m.platformName = "macOS"
         m.userAgent = MioMacWebKit.desktopUserAgent
-        m.containers = { MioMacWebKit.containerState().containers }
-        m.createContainer = { name in
-            var st = MioMacWebKit.containerState()
-            if (try? st.create(name: name)) != nil {
-                UserDefaults.standard.set(st.jsonData(), forKey: MioMacWebKit.containersStateKey)
-            }
-        }
         m.zoomSites = {
             let t = MioZoomCore.SiteTable(json: UserDefaults.standard.string(forKey: MioMacBrowserWindowController.zoomSitesKey))
             return t.sites.keys.sorted().map { (site: $0, level: t.sites[$0] ?? 1.0) }
         }
         m.clearZoomSites = { UserDefaults.standard.removeObject(forKey: MioMacBrowserWindowController.zoomSitesKey) }
+        // Mac 自己的设置（外观 / 垂直标签 / 恢复会话 / 缩放）变了；Mio 扩展的设置走 MioKit 的 .mioSettingsDidChange
         m.onChange = { [weak self] in
             MainActor.assumeIsolated {
                 self?.applyAppearance()
-                for c in self?.controllers ?? [] { c.reinstallModuleScripts(); c.applyPreferences(); c.refreshTabs() }
+                for c in self?.controllers ?? [] { c.applyPreferences(); c.refreshTabs(); c.refreshChrome() }
             }
         }
         return m

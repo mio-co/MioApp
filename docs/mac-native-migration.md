@@ -44,7 +44,7 @@
 - 兼容：MioCore 页面里的 `window.MioDesktop.browser.open()` / Capacitor `MioBrowser.open()` 由 MioCore 模块注入一个小桥，打开新标签即可（几十行）。
 - iOS 去掉 Capacitor 依赖（它只为 MioCore 根视图服务）：Info.plist / CapApp-SPM / `npx cap sync` 一起删掉，构建更快。
 
-### 2.2 模块接口（已实现：`macos/Sources/MioMac/Kit/MioModule.swift`，单测 `MioModuleTests`）
+### 2.2 模块接口（已实现并移到 `apple/MioKit`（线路 C）：`Modules/MioModule.swift`，接口文档 `apple/MioKit/README.md`；下面是最初的草稿形状）
 ```swift
 protocol MioModule: AnyObject {
     var id: String { get }; var title: String { get }; var summary: String { get }
@@ -91,11 +91,14 @@ protocol MioModule: AnyObject {
 ## 3. 骨架现状（`macos/`）
 
 - SwiftPM 可执行 target `MioMac`，最低 macOS 14（`WKWebsiteDataStore(forIdentifier:)` 做容器），不改 `App.xcodeproj`（零 pbxproj 冲突）。
-- `Sources/MioMac/Shared/`：符号链接到 `ios/App/App/` 的 11 个 Foundation-only 核心（iOS 编译原文件，Mac 编译同一份）。
-- `Sources/MioMac/Kit/`：模块接口 + 内置模块 + SwiftUI 设置页 + SwiftUI 侧边栏（两端共用层的雏形）。
+- 依赖本地 SwiftPM 包 `apple/MioKit`（线路 C）：标签 / 容器 / UA / 注入脚本核心、Mio 扩展模块与注册表、设置数据模型、广告拦截、用户脚本引擎、
+  MioCore 桥、`mio://` 方案。原来的 `Sources/MioMac/Kit/`（草稿模块接口 + Safari 式 SwiftUI 设置页 / 侧边栏）和 `Shared/` 里的重复核心已删除，
+  只剩 `Shared/MioDesktopParityCore.swift`（MioZoomCore，符号链接到 `ios/App/App/`）。
+- 接线在 `MioMacWebKit.swift`（`MioMacKit`：每个 WKWebView 一个 `MioWebViewModules`，桥 / 用户脚本宿主），设置窗口在 `Chrome/MioMacPreferences.swift`
+  （Mio 扩展页由 `MioExtensionSettingsModel` 生成；容器 / 用户脚本管理页）。
 - AppKit 壳：窗口 / 工具栏 / 侧边栏 / 标签条 / 多标签 / 容器 / 按站点缩放 / 会话恢复 / ⌘点后台标签 / `window.open` / alert·confirm / 文件上传 / 菜单快捷键（⌘, ⌘N ⌘T ⌘L ⌘W ⇧⌘W ⇧⌘T ⌘R ⌘0 ⌘+ ⌘= ⌘- ⌃⌘S ⌃⌘F ⌘[ ⌘] ⇧⌘[ ⇧⌘] ⌘1…⌘9）。
-- `macos/scripts/bundle.sh` → `Mio Preview.app`（`xyz.mio.mac.preview`，与 Catalyst 版并存），ad-hoc 签名。
-- CI `mac-native` job：构建 + 冒烟（MSE 门槛、YouTube 格式记录、缩放、容器、模块、菜单、截图），不进 release。
+- `macos/scripts/bundle.sh` → `Mio Preview.app`（`xyz.mio.mac.preview`，与 Catalyst 版并存），用 xcodebuild 构建（SwiftPM 资源包放 `Contents/Resources`），ad-hoc 签名。
+- CI `mac-native` job：构建 + 冒烟（MSE 门槛、YouTube 格式记录、缩放、容器、模块、菜单、截图；MioKit：广告拦截生效、扩展开关生效、桥来源校验），不进 release。
 
 ## 4. 剩余工作量清单（Catalyst / UIKit → 新结构）
 

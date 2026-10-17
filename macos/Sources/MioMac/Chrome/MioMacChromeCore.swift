@@ -1,7 +1,7 @@
 // MioMacChromeCore.swift — Firefox 桌面式浏览器外壳的纯逻辑（只依赖 Foundation；tools/MioAppTests 里有单测，符号链接过去）：
 //   - MioTabLayout：横向标签条的宽度 / 位置 / 溢出（Firefox：普通标签 76…225pt 平分，固定标签 36pt 只显示图标，放不下就横向滚动）、
 //     拖拽排序的落点、关闭时「宽度锁定」（Firefox 关标签后不立刻放宽，下一个关闭按钮停在鼠标下面，鼠标离开标签条再展开）
-//   - MioMacHome：内置首页 mio://home（地址栏显示「Mio」，实际加载 MioCore 站点）；本机桥只认 MioCore 来源
+//   - MioMacHome：地址栏里当作首页的写法（mio://home / about:home / about:newtab）；首页模型与本机桥在 MioKit
 //   - MioURLDisplay：地址栏显示（去掉 https://、域名高亮、站点信息图标的安全状态）
 //   - MioSuggest / MioHistoryList / MioBookmarkList：地址栏下拉建议（搜索 / 访问 / 切换到标签页 / 书签 / 历史）
 
@@ -98,48 +98,11 @@ enum MioTabLayout {
 enum MioMacHome {
     static let address = "mio://home"
     static let displayName = "Mio"
-    /// mio://home 实际加载的 MioCore 站点（用户在设置里改了主页地址时用用户的）
-    static let defaultLoadURL = "https://mio.300031.xyz/"
-    static let trustedHosts: Set<String> = ["mio.300031.xyz"]
 
-    /// 地址栏里输入这些都当作首页
+    /// 地址栏里输入这些都当作首页（mio://home 由 MioKit 的 MioSchemeHandler 跳到 MioCore 首页；是否「首页」、桥的来源校验都以 MioKit 为准）
     static func isHomeAddress(_ s: String) -> Bool {
         let l = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return ["mio://home", "mio://home/", "mio:home", "about:home", "about:newtab", "mio://newtab"].contains(l)
-    }
-
-    /// 首页实际地址：自定义（http(s)）优先，否则 MioCore 站点根
-    static func loadURL(custom: String?) -> String {
-        guard let c = custom?.trimmingCharacters(in: .whitespacesAndNewlines), !c.isEmpty,
-              let u = URL(string: c), let s = u.scheme?.lowercased(), s == "http" || s == "https", u.host?.isEmpty == false else {
-            return defaultLoadURL
-        }
-        return c
-    }
-
-    private static func trimmedPath(_ u: URL) -> String {
-        var p = u.path
-        while p.hasSuffix("/") { p.removeLast() }
-        return p
-    }
-
-    /// 当前页面是不是首页（地址栏显示「Mio」）：与首页地址同 host + 同路径，或 MioCore 站点根 / 导航页
-    static func isHomePage(_ url: URL?, loadURL: String) -> Bool {
-        guard let u = url, let host = u.host?.lowercased(), let s = u.scheme?.lowercased(), s == "https" || s == "http" else {
-            return url?.scheme?.lowercased() == "mio"
-        }
-        if u.query != nil || u.fragment != nil { return false }
-        if let home = URL(string: loadURL), home.host?.lowercased() == host, trimmedPath(home) == trimmedPath(u) { return true }
-        if trustedHosts.contains(host) { return ["", "/mio/nav"].contains(trimmedPath(u)) }
-        return false
-    }
-
-    /// 本机桥（相册同步、控制本机等）只对 MioCore 来源 / mio:// 开放 —— 其他网站拿不到
-    static func isTrustedOrigin(_ url: URL?) -> Bool {
-        guard let u = url, let s = u.scheme?.lowercased() else { return false }
-        if s == "mio" { return true }
-        guard s == "https", let h = u.host?.lowercased() else { return false }
-        return trustedHosts.contains(h) && (u.port == nil || u.port == 443)
     }
 }
 

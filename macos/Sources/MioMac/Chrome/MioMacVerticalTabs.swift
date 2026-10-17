@@ -4,6 +4,7 @@
 
 import SwiftUI
 import AppKit
+import MioKit
 
 @MainActor
 final class MioMacVerticalTabsModel: ObservableObject {

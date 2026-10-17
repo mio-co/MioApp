@@ -1,23 +1,54 @@
 #!/bin/bash
-# 把 SwiftPM 构建的 MioMac 可执行文件包成 Mio Preview.app（Info.plist + ad-hoc 签名）。
-# 用法：macos/scripts/bundle.sh [输出目录，默认 macos/dist]   需要 macOS + Xcode（swift build）
+# 把 macos/ 包（依赖 apple/MioKit）构建成 Mio Preview.app（Info.plist + 资源包 + ad-hoc 签名）。
+# 用法：macos/scripts/bundle.sh [输出目录，默认 macos/dist]   需要 macOS + Xcode
 # 预览版 bundle id = xyz.mio.mac.preview：与现在的 Mac Catalyst 版（xyz.mio.app）并存，不共用 UserDefaults / 网站数据。
+#
+# 构建用 xcodebuild（默认），不用 swift build：MioKit 和 swift-psl（SafariConverterLib 依赖）带 SwiftPM 资源包，
+# swift build 生成的 Bundle.module 在 macOS 上只找「.app 根目录」和编译机上的构建目录（找不到就 fatalError），
+# 而 .app 根目录不能放文件（codesign：unsealed contents present in the bundle root）。
+# Xcode 生成的 Bundle.module 先找 Bundle.main.resourceURL（= Contents/Resources），资源包放那里即可。
+# MIO_MAC_BUILD=swiftpm 可退回 swift build（只适合在构建机上本地跑）。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PKG="$ROOT/macos"
 OUT="${1:-$PKG/dist}"
 VERSION=$(node -p "require('$ROOT/package.json').version" 2>/dev/null || echo 0.0.0)
 BUILD=$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)
-CONFIG="${MIO_MAC_CONFIG:-release}"
+MODE="${MIO_MAC_BUILD:-xcode}"
 
-swift build --package-path "$PKG" -c "$CONFIG" ${MIO_MAC_ARCHS:-}
-BIN="$(swift build --package-path "$PKG" -c "$CONFIG" ${MIO_MAC_ARCHS:-} --show-bin-path)/MioMac"
+if [ "$MODE" = swiftpm ]; then
+  CONFIG="${MIO_MAC_CONFIG:-release}"
+  swift build --package-path "$PKG" -c "$CONFIG" ${MIO_MAC_ARCHS:-}
+  PRODUCTS="$(swift build --package-path "$PKG" -c "$CONFIG" ${MIO_MAC_ARCHS:-} --show-bin-path)"
+else
+  CONFIG="${MIO_MAC_CONFIG:-Release}"
+  DD="${MIO_MAC_DERIVED_DATA:-$PKG/.build/xcode-dd}"
+  LOG="$(mktemp -t mio-mac-xcodebuild).log"
+  # 默认只编本机架构（CI 是 arm64）；要通用二进制：MIO_MAC_XCODE_ARGS="ONLY_ACTIVE_ARCH=NO"
+  if ! (cd "$PKG" && xcodebuild build -scheme MioMac -destination 'platform=macOS' -configuration "$CONFIG" \
+      -derivedDataPath "$DD" -skipPackagePluginValidation -skipMacroValidation \
+      CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES ${MIO_MAC_XCODE_ARGS:-}) > "$LOG" 2>&1; then
+    echo "--- xcodebuild errors ---"; grep -E "error:|fatal error|BUILD FAILED" "$LOG" | sort -u | head -120
+    echo "--- xcodebuild tail ---"; tail -60 "$LOG"
+    exit 1
+  fi
+  grep -c "warning:" "$LOG" | sed 's/^/xcodebuild warnings: /' || true
+  tail -5 "$LOG"
+  PRODUCTS="$DD/Build/Products/$CONFIG"
+fi
+BIN="$PRODUCTS/MioMac"
 test -x "$BIN"
 
 APP="$OUT/Mio Preview.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/MioMac"
+# SwiftPM 资源包（MioKit_MioKit.bundle：注入脚本 js/、内置规则 filters/；swift-psl 的公共后缀表）→ Contents/Resources
+for b in "$PRODUCTS"/*.bundle; do
+  [ -d "$b" ] && ditto "$b" "$APP/Contents/Resources/$(basename "$b")"
+done
+test -d "$APP/Contents/Resources/MioKit_MioKit.bundle"
+ls "$APP/Contents/Resources"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

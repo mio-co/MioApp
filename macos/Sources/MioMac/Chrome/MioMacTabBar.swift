@@ -8,6 +8,7 @@
 
 import AppKit
 import QuartzCore
+import MioKit
 
 @MainActor
 final class MioMacTabBar: NSView {

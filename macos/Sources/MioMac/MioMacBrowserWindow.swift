@@ -10,17 +10,20 @@
 //   └─────────┴─────────────────────────────────────────────────────┘
 //
 //   保留：多标签（MioTabStore，与 iOS 同一套规则）、容器、按站点缩放（MioZoomCore）、会话恢复、⌘点后台标签、window.open、
-//   alert/confirm、文件上传、模块注入（MioModuleRegistry）。触控板左右滑前进后退 / 双指缩放由 WKWebView 原生手势提供。
+//   alert/confirm、文件上传。触控板左右滑前进后退 / 双指缩放由 WKWebView 原生手势提供。
+//   Mio 扩展（广告拦截、YouTube 防沉迷、SponsorBlock、翻译、阅读 / 深色、WebRTC、用户脚本、容器、MioCore 桥）全部来自 MioKit：
+//   每个 WebView 由 MioMacKit.attach 装好，主框架导航前 willNavigateMainFrame（按白名单挂 / 卸内容规则）。
 
 import AppKit
 import SwiftUI
 import WebKit
+import MioKit
 
 @MainActor
 final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
     static let zoomSitesKey = "mio.zoom.sites"     // = MioDesktopParity（Catalyst）同名 key，存的是 Safari 档位
     static let zoomDefaultKey = "mio.zoom.default"
-    static let newTabKey = "mio.tabs.newTabURL"
+    static let newTabKey = MioHomeModel.legacyNewTabKey
     static let sidebarKey = "mio.mac.sidebarVisible"
     static let sessionKey = "mio.mac.tabs.session"
     static let sessionPinnedKey = "mio.mac.tabs.pinned"
@@ -71,10 +74,9 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         return v > 0 ? MioZoomCore.nearest(v) : 1.0
     }
 
-    /// mio://home 实际加载的地址（设置里自定义了主页就用自定义的）
-    static var homeLoadURL: String { MioMacHome.loadURL(custom: UserDefaults.standard.string(forKey: newTabKey)) }
-    /// 新标签页 = Mio 首页
-    static var newTabURL: String { homeLoadURL }
+    var host: MioMacKit { MioMacKit.shared }
+    /// 新标签页 / 主页 = mio://home（MioSchemeHandler 跳到 MioCore 首页）；v0.3.x 自定义过别的网站则沿用
+    static var newTabURL: String { MioMacKit.shared.kit.home.newTabURL.absoluteString }
 
     init(size requested: NSSize = NSSize(width: 1280, height: 820)) {
         var size = requested
@@ -99,6 +101,14 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         startAudioPolling()
         NotificationCenter.default.addObserver(self, selector: #selector(reduceMotionChanged(_:)),
                                                name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(containerWillRemove(_:)), name: .mioContainerWillRemove, object: nil)
+    }
+
+    /// 容器被删：关掉这个容器里的标签（数据存储随后由 MioMacKit 删除）
+    @objc private func containerWillRemove(_ n: Notification) {
+        guard let id = n.userInfo?["containerId"] as? String else { return }
+        for t in store.tabs where t.containerID == id { closeTab(t.id) }
+        refreshTabs()
     }
 
     @available(*, unavailable)
@@ -290,31 +300,97 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
     @objc func findNext(_ sender: Any?) { if findBarVisible { findBar.find(backwards: false) } else { showFindBar(sender) } }
     @objc func findPrevious(_ sender: Any?) { if findBarVisible { findBar.find(backwards: true) } else { showFindBar(sender) } }
 
-    // MARK: - Modules
+    // MARK: - Mio 扩展（MioKit 模块）
 
     var currentPage: MioPageContext {
-        MioPageContext(url: activeWebView?.url, title: activeWebView?.title ?? "")
+        MioPageContext(url: activeWebView?.url, title: activeWebView?.title ?? "", containerID: store.active?.containerID)
     }
 
-    func performModuleAction(_ action: MioModuleAction) {
+    /// 当前页面的模块菜单项（「…」/ Mio 扩展面板 / 应用菜单）
+    var pageMenuItems: [MioModuleMenuItem] { host.pageMenuItems(currentPage) }
+
+    /// 执行一个模块菜单项（翻译此页、阅读视图、强制深色、在此网站关闭拦截、保存到 Mio……）
+    func runModuleItem(_ item: MioModuleMenuItem) {
+        let wv = activeWebView
+        let page = currentPage
+        let tabID = activeTabID
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let rest = await self.host.perform(item, page: page, webView: wv)
+            self.handleModuleAction(rest, webView: wv, tabID: tabID)
+        }
+    }
+
+    /// 模块动作里 WebKit 做不了、要宿主做的部分
+    func handleModuleAction(_ action: MioModuleAction, webView wv: WKWebView?, tabID: Int?) {
         switch action {
-        case .none: break
+        case .none, .evaluateJavaScript, .runScript: break
         case .openURL(let u, let inNewTab):
-            let s = u.absoluteString == MioCoreModuleHome.legacyNav ? MioMacHome.address : u.absoluteString
-            if inNewTab || activeWebView == nil { newTab(url: s) } else { navigate(activeWebView, to: s) }
-        case .evaluateJavaScript(let js):
-            activeWebView?.evaluateJavaScript(js, completionHandler: nil)
+            if inNewTab || wv == nil { newTab(url: u.absoluteString) } else { navigate(wv, to: u.absoluteString) }
         case .openSettings(let section):
             onOpenSettings?(MioMacPrefsPane(section: section))
         case .reload:
-            reinstallModuleScripts()
-            activeWebView?.reload()
+            host.reinstallAll()
+            wv?.reload()
+        case .host(let cmd):
+            handleHostCommand(cmd, webView: wv, tabID: tabID)
+        }
+        refreshChrome()
+    }
+
+    private func handleHostCommand(_ cmd: MioHostCommand, webView wv: WKWebView?, tabID: Int?) {
+        switch cmd {
+        case .toast(let s):
+            toast.show(s, button: nil, in: webContainer)
+        case .reopenInContainer(let cid):
+            if let id = tabID { reopenInContainer(id, containerID: cid) }
+        case .saveToMio(let kind, let json):
+            toast.show("正在保存到 Mio…", button: nil, in: webContainer)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let r = await self.host.save(kind: kind, payloadJSON: json)
+                let m = MioSaveKind.message(for: r)
+                self.toast.show(m.text, button: m.ok ? nil : "打开 Mio", in: self.webContainer) { [weak self] in self?.newTab(url: MioMacHome.address) }
+            }
+        case .showReader(let articleJSON):
+            let obj = (try? JSONSerialization.jsonObject(with: Data(articleJSON.utf8))) as? [String: Any]
+            guard let page = obj?["page"] as? String, !page.isEmpty, let wv else {
+                toast.show("这个网页没有可提取的正文", button: nil, in: webContainer)
+                return
+            }
+            let base = (obj?["url"] as? String).flatMap(URL.init(string:)) ?? wv.url
+            wv.loadHTMLString(page, baseURL: base)
+        case .installUserScript(let url):
+            installUserScript(from: url)
+        }
+    }
+
+    /// 安装用户脚本：下载（含 @require 完整性校验）→ 确认 → 安装
+    func installUserScript(from url: URL) {
+        toast.show("正在下载用户脚本…", button: nil, in: webContainer)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let pkg = try await MioUserScriptInstaller.prepare(url: url)
+                let a = NSAlert()
+                a.messageText = "安装用户脚本「\(pkg.meta.name)」？"
+                let sites = (pkg.meta.matches + pkg.meta.includes).prefix(6).joined(separator: "\n")
+                a.informativeText = [pkg.meta.version.isEmpty ? nil : "版本 \(pkg.meta.version)", pkg.meta.description.isEmpty ? nil : pkg.meta.description,
+                                     sites.isEmpty ? nil : "运行于：\n\(sites)"].compactMap { $0 }.joined(separator: "\n\n")
+                a.addButton(withTitle: "安装")
+                a.addButton(withTitle: "取消")
+                guard a.runModal() == .alertFirstButtonReturn else { return }
+                _ = self.host.kit.userScripts.install(pkg)
+                self.toast.show("已安装「\(pkg.meta.name)」，重新载入网页后生效", button: "重新载入", in: self.webContainer) { [weak self] in self?.activeWebView?.reload() }
+            } catch {
+                self.toast.show("安装失败：\(error)", button: nil, in: self.webContainer)
+            }
         }
     }
 
     /// 模块开关 / 设置变了：所有标签重装注入脚本（下次载入生效）
     func reinstallModuleScripts() {
-        for (_, wv) in webViews { MioMacWebKit.installScripts(wv.configuration.userContentController) }
+        host.reinstallAll()
         refreshChrome()
     }
 
@@ -324,7 +400,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
     var activeTabID: Int? { store.activeID }
 
     private func makeWebView(containerID: String, configuration: WKWebViewConfiguration? = nil) -> WKWebView {
-        let config = configuration ?? MioMacWebKit.configuration(containerID: containerID)
+        let config = configuration ?? host.configuration(containerID: containerID)
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.customUserAgent = MioMacWebKit.desktopUserAgent
         wv.allowsBackForwardNavigationGestures = true   // 触控板双指左右滑：前进 / 后退（带系统的页面滑动动画）
@@ -333,6 +409,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         wv.isInspectable = true
         wv.underPageBackgroundColor = MioTheme.toolbar
         wv.translatesAutoresizingMaskIntoConstraints = false
+        host.attach(wv) // MioKit 模块：脚本、消息通道、MioCore 桥、内容规则（load 之前）
         return wv
     }
 
@@ -357,20 +434,26 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         observations[id] = nil
     }
 
-    /// 「mio://home」/ 空 → 首页实际地址
+    /// 空 / 「mio://home」「about:home」「about:newtab」→ 新标签页地址（默认 mio://home）
     func resolveTabURL(_ s: String?) -> String {
-        guard let s, !s.isEmpty else { return Self.homeLoadURL }
-        return MioMacHome.isHomeAddress(s) ? Self.homeLoadURL : s
+        guard let s, !s.isEmpty else { return Self.newTabURL }
+        return MioMacHome.isHomeAddress(s) ? Self.newTabURL : s
     }
 
-    func isHome(_ url: URL?) -> Bool { MioMacHome.isHomePage(url, loadURL: Self.homeLoadURL) }
+    /// mio://home 或 MioCore 首页（地址栏显示「Mio」）
+    func isHome(_ url: URL?) -> Bool { host.kit.home.isHome(url) }
 
     /// 新建标签。configuration 非空 = 页面 window.open / target=_blank 打开（WebKit 自己加载，不能再 load）
     @discardableResult
     func newTab(url: String? = nil, containerID: String? = nil, activate: Bool = true, fromActive: Bool = false,
                 configuration: WKWebViewConfiguration? = nil) -> (id: Int, webView: WKWebView)? {
         let target = resolveTabURL(url)
-        guard let t = store.add(target, title: nil, activate: activate, fromActive: fromActive, containerID: containerID) else {
+        // 容器站点规则（「总在此容器打开此网站」）：没有指定容器、不是从锁定标签打开时生效
+        var container = containerID
+        if container == nil, host.kit.registry.isEnabled(host.kit.containersModule.id) {
+            container = host.kit.containers.containerFor(url: URL(string: target))
+        }
+        guard let t = store.add(target, title: nil, activate: activate, fromActive: fromActive, containerID: container) else {
             NSSound.beep()
             return nil
         }
@@ -422,6 +505,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         guard store.close(id) != nil else { return }
         if let wv = webViews.removeValue(forKey: id) {
             detachObservers(id)
+            host.detach(wv)
             wv.stopLoading()
             wv.navigationDelegate = nil
             wv.uiDelegate = nil
@@ -587,12 +671,12 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func refreshTabs() {
-        let state = MioMacWebKit.containerState()
+        let containers = host.kit.containers
         // 固定标签总在最前（恢复会话 / 移动之后再校正一次）
         let pinnedIDs = store.tabs.filter { pinned.contains($0.id) }.map(\.id)
         for (k, id) in pinnedIDs.enumerated() { if let i = store.index(of: id), i != k { store.move(from: i, to: k) } }
         let items: [MioMacTabBar.Item] = store.tabs.map { t in
-            let color = t.containerID == MioContainerCore.defaultId ? nil : MioMacWebKit.colorFor(container: state.get(t.containerID))
+            let color = t.containerID == MioContainerCore.defaultId ? nil : MioMacWebKit.colorFor(container: containers.container(t.containerID))
             return MioMacTabBar.Item(id: t.id, title: title(for: t), color: color, pinned: pinned.contains(t.id),
                                      loading: webViews[t.id]?.isLoading ?? false, audible: audible.contains(t.id), muted: muted.contains(t.id),
                                      favicon: favicons[t.id], isHome: isHome(URL(string: t.url)))
@@ -604,7 +688,8 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         }
         if verticalTabs.tabs != vt { verticalTabs.tabs = vt }
         if verticalTabs.activeID != store.activeID { verticalTabs.activeID = store.activeID }
-        if verticalTabs.containers != state.containers { verticalTabs.containers = state.containers }
+        let userContainers = MioMacWebKit.userContainers
+        if verticalTabs.containers != userContainers { verticalTabs.containers = userContainers }
     }
 
     func refreshChrome() {
@@ -740,7 +825,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
     /// 恢复上次的标签（只建当前标签的 WKWebView，其他点到时再加载）
     @discardableResult
     func restoreSession() -> Int {
-        let known = [MioContainerCore.defaultId] + MioMacWebKit.containerState().containers.map { $0.id }
+        let known = host.kit.containers.containers.map { $0.id }
         let n = store.restore(UserDefaults.standard.data(forKey: Self.sessionKey), knownContainers: known)
         if n > 0 {
             let idx = (UserDefaults.standard.array(forKey: Self.sessionPinnedKey) as? [Int]) ?? []
@@ -803,7 +888,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
     func windowWillClose(_ notification: Notification) {
         if !verticalTabsMode { UserDefaults.standard.set(sidebarVisible, forKey: Self.sidebarKey) }
         if !store.tabs.isEmpty { saveSession() }
-        for (_, wv) in webViews { wv.stopLoading() }
+        for (_, wv) in webViews { wv.stopLoading(); host.detach(wv) }
         audioTimer?.invalidate()
         if let w = window { MioTrafficLights.stopObserving(w) }
         MioMacPopupPanel.current?.dismiss(animated: false)
@@ -863,6 +948,12 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
     private func loadFailed(_ webView: WKWebView, _ error: Error) {
         let ns = error as NSError
         if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
+        // MioCore 打不开：显示 mio://offline（带重试）
+        let failed = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url
+        if ns.domain == NSURLErrorDomain, MioCoreOrigin.isMioCore(failed, prefs: host.kit.prefs) {
+            webView.load(URLRequest(url: host.kit.home.offlineURL(failed: failed)))
+            return
+        }
         if let id = tabID(of: webView) { lastError[id] = "\(ns.domain) \(ns.code) \(ns.localizedDescription)"; finished.insert(id) }
         webViewChanged(webView)
         progressChanged(webView)
@@ -870,10 +961,12 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else { return .allow }
-        if scheme == MioMacHome.address.components(separatedBy: ":").first {
-            // mio://home → 首页实际地址（其他 mio:// 地址留给 MioKit 的方案处理，现在忽略）
-            if MioMacHome.isHomeAddress(url.absoluteString) { navigate(webView, to: MioMacHome.address) }
-            return .cancel
+        let mainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+        if scheme == MioHomeModel.scheme {
+            // mio://home / offline / about 由 MioSchemeHandler 返回；只允许主框架打开内置页（iframe 嵌不进来）
+            guard mainFrame, MioCoreOrigin.internalHosts.contains(url.host?.lowercased() ?? "") else { return .cancel }
+            host.willNavigateMainFrame(webView, to: url)
+            return .allow
         }
         if !["http", "https", "about", "blob", "data", "file", "javascript"].contains(scheme) {
             NSWorkspace.shared.open(url) // mailto: / tel: / 其他 App 的 scheme 交给系统
@@ -885,6 +978,14 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
             newTab(url: url.absoluteString, containerID: container, activate: navigationAction.modifierFlags.contains(.shift), fromActive: true)
             return .cancel
         }
+        // 用户脚本安装：打开 .user.js 时问是否安装（Tampermonkey 行为）
+        if mainFrame, navigationAction.navigationType == .linkActivated || navigationAction.navigationType == .other,
+           url.path.lowercased().hasSuffix(".user.js"), scheme == "https" || scheme == "http",
+           host.kit.registry.isEnabled(host.kit.userScriptsModule.id) {
+            installUserScript(from: url)
+            return .cancel
+        }
+        if mainFrame { host.willNavigateMainFrame(webView, to: url) }
         return .allow
     }
 
@@ -929,11 +1030,6 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         p.canChooseFiles = true
         return p.runModal() == .OK ? p.urls : nil
     }
-}
-
-/// MioCore 模块（共享 Kit）默认的旧导航地址：Mac 版把它映射到 mio://home
-enum MioCoreModuleHome {
-    static let legacyNav = MioTabStore.defaultNewTabURL
 }
 
 // MARK: - 历史 / 书签 / 网站图标（窗口之间共享，存在 UserDefaults）

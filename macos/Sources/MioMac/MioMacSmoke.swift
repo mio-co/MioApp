@@ -6,10 +6,13 @@
 //   4. 容器：新容器标签用 WKWebsiteDataStore(forIdentifier: 容器 UUID) 加载页面
 //   5. Firefox 式界面：mio://home、本机桥来源校验、固定 / 静音 / 拖拽排序 / 关闭 / 溢出 / 拖出成新窗口、地址栏下拉、缩放 HUD、
 //      查找栏、Mio 扩展面板、应用菜单（含子视图滑动）、侧边栏 / 垂直标签、全屏；录屏（.mov）+ 每个动画的连拍帧条 + 帧率
+//   4b. Mio 扩展（MioKit）接通：测试页（example.com）上的广告请求被内容规则拦下（门槛）；在「Mio 扩展」面板里关掉广告拦截 / WebRTC 防护
+//       → 重新载入后规则卸下、WebRTC 防护脚本不再注入，再打开又恢复（门槛）；用户脚本安装后注入页面（只记录）
 //   6. 设置窗口（about:preferences 风格）截图 → MIO_SMOKE_SHOTS 目录（默认与 json 同目录）
 
 import AppKit
 import WebKit
+import MioKit
 
 @MainActor
 final class MioMacSmoke {
@@ -105,12 +108,11 @@ final class MioMacSmoke {
         }
 
         // 4. 容器（后台标签）
-        var state = MioMacWebKit.containerState()
+        let host = MioMacKit.shared
         var containerOK = false
-        var ciContainer = state.containers.first(where: { $0.name == "CI 冒烟" })
-        if ciContainer == nil { ciContainer = try? state.create(name: "CI 冒烟") }
+        var ciContainer = host.kit.containers.containers.first(where: { $0.name == "CI 冒烟" })
+        if ciContainer == nil { ciContainer = try? host.kit.containers.create(name: "CI 冒烟") }
         if let c = ciContainer {
-            UserDefaults.standard.set(state.jsonData(), forKey: MioMacWebKit.containersStateKey)
             if let ct = controller.newTab(url: "https://example.com/?container", containerID: c.id, activate: false) {
                 await waitLoad(ct.id, timeout: 40)
                 let ds = ct.webView.configuration.websiteDataStore
@@ -129,8 +131,14 @@ final class MioMacSmoke {
             report["youtubeError"] = orNull(controller.lastError[yt.id])
             let ytProbe = await eval(yt.webView, Self.youtubeProbeJS)
             report["youtube"] = orNull(ytProbe)
-            report["youtubeModuleMenu"] = MioMacWebKit.modules.menuItems(page: controller.currentPage).map { $0.id }
+            report["youtubeModuleMenu"] = host.kit.registry.menuItems(page: controller.currentPage).map { $0.id }
         }
+
+        // 4b. Mio 扩展（MioKit）接通
+        let kitReport = await kitSmoke()
+        report["miokit"] = kitReport
+        let blockOK = (kitReport["blockOK"] as? Bool) ?? false
+        let toggleOK = (kitReport["toggleOK"] as? Bool) ?? false
 
         // 5. Firefox 式界面 + 动画证据
         try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -168,14 +176,25 @@ final class MioMacSmoke {
         ui["homeOK"] = homeOK
         shot("mac-native-home", &shots)
 
-        // 5b. 本机桥只对 MioCore 来源开放
-        let bridgeJS = "try { const r = await window.webkit.messageHandlers.mioHome.postMessage({op:'ping'}); return 'allowed:' + JSON.stringify(r); } catch (e) { return 'rejected:' + (e && e.message ? e.message : String(e)); }"
+        // 5b. MioCore 本机桥（MioKit 的 MioCoreBridgeHandler，消息通道 mio）：只对 MioCore 来源和 mio:// 内置页开放
+        let bridgeJS = "try { const r = await window.webkit.messageHandlers.mio.postMessage({v: 1, id: 'ci', method: 'ping', params: {}}); return JSON.stringify(r); } catch (e) { return 'rejected:' + (e && e.message ? e.message : String(e)); }"
         var bridge: [String: Any] = [:]
-        if let hwv = c.activeWebView { bridge["home"] = await callAsync(hwv, bridgeJS) }
+        if let hwv = c.activeWebView, c.isHome(hwv.url) { bridge["home"] = await callAsync(hwv, bridgeJS) }
         if let ex = c.store.tabs.first(where: { $0.url.contains("example.com") }), let ewv = c.webViews[ex.id] {
             bridge["example"] = await callAsync(ewv, bridgeJS)
+            bridge["exampleWindowMio"] = await callAsync(ewv, "return typeof window.Mio")
         }
-        let bridgeOK = ((bridge["example"] as? String) ?? "").hasPrefix("rejected:") && ((bridge["example"] as? String) ?? "").contains("origin-not-allowed")
+        if let ab = c.newTab(url: "mio://about", activate: false) {
+            await waitLoad(ab.id, timeout: 15)
+            bridge["aboutURL"] = orNull(ab.webView.url?.absoluteString)
+            bridge["about"] = await callAsync(ab.webView, bridgeJS)
+            bridge["aboutWindowMio"] = await callAsync(ab.webView, "return typeof window.Mio")
+            c.closeTab(ab.id)
+        }
+        let exReply = (bridge["example"] as? String) ?? ""
+        let aboutReply = (bridge["about"] as? String) ?? ""
+        let bridgeOK = exReply.contains("\"ok\":false") && exReply.contains("forbidden") && aboutReply.contains("\"ok\":true") && aboutReply.contains("pong")
+            && (bridge["exampleWindowMio"] as? String) == "undefined"
         bridge["gateOK"] = bridgeOK
         ui["bridge"] = bridge
 
@@ -448,17 +467,19 @@ final class MioMacSmoke {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             MioMacRecorder.savePNG(MioMacRecorder.capture(window: d.settingsWindow), to: (dir as NSString).appendingPathComponent("mac-native-settings.png"))
             shots["settingsCache"] = await screenshot(window: d.settingsWindow, webView: nil, dir: dir, name: "mac-native-settings-cache", chrome: false)
-            d.openSettings(pane: .general)
-            try? await Task.sleep(nanoseconds: 900_000_000)
-            MioMacRecorder.savePNG(MioMacRecorder.capture(window: d.settingsWindow), to: (dir as NSString).appendingPathComponent("mac-native-settings-general.png"))
+            for (pane, name) in [(MioMacPrefsPane.general, "general"), (.privacy, "privacy"), (.containers, "containers"), (.userScripts, "userscripts")] {
+                d.openSettings(pane: pane)
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                MioMacRecorder.savePNG(MioMacRecorder.capture(window: d.settingsWindow), to: (dir as NSString).appendingPathComponent("mac-native-settings-\(name).png"))
+            }
             report["settingsWindow"] = d.settingsWindow?.isVisible ?? false
             d.settingsWindow?.close()
         }
         report["ui"] = ui
         report["screenshots"] = shots
         report["settingsPanes"] = MioMacPrefsPane.allCases.map { $0.title }
-        report["modules"] = MioMacWebKit.modules.modules.map { ["id": $0.id, "section": $0.section.rawValue, "enabled": $0.isEnabled(MioMacWebKit.modules.prefs)] as [String: Any] }
-        report["moduleScripts"] = MioMacWebKit.modules.scripts().map { $0.moduleID }
+        report["modules"] = host.kit.registry.modules.map { ["id": $0.id, "section": $0.section.rawValue, "enabled": $0.isEnabled(host.kit.prefs)] as [String: Any] }
+        report["moduleScripts"] = host.kit.registry.scripts().map { $0.moduleID }
         report["tabs"] = controller.store.tabs.map { ["id": $0.id, "url": $0.url, "title": $0.title, "container": $0.containerID] as [String: Any] }
         report["tabStripItems"] = controller.tabBar.items.count
         let keys = MioMacMenu.keyEquivalents(NSApp.mainMenu)
@@ -476,15 +497,146 @@ final class MioMacSmoke {
         report["chromeOK"] = chromeOK
         report["mseOK"] = mseOK
         let zoomOK = (report["zoomOK"] as? Bool) ?? false
-        let modulesOK = MioMacWebKit.modules.scripts().count >= 2 && ((report["youtubeModuleMenu"] as? [String]) ?? []).contains("youtubeFocus.settings")
+        let modulesOK = host.kit.registry.scripts().count >= 2 && ((report["youtubeModuleMenu"] as? [String]) ?? []).contains("youtubeFocus.settings")
         report["modulesOK"] = modulesOK
-        // 门槛：原有（MSE / 缩放 / 容器 / 快捷键 / 模块）+ Firefox 布局 + 桥来源校验；动画 / 截图 / 首页（依赖外网）只记录
-        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK && modulesOK && bridgeOK
+        report["blockOK"] = blockOK
+        report["toggleOK"] = toggleOK
+        report["bridgeOK"] = bridgeOK
+        // 门槛：原有（MSE / 缩放 / 容器 / 快捷键 / 模块）+ Firefox 布局 + MioKit 桥来源校验 + 广告拦截生效 + 扩展开关生效；
+        // 动画 / 截图 / 首页（依赖外网）/ 用户脚本注入只记录
+        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK && modulesOK && bridgeOK && blockOK && toggleOK
         report["pass"] = pass
         report["seconds"] = Int(Date().timeIntervalSince(started))
         write()
         print("MIO_MAC_NATIVE_SMOKE " + (pass ? "PASS" : "FAIL"))
         exit(pass ? 0 : 1)
+    }
+
+    // MARK: - Mio 扩展（MioKit）冒烟
+
+    static let kitProbeJS = """
+    async function hit(u) { try { await fetch(u, { mode: 'no-cors', cache: 'no-store' }); return 'loaded'; } catch (e) { return 'blocked:' + (e && e.message ? e.message : String(e)); } }
+    const ad = await hit('https://securepubads.g.doubleclick.net/tag/js/gpt.js?mio=' + Date.now());
+    const control = await hit(location.origin + '/?mio-control=' + Date.now());
+    return JSON.stringify({ ad: ad, control: control, rtcGuard: window.__mioRTCGuard !== undefined, us: document.documentElement.getAttribute('data-mio-us') });
+    """
+
+    static let userScriptCode = """
+    // ==UserScript==
+    // @name         Mio CI 冒烟
+    // @version      1.0
+    // @match        https://example.com/*
+    // @grant        none
+    // @run-at       document-start
+    // ==/UserScript==
+    document.documentElement.setAttribute('data-mio-us', 'ok');
+    """
+
+    /// 测试页 example.com：广告请求（doubleclick，第三方）被内置规则拦下、同源请求照常；
+    /// 在 Mio 扩展面板里关掉「广告 / 跟踪拦截」「WebRTC 防泄露」→ 重新载入后规则卸下、防护脚本不再注入；打开后恢复
+    private func kitSmoke() async -> [String: Any] {
+        let host = MioMacKit.shared
+        let c = controller
+        var r: [String: Any] = [:]
+        var waited = 0
+        while host.blocker.ruleLists.isEmpty && waited < 900 { try? await Task.sleep(nanoseconds: 100_000_000); waited += 1 }
+        r["ruleLists"] = host.blocker.ruleLists.keys.sorted()
+        r["rulesReadyMs"] = waited * 100
+        r["filterStatus"] = host.kit.filters.statusText()
+        guard let t = c.newTab(url: "https://example.com/?mio-kit-smoke") else { r["error"] = "no tab"; return r }
+        await waitLoad(t.id, timeout: 40)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let wv = t.webView
+        func probe() async -> [String: Any] {
+            let s = await callAsync(wv, Self.kitProbeJS)
+            return ((try? JSONSerialization.jsonObject(with: Data(s.utf8))) as? [String: Any]) ?? ["raw": s]
+        }
+        func applied() -> [String] { host.modules(for: wv)?.appliedRuleListIdentifiers ?? [] }
+        func reload() async {
+            wv.reload()
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            await waitLoad(t.id, timeout: 40)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+
+        // 1) 默认开启：规则挂上，广告请求被拦
+        let on1 = await probe()
+        let applied1 = applied()
+        r["on"] = on1
+        r["appliedOn"] = applied1
+        r["pageMenu"] = c.pageMenuItems.map { $0.title }
+        let blocked1 = ((on1["ad"] as? String) ?? "").hasPrefix("blocked")
+        let blockOK = !applied1.isEmpty && blocked1 && (on1["control"] as? String) == "loaded"
+        r["blockOK"] = blockOK
+
+        // 2) Mio 扩展面板里关掉广告拦截 + WebRTC 防护（和点开关同一条路径）
+        func panelToggle(_ moduleID: String, _ on: Bool) -> Bool {
+            c.showExtensionsPanel()
+            let row = findView("mio.ext.\(moduleID)", in: MioMacPopupPanel.current?.contentView) as? MioMacMenuRow
+            row?.toggle?.state = on ? .on : .off
+            row?.onToggle?(on)
+            c.dismissPanel()
+            return row != nil
+        }
+        let foundAd = panelToggle(host.kit.adblock.id, false)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        let foundRTC = panelToggle(host.kit.webRTC.id, false)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        r["panelRowsFound"] = foundAd && foundRTC
+        r["settingsChangeKey"] = orNull(host.lastChangedKey)
+        r["adblockEnabledAfterOff"] = host.kit.registry.isEnabled(host.kit.adblock.id)
+        await reload()
+        let off = await probe()
+        let appliedOff = applied()
+        r["off"] = off
+        r["appliedOff"] = appliedOff
+
+        // 3) 再打开
+        _ = panelToggle(host.kit.adblock.id, true)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        _ = panelToggle(host.kit.webRTC.id, true)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        await reload()
+        let on2 = await probe()
+        let applied2 = applied()
+        r["onAgain"] = on2
+        r["appliedOnAgain"] = applied2
+        // 关掉后广告请求能否发出去取决于 runner 网络：只把「规则卸下 + 防护脚本消失 + 重新打开后恢复」作为门槛
+        let toggleGate = foundAd && foundRTC && (on1["rtcGuard"] as? Bool) == true && appliedOff.isEmpty && (off["rtcGuard"] as? Bool) == false
+            && !applied2.isEmpty && (on2["rtcGuard"] as? Bool) == true && ((on2["ad"] as? String) ?? "").hasPrefix("blocked")
+        r["adLoadedWhenOff"] = (off["ad"] as? String) == "loaded"
+        r["toggleOK"] = toggleGate
+
+        // 4) 用户脚本（document-start，页面世界）：安装 → 重新载入 → 注入；然后删除（只记录）
+        do {
+            let pkg = try await MioUserScriptInstaller.prepare(code: Self.userScriptCode, sourceURL: nil)
+            let script = host.kit.userScripts.install(pkg)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            await reload()
+            let us = await probe()
+            r["userScript"] = ["id": script.id, "probe": us["us"] ?? NSNull()] as [String: Any]
+            r["userScriptOK"] = (us["us"] as? String) == "ok"
+            r["userScriptsCount"] = host.kit.userScripts.scripts.count
+            // 设置窗口截图里能看到这条脚本（容器 / 用户脚本管理页），截完再删
+            if let d = delegate {
+                d.openSettings(pane: .userScripts)
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                MioMacRecorder.savePNG(MioMacRecorder.capture(window: d.settingsWindow), to: (dir.isEmpty ? (outPath as NSString).deletingLastPathComponent : dir) + "/mac-native-settings-userscripts-installed.png")
+                d.settingsWindow?.close()
+            }
+            host.kit.userScripts.delete(script.id)
+        } catch {
+            r["userScriptError"] = "\(error)"
+        }
+        c.closeTab(t.id)
+        return r
+    }
+
+    private func findView(_ id: String, in v: NSView?) -> NSView? {
+        guard let v else { return nil }
+        if v.accessibilityIdentifier() == id { return v }
+        for s in v.subviews { if let f = findView(id, in: s) { return f } }
+        return nil
     }
 
     // MARK: - UI 冒烟工具

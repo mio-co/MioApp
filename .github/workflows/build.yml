@@ -608,14 +608,15 @@ jobs:
           retention-days: 14
 
   mac-native:
-    # 原生 macOS（AppKit，SwiftPM：macos/）浏览器壳的可行性冒烟（feat/mac-native，不进 release）：
-    # MSE 门槛（Catalyst 的 WKWebView 没有 MediaSource）、YouTube 桌面 UA 的可用格式（只记录）、标签 / 容器 / 缩放 / 菜单快捷键、工具栏截图
+    # 原生 macOS（AppKit，SwiftPM：macos/，依赖 apple/MioKit）浏览器壳的冒烟（feat/mac-native，不进 release）：
+    # MSE 门槛（Catalyst 的 WKWebView 没有 MediaSource）、YouTube 桌面 UA 的可用格式（只记录）、标签 / 容器 / 缩放 / 菜单快捷键、工具栏截图；
+    # MioKit 接通：测试页广告请求被内容规则拦下、Mio 扩展开关切换生效、MioCore 桥只对 MioCore / mio:// 开放
     runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build + bundle (swift build → Mio Preview.app, ad-hoc)
+      - name: Build + bundle (xcodebuild macos/ + apple/MioKit → Mio Preview.app, ad-hoc)
         run: |
           set -euo pipefail
           xcodebuild -version
@@ -625,6 +626,9 @@ jobs:
           lipo -info "$APP/Contents/MacOS/MioMac"
           otool -L "$APP/Contents/MacOS/MioMac" | grep -E 'WebKit|AppKit'
           ! otool -L "$APP/Contents/MacOS/MioMac" | grep -i -E 'UIKit|Capacitor'
+          # MioKit 资源包（注入脚本 / 内置规则）在 Contents/Resources；构建目录删掉，冒烟只能从 .app 里找资源
+          find "$APP/Contents/Resources/MioKit_MioKit.bundle" -name '*.js' -o -name '*.txt' | sed "s|$APP/||"
+          rm -rf macos/.build
 
       - name: Smoke (MSE gate, YouTube formats, Firefox-style UI, animations, screenshots + recording)
         run: |
@@ -646,7 +650,10 @@ jobs:
           echo "--- app.log (tail) ---"; tail -40 mac-native-smoke/app.log
           echo "--- smoke.json ---"; cat "$OUT" 2>/dev/null || echo "(no smoke json)"
           echo "--- summary ---"
-          jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, modulesOK, missingKeys, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
+          jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, modulesOK, bridgeOK, blockOK, toggleOK, missingKeys, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
+          echo "--- MioKit ---"
+          jq -c '.miokit | {blockOK, toggleOK, ruleLists, rulesReadyMs, appliedOn, appliedOff, appliedOnAgain, on, off, onAgain, adLoadedWhenOff, panelRowsFound, settingsChangeKey, userScriptOK, userScript, userScriptError, pageMenu, filterStatus}' "$OUT" 2>/dev/null
+          jq -c '.ui.bridge' "$OUT" 2>/dev/null
           echo "--- Firefox UI ---"
           jq -c '.ui | {systemReduceMotion, homeOK, homeAddressBar, bridge, pinnedOK, dragOK, detachOK, overflow, dropdownRows, zoomHUDShown, zoomPill, findStatus, verticalMode, reduceMotionOK, tabsAboveNav, trafficLightsInTabRow, layout}' "$OUT" 2>/dev/null
           jq -c '.ui | {animation, recording, fullscreen}' "$OUT" 2>/dev/null

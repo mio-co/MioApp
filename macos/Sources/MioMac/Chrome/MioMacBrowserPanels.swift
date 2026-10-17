@@ -1,13 +1,15 @@
 // MioMacBrowserPanels.swift — 工具栏弹出面板和标签右键菜单（Firefox 桌面版的内容，Mio 化）：
 //   - ≡ 应用菜单：新建标签页 / 窗口、书签 ›、历史 ›、扩展和主题、打印、查找、缩放行（− 100% + ⤢）、设置、更多工具 ›、帮助 ›、退出
 //     子菜单在面板内左右滑动（Firefox 的 subview 切换）
-//   - 🧩 Mio 扩展：每个模块一个开关（关掉的模块不注入任何东西），还没迁移的扩展显示占位，底部「管理 Mio 扩展」
+//   - 🧩 Mio 扩展：「此页面」的模块动作（翻译、阅读、强制深色、保存到 Mio……）+ 每个模块一个开关（MioKit 的 MioExtensionSettingsModel），
+//     底部容器 / 用户脚本 / 管理 Mio 扩展
 //   - 站点信息（锁）/ 跟踪保护（盾牌）面板
 //   - ⌄ 列出所有标签页
 //   - 标签右键菜单
 
 import AppKit
 import WebKit
+import MioKit
 
 extension MioMacBrowserWindowController {
     static let panelWidth: CGFloat = 320
@@ -19,7 +21,7 @@ extension MioMacBrowserWindowController {
         let w = Self.panelWidth
         var stack: MioMacPanelStack!
         let root = MioMacMenuRow.column([
-            MioMacMenuRow(symbol: "person.crop.circle", title: "登录 MioCore", detail: "即将推出") { [weak self] in self?.dismissPanel(); self?.newTab(url: MioMacHome.address) },
+            MioMacMenuRow(symbol: "person.crop.circle", title: "登录 MioCore", detail: "在 Mio 主页登录") { [weak self] in self?.dismissPanel(); self?.newTab(url: MioMacHome.address) },
             nil,
             MioMacMenuRow(symbol: "plus.square.on.square", title: "新建标签页", shortcut: "⌘T") { [weak self] in self?.dismissPanel(); self?.newTabAction(nil) },
             MioMacMenuRow(symbol: "macwindow.badge.plus", title: "新建窗口", shortcut: "⌘N") { [weak self] in self?.dismissPanel(); self?.onNewWindow?() },
@@ -42,7 +44,7 @@ extension MioMacBrowserWindowController {
             nil,
             MioMacMenuRow(symbol: "printer", title: "打印…", shortcut: "⌘P") { [weak self] in self?.dismissPanel(); self?.printPage(nil) },
             MioMacMenuRow(symbol: "magnifyingglass", title: "在页面中查找…", shortcut: "⌘F") { [weak self] in self?.dismissPanel(); self?.showFindBar(nil) },
-            disabled(MioMacMenuRow(symbol: "character.bubble", title: "翻译页面…", detail: "Mio 扩展 · 即将推出")),
+            translateRow(),
             zoomRow(width: w),
             nil,
             MioMacMenuRow(symbol: "gearshape", title: "设置", shortcut: "⌘,") { [weak self] in self?.dismissPanel(); self?.onOpenSettings?(.general) },
@@ -60,6 +62,17 @@ extension MioMacBrowserWindowController {
         stack = MioMacPanelStack(root: root, width: w)
         stack.setAccessibilityIdentifier("mio.appmenu")
         present(stack, from: navBar.menuButton) { [weak self] in self?.navBar.menuButton.isActive = false }
+    }
+
+    /// 「翻译页面」：Mio 扩展的翻译模块（关掉或当前页不能翻译时变灰）
+    private func translateRow() -> MioMacMenuRow {
+        let item = pageMenuItems.first { $0.moduleID == host.kit.translate.id && $0.itemID == "translate" }
+        let r = MioMacMenuRow(symbol: "character.bubble", title: "翻译页面…", detail: item == nil ? "Mio 扩展 · 翻译" : nil) { [weak self] in
+            self?.dismissPanel()
+            if let item { self?.runModuleItem(item) }
+        }
+        r.isEnabled = item != nil
+        return r
     }
 
     private func disabled(_ r: MioMacMenuRow) -> MioMacMenuRow {
@@ -186,47 +199,49 @@ extension MioMacBrowserWindowController {
 
     func showExtensionsPanel() {
         navBar.extensionsButton.isActive = true
-        let w = Self.panelWidth + 20
-        let reg = MioMacWebKit.modules
+        let w = Self.panelWidth + 40
         var rows: [NSView?] = []
-        for m in reg.modules where m.enabledKey != nil {
-            let r = MioMacMenuRow(symbol: symbolFor(module: m.id), title: m.title, toggle: m.isEnabled(reg.prefs))
-            r.toolTip = m.summary
-            r.onToggle = { [weak self] on in
-                reg.setEnabled(m.id, on)
-                self?.extensionsChanged()
+        // 此页面：模块菜单项（翻译此页、阅读视图、强制深色、在此网站关闭拦截 / 允许 WebRTC、保存到 Mio、容器……）
+        let items = pageMenuItems.filter { !($0.moduleID == host.kit.mioCore.id && $0.itemID == "home") }
+        if !items.isEmpty {
+            rows.append(MioMacMenuRow.note("此页面"))
+            for item in items.prefix(12) {
+                let r = MioMacMenuRow(symbol: item.symbol ?? "puzzlepiece", title: item.title, detail: item.checked == true ? "✓" : nil) { [weak self] in
+                    self?.dismissPanel()
+                    self?.runModuleItem(item)
+                }
+                r.setAccessibilityIdentifier("mio.ext.item.\(item.id)")
+                rows.append(r)
             }
-            r.setAccessibilityIdentifier("mio.ext.\(m.id)")
+            rows.append(nil)
+        }
+        // 每个模块的总开关（数据来自 MioKit 的设置模型：改动写 prefs → .mioSettingsDidChange → 所有标签重装脚本 / 重挂规则）
+        let model = host.kit.settingsModel
+        for g in model.groups() {
+            guard let toggleRow = g.rows.first(where: { $0.role == .moduleToggle }) else { continue }
+            let r = MioMacMenuRow(symbol: g.symbol, title: g.title, toggle: g.enabled)
+            r.toolTip = g.summary
+            r.onToggle = { [weak self] on in
+                model.apply(toggleRow, .bool(on))
+                self?.extensionsChanged(g.title, on: on)
+            }
+            r.setAccessibilityIdentifier("mio.ext.\(g.moduleID)")
             rows.append(r)
         }
         rows.append(nil)
-        for p in MioMacPlannedExtension.all {
-            let r = MioMacMenuRow(symbol: p.symbol, title: p.title, detail: "即将推出", toggle: false)
-            r.toggle?.isEnabled = false
-            r.isEnabled = false
-            r.toolTip = p.summary
-            rows.append(r)
-        }
         rows.append(MioMacMenuRow(symbol: "square.stack.3d.up", title: "容器", submenu: true) { [weak self] in self?.dismissPanel(); self?.onOpenSettings?(.containers) })
-        rows.append(nil)
+        rows.append(MioMacMenuRow(symbol: "curlybraces", title: "用户脚本", submenu: true, detail: "\(host.kit.userScripts.scripts.count) 个") { [weak self] in
+            self?.dismissPanel(); self?.onOpenSettings?(.userScripts)
+        })
         rows.append(MioMacMenuRow(symbol: "gearshape", title: "管理 Mio 扩展…") { [weak self] in self?.dismissPanel(); self?.onOpenSettings?(.extensions) })
         let col = MioMacMenuRow.column(rows, width: w, header: "Mio 扩展")
         col.setAccessibilityIdentifier("mio.extensionsPanel")
         present(col, from: navBar.extensionsButton) { [weak self] in self?.navBar.extensionsButton.isActive = false }
     }
 
-    private func symbolFor(module id: String) -> String {
-        switch id {
-        case "youtubeFocus": return "hourglass"
-        case "webrtc": return "video.slash"
-        case "miocore": return "house"
-        default: return "puzzlepiece"
-        }
-    }
-
-    private func extensionsChanged() {
-        reinstallModuleScripts()
-        toast.show("Mio 扩展已更改，重新载入网页后生效", button: "重新载入", in: webContainer) { [weak self] in self?.activeWebView?.reload() }
+    private func extensionsChanged(_ title: String, on: Bool) {
+        refreshChrome()
+        toast.show("「\(title)」已\(on ? "打开" : "关闭")，重新载入网页后生效", button: "重新载入", in: webContainer) { [weak self] in self?.activeWebView?.reload() }
     }
 
     // MARK: - 站点信息 / 跟踪保护
@@ -234,7 +249,7 @@ extension MioMacBrowserWindowController {
     func showIdentityPanel() {
         let url = activeWebView?.url
         let home = isHome(url)
-        let host = home ? "Mio" : (url?.host ?? "新标签页")
+        let hostName = home ? "Mio" : (url?.host ?? "新标签页")
         let sec = MioURLDisplay.security(url, isHome: home)
         var rows: [NSView?] = []
         switch sec {
@@ -244,7 +259,7 @@ extension MioMacBrowserWindowController {
         default: rows.append(MioMacMenuRow(symbol: "info.circle", title: "本地页面"))
         }
         if let t = activeTabID.flatMap({ store.tab($0) }), t.containerID != MioContainerCore.defaultId,
-           let c = MioMacWebKit.containerState().get(t.containerID) {
+           let c = host.kit.containers.container(t.containerID) {
             rows.append(MioMacMenuRow(symbol: "square.stack.3d.up", title: "容器", detail: c.name))
         }
         let z = activeWebView.map { Double($0.pageZoom) } ?? 1
@@ -259,17 +274,32 @@ extension MioMacBrowserWindowController {
                 self?.clearSiteData(host: h)
             })
         }
-        let col = MioMacMenuRow.column(rows, width: Self.panelWidth, header: host)
+        let col = MioMacMenuRow.column(rows, width: Self.panelWidth, header: hostName)
         present(col, from: navBar.urlBar.identityButton, alignment: .leading, onClose: nil)
     }
 
+    /// 跟踪保护（盾牌）：广告 / 跟踪拦截的状态 + 「在此网站关闭拦截」
     func showShieldPanel() {
-        let col = MioMacMenuRow.column([
-            MioMacMenuRow(symbol: "shield.lefthalf.filled", title: "增强型跟踪保护", detail: "即将推出"),
-            MioMacMenuRow.note("广告与跟踪拦截将由「Mio 扩展」提供（WKContentRuleList，可导入 EasyList / AdGuard 列表），正在迁移。"),
-            nil,
-            MioMacMenuRow(symbol: "gearshape", title: "隐私与安全设置") { [weak self] in self?.dismissPanel(); self?.onOpenSettings?(.privacy) },
-        ], width: Self.panelWidth, header: "跟踪保护")
+        let kit = host.kit
+        let on = kit.registry.isEnabled(kit.adblock.id)
+        let applied = host.modules(for: activeWebView)?.appliedRuleListIdentifiers.count ?? 0
+        var rows: [NSView?] = []
+        let state = !on ? "已关闭" : (applied > 0 ? "已开启" : "此网站已关闭")
+        rows.append(MioMacMenuRow(symbol: on && applied > 0 ? "shield.lefthalf.filled" : "shield.slash", title: "广告与跟踪拦截", detail: state))
+        if on, let item = pageMenuItems.first(where: { $0.moduleID == kit.adblock.id }) {
+            let r = MioMacMenuRow(symbol: "shield.slash", title: "在此网站关闭拦截", toggle: item.checked == true)
+            r.onToggle = { [weak self] _ in
+                self?.dismissPanel()
+                self?.runModuleItem(item)
+            }
+            r.setAccessibilityIdentifier("mio.shield.allow")
+            rows.append(r)
+        }
+        rows.append(MioMacMenuRow.note(on ? "\(kit.filters.statusText())。此页挂了 \(applied) 份规则。" : "在 Mio 扩展里打开「广告 / 跟踪拦截」。"))
+        rows.append(nil)
+        rows.append(MioMacMenuRow(symbol: "puzzlepiece.extension", title: "Mio 扩展…") { [weak self] in self?.dismissPanel(); self?.onOpenSettings?(.extensions) })
+        rows.append(MioMacMenuRow(symbol: "gearshape", title: "隐私与安全设置") { [weak self] in self?.dismissPanel(); self?.onOpenSettings?(.privacy) })
+        let col = MioMacMenuRow.column(rows, width: Self.panelWidth + 20, header: "跟踪保护")
         present(col, from: navBar.urlBar.shieldButton, alignment: .leading, onClose: nil)
     }
 
@@ -364,7 +394,7 @@ extension MioMacBrowserWindowController {
         m.addItem(move)
         let reopen = NSMenuItem(title: "在容器中重新打开", action: nil, keyEquivalent: "")
         let sub = NSMenu()
-        for c in [MioContainerCore.defaultContainer] + MioMacWebKit.containerState().containers where c.id != t.containerID {
+        for c in host.kit.containers.containers where c.id != t.containerID {
             let it = MioMacClosureMenuItem(title: c.name) { [weak self] in self?.reopenInContainer(id, containerID: c.id) }
             if let color = MioMacWebKit.colorFor(container: c) {
                 it.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)?.withSymbolConfiguration(.init(paletteColors: [color]))
