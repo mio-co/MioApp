@@ -1076,3 +1076,51 @@ enum MioTabsSmoke {
         }
     }
 }
+
+// MARK: - Settings UI（浏览器设置页「标签页」一节）
+
+enum MioTabsSettingsUI {
+    static var footer: String {
+        #if targetEnvironment(macCatalyst)
+        let keys = "⌘T 新建、⌘W 关闭、⌘⇧T 重新打开、⌃Tab 切换、⌘1…9、⌘⇧W 收起。"
+        #else
+        let keys = "外接键盘：⌘T 新建、⌘W 关闭、⌘⇧T 重新打开、⌃Tab 切换。"
+        #endif
+        return "MioCore 里点外链会在新标签打开；网页里的新窗口链接也开新标签，长按 / 右键链接可「在新标签页中打开」。✕ / ⌄ 收起浏览器时标签都留在后台，主界面右下角的数字角标一点即回。App 重启后恢复标签列表。" + keys
+    }
+
+    static func configure(_ cell: UITableViewCell) {
+        cell.textLabel?.text = "新标签页地址"
+        cell.detailTextLabel?.text = MioTabsSettings.customNewTabURL == nil ? "MioCore 导航（默认）" : MioTabsSettings.newTabURL
+        cell.accessoryType = .disclosureIndicator
+        cell.selectionStyle = .default
+    }
+
+    static func editNewTabPage(from vc: UIViewController, done: @escaping () -> Void) {
+        let a = UIAlertController(title: "新标签页地址", message: "留空 = MioCore 导航（沿用主界面的登录状态）", preferredStyle: .alert)
+        a.addTextField {
+            $0.keyboardType = .URL
+            $0.autocapitalizationType = .none
+            $0.autocorrectionType = .no
+            $0.placeholder = MioTabStore.defaultNewTabURL
+            $0.text = MioTabsSettings.customNewTabURL
+        }
+        a.addAction(UIAlertAction(title: "取消", style: .cancel))
+        a.addAction(UIAlertAction(title: "恢复默认", style: .default) { _ in
+            MioTabsSettings.newTabURL = ""
+            done()
+        })
+        a.addAction(UIAlertAction(title: "保存", style: .default) { _ in
+            let t = a.textFields?.first?.text ?? ""
+            if MioTabStore.normalizeNewTabURL(t) == nil {
+                let e = UIAlertController(title: "无效的网址", message: "只支持 http / https 网址", preferredStyle: .alert)
+                e.addAction(UIAlertAction(title: "好", style: .default))
+                vc.present(e, animated: true)
+                return
+            }
+            MioTabsSettings.newTabURL = t
+            done()
+        })
+        vc.present(a, animated: true)
+    }
+}

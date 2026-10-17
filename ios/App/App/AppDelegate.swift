@@ -54,6 +54,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         openInSafari.discoverabilityTitle = "在 Safari 中打开当前网页（通行密钥 / 钥匙串登录）"
         let menu = UIMenu(title: "浏览器", identifier: UIMenu.Identifier("xyz.mio.app.menu.browser"), children: [openInSafari])
         builder.insertSibling(menu, afterMenu: .view)
+        // 多标签页（MioTabs.swift）：⌘T / ⌘W / ⌘⇧T / ⌘⇧W。系统的「关闭窗口 ⌘W」换成「关闭标签页」（浏览器没打开时这些项是灰的）
+        let tabItems: [UIKeyCommand] = [
+            UIKeyCommand(title: "新建标签页", action: #selector(MioTabsViewController.mioNewTab(_:)), input: "t", modifierFlags: .command),
+            UIKeyCommand(title: "关闭标签页", action: #selector(MioTabsViewController.mioCloseTab(_:)), input: "w", modifierFlags: .command),
+            UIKeyCommand(title: "重新打开关闭的标签页", action: #selector(MioTabsViewController.mioReopenTab(_:)), input: "t", modifierFlags: [.command, .shift]),
+            UIKeyCommand(title: "收起浏览器（标签保留）", action: #selector(MioTabsViewController.mioHideBrowser(_:)), input: "w", modifierFlags: [.command, .shift]),
+        ]
+        builder.remove(menu: .close)
+        builder.insertChild(UIMenu(title: "", identifier: UIMenu.Identifier("xyz.mio.app.menu.tabs"), options: .displayInline, children: tabItems), atStartOfMenu: .file)
     }
     #endif
 
@@ -217,6 +226,12 @@ final class MioBridgeViewController: CAPBridgeViewController, WKScriptMessageHan
             view.bringSubviewToFront(cover)
             cover.frame = view.bounds
         }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // 浏览器收起 / App 重启后有上次的标签：右下角显示标签数角标
+        MioTabsBadge.attachIfNeeded(to: self)
     }
 
     func hideCover(_ reason: String) {

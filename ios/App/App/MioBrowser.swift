@@ -293,22 +293,15 @@ enum MioAdblockBackground {
 // MARK: - Browser view controller
 
 final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UITextFieldDelegate, UIScrollViewDelegate {
-    private static weak var current: MioBrowserViewController?
+    /// 当前标签（多标签时由 MioTabsViewController 设置）；冒烟测试 smokeEvaluate 用它
+    static weak var current: MioBrowserViewController?
     /// 最近一次 YouTube 页面的媒体诊断（UA / MediaSource / 清晰度），Mac 冒烟测试读取
     static var lastMediaProbe: String?
     private static let passkeyMessage = "mioPasskey"
 
-    /// 已打开就在当前浏览器里加载，否则全屏弹出
+    /// MioCore 打开外链：在新标签里打开并显示浏览器（多标签容器见 MioTabs.swift）
     static func open(_ url: URL, from base: UIViewController?) {
-        if let vc = current, vc.presentingViewController != nil {
-            vc.load(url)
-            return
-        }
-        guard let presenter = topPresenter(base) else { return }
-        let vc = MioBrowserViewController(url: url)
-        vc.modalPresentationStyle = .fullScreen
-        presenter.present(vc, animated: true)
-        current = vc
+        MioTabsViewController.open(url, from: base)
     }
 
     /// 冒烟测试：在当前内置浏览器的页面里执行 JS（没有打开的浏览器时 result = nil）
@@ -326,13 +319,14 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     }
 
     private let initialURL: URL
-    private var webView: WKWebView!
+    private(set) var webView: WKWebView!
     private var adblock: MioAdblockSession!
-    private let topBar = UIView()
-    private let addressField = UITextField()
-    private let shieldButton = UIButton(type: .system)
-    private let progress = UIProgressView(progressViewStyle: .bar)
-    private let toolbar = UIToolbar()
+    // 以下几个视图 MioTabs.swift 的顶部工具栏（Mac / iPad）会重新摆放，所以不是 private
+    let topBar = UIView()
+    let addressField = UITextField()
+    let shieldButton = UIButton(type: .system)
+    let progress = UIProgressView(progressViewStyle: .bar)
+    let toolbar = UIToolbar()
     private var backItem: UIBarButtonItem!
     private var forwardItem: UIBarButtonItem!
     private var reloadItem: UIBarButtonItem!
@@ -340,7 +334,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     private var changeObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
     // 滚动时自动隐藏工具栏（Safari 式）：webView 固定铺满安全区，顶 / 底栏浮在上面，用 contentInset 让出位置
-    private let miniBar = UIControl()
+    let miniBar = UIControl()
     private let miniLabel = UILabel()
     private var topBarTop: NSLayoutConstraint!
     private var toolbarBottom: NSLayoutConstraint!
@@ -352,6 +346,11 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     /// 桌面模式下 m.youtube.com → www 的改写记录（防止站点来回重定向时死循环）
     private var desktopRewrites: [Date] = []
     private var passkeyHintedHosts: Set<String> = []
+    // 多标签页（MioTabs.swift）：标签 id、容器、顶部工具栏 / 标签按钮、卸载后恢复的历史与滚动位置
+    var tabID: Int?
+    var containerID: String = MioTabStore.defaultContainer
+    var tabChrome: MioTabChrome?
+    var restoreInteractionState: Any?
 
     init(url: URL) {
         initialURL = url
@@ -432,7 +431,13 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             self.adblock.extraScripts = Self.extraScripts()
             if !MioBrowserSettings.hideToolbarsOnScroll { self.showChrome(animated: true) }
         }
-        load(initialURL)
+        if let state = restoreInteractionState {
+            // 被卸载过的后台标签：恢复前进后退历史和滚动位置
+            restoreInteractionState = nil
+            webView.interactionState = state
+        } else {
+            load(initialURL)
+        }
     }
 
     // MARK: layout
@@ -554,6 +559,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         ])
         updateShield()
         updateButtons()
+        installTabChrome()
     }
 
     private func observe() {
@@ -663,7 +669,12 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     // MARK: actions
 
-    @objc private func closeTapped() {
+    /// ✕ / 收起：回到 Mio 主界面，标签都留在后台（多标签容器 dismiss，主界面显示角标）
+    @objc func closeTapped() {
+        if let tabs = tabsController {
+            tabs.hideBrowser()
+            return
+        }
         webView.stopLoading()
         dismiss(animated: true)
     }
@@ -700,6 +711,15 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     /// 与点 ✕ 相同：停止加载并收起内置浏览器回到主界面（上面可能还盖着设置页 / 提示框，一并收起）
     private func closeAfterExternalOpen() {
+        if let tabs = tabsController {
+            // 统一的 closeTab：关掉当前标签；最后一个标签 → 收起浏览器（App 不退出）。上面盖着的设置页 / 提示框先收起
+            if let presented = tabs.presentedViewController {
+                presented.dismiss(animated: false) { tabs.closeTab(self) }
+            } else {
+                tabs.closeTab(self)
+            }
+            return
+        }
         guard let presenter = presentingViewController else { return }
         webView.stopLoading()
         presenter.dismiss(animated: true)
@@ -730,6 +750,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     /// 顶 / 底栏让出的位置：显示时 = 地址栏高度（不含状态栏）/ 工具栏高度；隐藏时 = 域名条 / 0
     private func desiredInsets() -> UIEdgeInsets {
+        // 顶部工具栏（Mac / iPad）：网页从标签条下面开始，不用 inset 让位
+        if tabChrome?.isTop == true { return chromeHidden ? UIEdgeInsets(top: Self.miniBarHeight, left: 0, bottom: 0, right: 0) : .zero }
         if chromeHidden { return UIEdgeInsets(top: Self.miniBarHeight, left: 0, bottom: 0, right: 0) }
         let top = max(0, topBar.frame.maxY - view.safeAreaInsets.top)
         let bottom = max(0, view.bounds.height - view.safeAreaInsets.bottom - toolbar.frame.minY)
@@ -784,8 +806,12 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         let maxY = sv.contentSize.height - sv.bounds.height + sv.contentInset.bottom
         let atBottom = !hide && sv.contentOffset.y >= maxY - 2 && sv.contentSize.height > sv.bounds.height
         chromeHidden = hide
-        topBarTop.constant = hide ? -topBar.bounds.height : 0
-        toolbarBottom.constant = hide ? toolbar.bounds.height + view.safeAreaInsets.bottom : 0
+        if let tc = tabChrome, tc.isTop, let top = tc.top {
+            top.constant = hide ? -(toolbar.bounds.height + tc.stripHeight) : 0
+        } else {
+            topBarTop.constant = hide ? -topBar.bounds.height : 0
+            toolbarBottom.constant = hide ? toolbar.bounds.height + view.safeAreaInsets.bottom : 0
+        }
         if hide && addressField.isFirstResponder { addressField.resignFirstResponder() }
         animatingChrome = true
         let changes = {
@@ -1040,10 +1066,14 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     // MARK: WKUIDelegate
 
-    /// target=_blank / window.open：在当前浏览器里打开
+    /// target=_blank / window.open：新标签（继承容器 / 锁定，插在当前标签右边）；非 http(s) 的在当前页打开
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if navigationAction.targetFrame == nil {
-            webView.load(navigationAction.request)
+            if let tabs = tabsController, let u = navigationAction.request.url, MioTabStore.isHTTP(u.absoluteString) {
+                tabs.openTab(u.absoluteString, activate: true, from: self)
+            } else {
+                webView.load(navigationAction.request)
+            }
         }
         return nil
     }
@@ -1075,6 +1105,11 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     }
 
     func webViewDidClose(_ webView: WKWebView) {
+        // window.close()：关掉这个标签
+        if let tabs = tabsController {
+            tabs.closeTab(self)
+            return
+        }
         dismiss(animated: true)
     }
 }
@@ -1086,6 +1121,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, youtubeFocus, youtubeInterval, youtubePlayables, hideToolbars, passkeyInfo, openInSafari(URL), licenses, version
         case updateAuto, updateCheck // 软件更新（MioUpdater.swift）
         case closeAfterExternal
+        case newTabPage // 多标签页：新标签页地址（MioTabs.swift）
     }
 
     private let currentHost: String?
@@ -1149,7 +1185,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
         browse.append(.hideToolbars)
         s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留），可选屏蔽首页的游戏大本营（Playables，直接打开 /playables 不受影响）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
         s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的「用 Safari 打开」（\(Self.safariHint)）改用 Safari。", [.preferSafari, .backgroundPlayback]))
-        s.append((nil, "开启后，「用 Safari 打开」成功跳转后自动关闭内置浏览器的当前页面，回到 Mio 主界面；打开失败则保留。", [.closeAfterExternal]))
+        s.append((nil, "开启后，「用 Safari 打开」成功跳转后自动关闭当前标签页（最后一个标签关闭时收起浏览器回到 Mio 主界面）；打开失败则保留。", [.closeAfterExternal]))
+        s.append(("标签页", MioTabsSettingsUI.footer, [.newTabPage]))
         var login: [Row] = [.passkeyInfo]
         if let u = currentURL { login.append(.openInSafari(u)) }
         s.append(("通行密钥与钥匙串", Self.passkeyFooter, login))
@@ -1272,6 +1309,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case .licenses:
             cell.textLabel?.text = "开源许可"
             cell.detailTextLabel?.text = "SafariConverterLib、AdGuard Scriptlets、ExtendedCss（GPL-3.0）；过滤列表：AdGuard（CC BY-SA 3.0 / GPL-3.0）、EasyList / EasyPrivacy（GPL-3.0 / CC BY-SA 3.0）。详见仓库 NOTICE。"
+        case .newTabPage:
+            MioTabsSettingsUI.configure(cell)
         case .closeAfterExternal:
             cell.textLabel?.text = "跳转系统浏览器后自动关闭标签页"
             cell.accessoryView = makeSwitch(MioCloseAfterExternal.enabled) { MioCloseAfterExternal.enabled = $0 }
@@ -1328,9 +1367,11 @@ final class MioBrowserSettingsViewController: UITableViewController {
                 if let t = a.textFields?.first?.text, !t.isEmpty { MioAdblockSettings.setAllowlisted(t, true) }
             })
             present(a, animated: true)
+        case .newTabPage:
+            MioTabsSettingsUI.editNewTabPage(from: self) { [weak self] in self?.rebuild() }
         case .openInSafari(let url):
             // 从内置浏览器打开的设置页：走浏览器的「用 Safari 打开」（含跳转后自动关闭标签页）
-            if let browser = presentingViewController as? MioBrowserViewController {
+            if let browser = (presentingViewController as? MioTabsViewController)?.activeController ?? presentingViewController as? MioBrowserViewController {
                 browser.openInSafari()
             } else {
                 UIApplication.shared.open(url)
