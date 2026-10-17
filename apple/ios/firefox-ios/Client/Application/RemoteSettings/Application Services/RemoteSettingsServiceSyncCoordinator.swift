@@ -56,13 +56,17 @@ final class RemoteSettingsServiceSyncCoordinator: @unchecked Sendable, Notifiabl
 
     // MARK: - Private API
 
+    // Mio: keep in sync with MioBuild.remoteSettingsSyncEnabled (Client target only).
+    private static let mioRemoteSettingsSyncEnabled = false
+
     private func willResignActive() {
         syncTimer?.invalidate()
     }
 
     private func didBecomeActive() {
         // Mio: no periodic Mozilla Remote Settings sync; bundled RemoteSettingsData dumps are used instead.
-        guard MioBuild.remoteSettingsSyncEnabled else { return }
+        // (This file is also compiled into the app extensions, which can't see MioBuild, so the switch is local.)
+        guard Self.mioRemoteSettingsSyncEnabled else { return }
         // Don't perform sync immediately upon becoming active, give the app
         // some time to allow any other work or threads to take priority
         syncTimer?.invalidate()
