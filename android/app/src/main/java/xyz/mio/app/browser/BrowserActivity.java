@@ -103,6 +103,9 @@ public class BrowserActivity extends Activity {
     private long hostScriptsBuiltAt;
     private YouTubeFocus ytFocus;
     private MioMedia media;
+    /** 阅读模式 / 强制深色 / 存到 Mio（PageTools.java） */
+    private PageTools pageTools;
+    private Button readerBtn;
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -226,6 +229,8 @@ public class BrowserActivity extends Activity {
             else updateAddress();
         });
         top.addView(address, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        readerBtn = glyph("📖", "阅读模式", v -> { if (pageTools != null) pageTools.openReader(false); });
+        top.addView(readerBtn, new LinearLayout.LayoutParams(dp(44), dp(44)));
         shield = glyph("🛡", "广告拦截", v -> showShieldMenu());
         top.addView(shield, new LinearLayout.LayoutParams(dp(44), dp(44)));
         col.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -249,7 +254,8 @@ public class BrowserActivity extends Activity {
         Button share = glyph("⇪", "分享", v -> share());
         Button external = glyph("↗", "用系统浏览器打开", v -> openExternal(webView.getUrl()));
         Button settings = glyph("⚙", "浏览器设置", v -> showSettings(false));
-        for (Button b : new Button[]{backBtn, fwdBtn, reloadBtn, share, external, settings}) {
+        Button mio = glyph("📥", "存到 Mio / 阅读模式 / 深色", v -> { if (pageTools != null) pageTools.showMenu(); });
+        for (Button b : new Button[]{backBtn, fwdBtn, reloadBtn, share, external, mio, settings}) {
             bottom.addView(b, new LinearLayout.LayoutParams(0, dp(48), 1));
         }
         col.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -335,6 +341,8 @@ public class BrowserActivity extends Activity {
         // 媒体：YouTube 脚本（SponsorBlock / MediaSession）、后台播放通知、Widevine 权限（MioMedia.java）
         media = new MioMedia(this, webView);
         media.install();
+        pageTools = new PageTools(this, webView);
+        pageTools.setReaderButton(readerBtn);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -367,6 +375,7 @@ public class BrowserActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 topUrl = url;
+                pageTools.onPageStarted(url);
                 prepare(url);
                 ytFocus.onPage(url);
                 updateAddress();
@@ -383,6 +392,7 @@ public class BrowserActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 ytFocus.onPage(url);
                 ytFocus.reportState(url);
+                pageTools.onPageFinished();
                 updateAddress();
                 updateButtons();
             }
@@ -390,6 +400,7 @@ public class BrowserActivity extends Activity {
             @Override
             public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
                 topUrl = url;
+                pageTools.onUrlChanged();
                 updateButtons();
                 updateAddress();
             }

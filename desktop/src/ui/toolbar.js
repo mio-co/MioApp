@@ -25,6 +25,8 @@ function render(s) {
   const shield = $('shield');
   shield.classList.toggle('off', !active);
   $('count').textContent = active && s.blocked ? (s.blocked > 99 ? '99+' : String(s.blocked)) : '';
+  $('reader').hidden = !s.readerable;
+  $('mio').hidden = !s.pageTools;
   shield.title = !s.adblockEnabled ? '广告拦截已关闭' : s.siteWhitelisted ? `已在 ${s.host} 停用拦截` : !s.adblockReady ? '正在准备拦截规则…' : `已拦截 ${s.blocked} 个请求`;
 }
 
@@ -34,6 +36,8 @@ $('reload').onclick = () => window.mioToolbar.cmd(state && state.loading ? 'stop
 $('external').onclick = () => window.mioToolbar.cmd('openExternal');
 $('settings').onclick = () => window.mioToolbar.cmd('settings');
 $('shield').onclick = () => window.mioToolbar.cmd('shieldMenu');
+$('mio').onclick = () => window.mioToolbar.cmd('pageMenu');
+$('reader').onclick = () => window.mioToolbar.cmd('reader');
 
 addr.addEventListener('focus', () => {
   editing = true;

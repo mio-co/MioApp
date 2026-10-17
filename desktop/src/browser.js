@@ -15,8 +15,9 @@ function bg() {
 }
 
 class BrowserManager {
-  constructor({ adblock, settings, browserSession, openSettings, icon }) {
+  constructor({ adblock, settings, browserSession, openSettings, icon, pageTools }) {
     this.adblock = adblock;
+    this.pageTools = pageTools || null;
     this.settings = settings;
     this.session = browserSession;
     this.openSettings = openSettings;
@@ -139,7 +140,14 @@ class BrowserManager {
     });
     wc.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument) this.adblock.resetCount(wc.id);
+      if (details.isMainFrame && !details.isSameDocument && this.pageTools) this.pageTools.clear(wc);
     });
+    // 阅读模式按钮：页面加载完 / SPA 换地址后判断是否像文章
+    if (this.pageTools) {
+      const check = () => this.pageTools.checkReaderable(wc).then(push, () => undefined);
+      wc.on('did-stop-loading', check);
+      wc.on('did-navigate-in-page', (e, url, isMainFrame) => isMainFrame && setTimeout(check, 1000));
+    }
     // 网页被拦截数：节流刷新
     let timer = null;
     // 计数在 adblock 的 onBeforeRequest 里累加
@@ -237,6 +245,7 @@ class BrowserManager {
       else if ((input.alt && key === 'arrowright') || (mod && key === ']')) cmd = 'forward';
       else if (mod && key === 'w') cmd = 'close';
       else if (key === 'f12' || (mod && input.shift && key === 'i')) cmd = 'devtools';
+      else if (key === 'f9') cmd = 'reader';
       else if (key === 'escape' && wc === (this.content && this.content.webContents)) cmd = 'stop';
       if (cmd) {
         event.preventDefault();
@@ -307,6 +316,15 @@ class BrowserManager {
         Menu.buildFromTemplate(items).popup({ window: this.win, x: Math.max(0, width - 260), y: TOOLBAR_HEIGHT });
         break;
       }
+      case 'reader':
+        if (this.pageTools) this.pageTools.openReader(wc, true);
+        break;
+      case 'pageMenu': {
+        if (!this.pageTools) break;
+        const { width } = this.win.getContentBounds();
+        Menu.buildFromTemplate(this.pageTools.menuTemplate(wc, { reload: () => wc.reload() })).popup({ window: this.win, x: Math.max(0, width - 360), y: TOOLBAR_HEIGHT });
+        break;
+      }
       case 'focusAddress':
         this.toolbar.webContents.focus();
         this.toolbar.webContents.send('mio-toolbar:focus-address');
@@ -339,6 +357,8 @@ class BrowserManager {
       siteWhitelisted: !!host && this.settings.isWhitelisted(host),
       blocked: this.adblock.blockedCount(wc.id),
       dark: nativeTheme.shouldUseDarkColors,
+      readerable: !!this.pageTools && this.pageTools.isReaderable(wc),
+      pageTools: !!this.pageTools,
     };
   }
 

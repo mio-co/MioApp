@@ -46,6 +46,11 @@
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
+        <!-- 存到 MioCore：在主进程里用 MioCore 主界面的登录 Cookie 调 API（内置浏览器在 :browser 进程，拿不到） -->
+        <service
+            android:name=".browser.MioSaveService"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

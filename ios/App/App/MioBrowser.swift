@@ -362,6 +362,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     private var passkeyHintedHosts: Set<String> = []
     /// 媒体（后台续播 / 锁屏控制兜底 / SponsorBlock 请求兜底），MioMedia.swift
     private var media: MioMediaController?
+    /// 阅读模式 / 强制深色 / 存到 Mio（MioPageTools.swift）
+    private var pageTools: MioPageTools!
 
     init(url: URL) {
         initialURL = url
@@ -375,6 +377,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         if let o = changeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = settingsObserver { NotificationCenter.default.removeObserver(o) }
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: Self.passkeyMessage)
+        pageTools?.detach()
         adblock?.detach()
         media?.detach()
     }
@@ -426,6 +429,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         webView.scrollView.delegate = self
         if #available(iOS 16.4, macCatalyst 16.4, *) { webView.isInspectable = true }
 
+        pageTools = MioPageTools(webView: webView, host: self)
         adblock = MioAdblockSession(configuration: config)
         adblock.webView = webView
         adblock.extraScripts = Self.extraScripts()
@@ -472,6 +476,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         addressField.delegate = self
         addressField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
         addressField.leftViewMode = .always
+        addressField.rightView = pageTools.readerButton
+        addressField.rightViewMode = .unlessEditing
 
         shieldButton.addTarget(self, action: #selector(shieldTapped), for: .touchUpInside)
         shieldButton.accessibilityLabel = "广告拦截"
@@ -524,7 +530,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         let settings = UIBarButtonItem(image: UIImage(systemName: "gearshape"), style: .plain, target: self, action: #selector(settingsTapped))
         settings.accessibilityLabel = "浏览器设置"
         let flex = { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
-        toolbar.items = [backItem, flex(), forwardItem, flex(), reloadItem, flex(), share, flex(), safari, flex(), settings]
+        toolbar.items = [backItem, flex(), forwardItem, flex(), reloadItem, flex(), share, flex(), safari, flex(), pageTools.barItem, flex(), settings]
 
         topBarTop = topBar.topAnchor.constraint(equalTo: view.topAnchor)
         toolbarBottom = toolbar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
@@ -575,7 +581,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
                 self.progress.setProgress(Float(wv.estimatedProgress), animated: true)
                 self.progress.isHidden = wv.estimatedProgress >= 1
             },
-            webView.observe(\.url, options: [.new]) { [weak self] _, _ in self?.updateAddress(); self?.updateShield() },
+            webView.observe(\.url, options: [.new]) { [weak self] _, _ in self?.updateAddress(); self?.updateShield(); self?.pageTools?.urlChanged() },
             webView.observe(\.title, options: [.new]) { [weak self] _, _ in self?.updateAddress() },
             webView.observe(\.canGoBack, options: [.new]) { [weak self] _, _ in self?.updateButtons() },
             webView.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in self?.updateButtons() },
@@ -653,7 +659,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             // Mac：textarea / contenteditable 回车不换行的兜底（所有 frame，评论框常在 iframe 里）
             scripts.append(WKUserScript(source: MioWebCompat.returnKeyFixScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
-        return scripts + backgroundPlaybackScripts()
+        return scripts + backgroundPlaybackScripts() + MioPageTools.userScripts()
     }
 
     /// 后台播放（可见性伪造，所有站点）+ YouTube 媒体脚本（续播 / 锁屏控制 / 画中画 / SponsorBlock）：MioMedia.swift
@@ -668,6 +674,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         dismiss(animated: true)
     }
 
+    @objc private func readerModeTapped() { pageTools.openReader(force: true) }
     @objc private func backTapped() { webView.goBack() }
     @objc private func forwardTapped() { webView.goForward() }
 
@@ -836,6 +843,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             UIKeyCommand(title: "后退", action: #selector(backTapped), input: "[", modifierFlags: .command),
             UIKeyCommand(title: "前进", action: #selector(forwardTapped), input: "]", modifierFlags: .command),
             UIKeyCommand(title: "打开位置…", action: #selector(focusAddress), input: "l", modifierFlags: .command),
+            UIKeyCommand(title: "阅读模式", action: #selector(readerModeTapped), input: "r", modifierFlags: [.command, .shift]),
         ]
         #if !targetEnvironment(macCatalyst)
         // Mac 上这一项在菜单栏里（同一快捷键不能既在菜单又在 keyCommands）
@@ -946,6 +954,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         if isMain, scheme == "http" || scheme == "https" {
             adblock.prepareMainFrame(url)
             updateShield()
+            pageTools.willNavigate(to: url)
             // 新的主框架导航：工具栏恢复显示
             showChrome(animated: true)
         }
@@ -978,6 +987,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        pageTools.didFinish()
         // 诊断：YouTube 上记录 UA / MediaSource / 播放器拿到的最高清晰度（Mac 或 Debug）
         guard let host = webView.url?.host?.lowercased(), host == "youtube.com" || host.hasSuffix(".youtube.com") else { return }
         #if !DEBUG

@@ -103,6 +103,8 @@ jobs:
           test -f Payload/App.app/AdblockBundle/scriptlets.corelibs.json
           # Capacitor 启动时要求本地 public/<server.appStartPath> 存在，否则 exit(1)（v0.1.2–v0.3.0 闪退）
           test -e Payload/App.app/public/mio/nav/index.html
+          # 阅读模式 / 强制深色 / 存到 Mio 的页面脚本（www/mio-browser，iOS 与 Mac 共用）
+          for f in reader dark mio-save; do test -s Payload/App.app/public/mio-browser/$f.js; done
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :UIBackgroundModes' Payload/App.app/Info.plist
           zip -qry Mio.ipa Payload
           ls -lh Mio.ipa
