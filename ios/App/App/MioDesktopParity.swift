@@ -56,7 +56,9 @@ enum MioMacMetrics {
     /// Safari macOS 的屏幕点 → 本 App 的逻辑点
     static func pt(_ screen: CGFloat) -> CGFloat { (screen / factor).rounded() }
 
-    static var toolbarHeight: CGFloat { pt(52) }   // Safari 紧凑工具栏 ~52pt
+    /// Safari 的 52pt 工具栏里含标题栏（红绿灯同一行）；Mio 的 Catalyst 窗口保留系统标题栏（MioDesktop.swift），
+    /// 所以按钮行只取 Safari 去掉标题栏后的控件行高度 ~40pt，整体高度才与 Safari 相当
+    static var toolbarHeight: CGFloat { pt(40) }
     static var stripHeight: CGFloat { pt(28) }     // Safari 标签条 ~28pt
     static var addressHeight: CGFloat { pt(28) }   // 地址栏胶囊 ~28pt
     static var addressFont: CGFloat { pt(13) }     // 地址栏 13pt
