@@ -15,6 +15,7 @@
 //   bridgeOK  example.com: window.Mio undefined and the bridge answers forbidden; mio://about: ping → pong
 //   blockOK   example.com: Mio ad-block rule lists attached, doubleclick request blocked, same-origin request loads
 //   settingsOK  Settings → "Mio 扩展" page (MioExtensionsView) renders with module rows
+//   (recorded only) tab overview via the app's own deep link
 
 import Foundation
 import UIKit
@@ -166,6 +167,13 @@ final class MioSmoke {
         // Back to the first tab so the script's own steps start from the launch state
         if let firstTab, let manager = tabManager() {
             manager.selectTab(firstTab, previous: manager.selectedTab)
+        }
+
+        // Tab overview (recorded only): the app's own deep link, same route as mio://deep-link from outside
+        if let tray = URL(string: "\(MioBuild.homeScheme)://deep-link?url=/action/show-tab-tray") {
+            _ = await UIApplication.shared.open(tray, options: [:])
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await shot("08-tab-tray")
         }
 
         let pass = homeOK && bridgeOK && blockOK && settingsOK

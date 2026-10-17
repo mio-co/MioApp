@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # Mio iOS（firefox-ios fork）模拟器冒烟：
 #   1. 冷启动 → 等待 → 截图（首页 = mio://home，地址栏应显示「Mio」）
-#   2. 通过 URL scheme 打开 mio://home
-#   3. 通过 <scheme>://open-url 打开一个网页 → 截图（含底部工具栏，另裁一张底部工具栏）
-#   4. <scheme>://deep-link?url=/action/show-tab-tray → 截图标签页概览
-#   5. App 内 MioKit 断言（MioSmoke.swift → kit-smoke.json）：mio://home→MioCore、本机桥来源校验、广告拦截、Mio 扩展设置页截图
+#   2. App 内 MioKit 断言（MioSmoke.swift → kit-smoke.json）：mio://home→MioCore、本机桥来源校验、广告拦截、Mio 扩展设置页截图
 # 任一步骤 App 进程消失即失败。
 # 用法：apple/ios/mio/ci/sim-smoke.sh <Client.app> <输出目录>
 set -uo pipefail
@@ -92,10 +89,10 @@ crop_bottom() { # src dst fraction
   sips -c "$ch" "$w" --cropOffset $((h - ch)) 0 "$src" --out "$dst" >/dev/null 2>&1 || true
 }
 
-if step 01-launch-home "$WAIT"; then
-  run_to 30 xcrun simctl openurl "$DEV" "mio://home" >>"$OUT/openurl.txt" 2>&1 || echo "openurl mio://home rc=$?" >>"$OUT/openurl.txt"
-  step 02-mio-home 10 || true
-fi
+# `simctl openurl` 打自定义 scheme 时模拟器会弹「在 Mio 中打开？」系统确认框，命令一直挂着（88f3e1a 的 run 里三次都 30 s 超时）。
+# 所以 mio://home / 网页 / 标签页概览改由 App 内 MioSmoke 自己打开并请求截图（05-08）。
+step 01-launch-home "$WAIT" || true
+
 # App 内 MioKit 断言：mio://home → MioCore、example.com 调本机桥被拒 / mio://about 可用、广告请求被拦、Mio 扩展设置页
 kit_smoke() {
   local data smoke i name
@@ -130,15 +127,7 @@ PY
   fi
 }
 if [ "$FAIL" = 0 ]; then kit_smoke || true; fi
-
-if [ "$FAIL" = 0 ]; then
-  run_to 30 xcrun simctl openurl "$DEV" "${SCHEME}://open-url?url=https%3A%2F%2Fexample.com%2F" >>"$OUT/openurl.txt" 2>&1 || echo "openurl open-url rc=$?" >>"$OUT/openurl.txt"
-  step 03-webpage 12 && crop_bottom "$OUT/03-webpage.png" "$OUT/03-webpage-bottom-toolbar.png"
-fi
-if [ "$FAIL" = 0 ]; then
-  run_to 30 xcrun simctl openurl "$DEV" "${SCHEME}://deep-link?url=/action/show-tab-tray" >>"$OUT/openurl.txt" 2>&1 || echo "openurl tab-tray rc=$?" >>"$OUT/openurl.txt"
-  step 04-tab-tray 6 || true
-fi
+crop_bottom "$OUT/06-smoke-example.png" "$OUT/06-smoke-example-bottom-toolbar.png"
 
 run_to 90 xcrun simctl spawn "$DEV" log show --style compact --last 5m \
   --predicate "process == \"$EXE\" AND (messageType == error OR messageType == fault)" > "$OUT/oslog-errors.txt" 2>/dev/null || true
