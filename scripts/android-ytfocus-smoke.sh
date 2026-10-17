@@ -12,7 +12,8 @@ OK=0
 for i in $(seq 1 60); do
   sleep 2
   adb logcat -d -v time > "$OUT/logcat-browser.txt"
-  if grep -E 'MioYTFocus.*state .*"installed":true' "$OUT/logcat-browser.txt" | grep -q '"style":true'; then OK=1; break; fi
+  # evaluateJavascript 的结果是 JSON 字符串字面量（引号带反斜杠转义）：先去掉 \"
+  if sed 's/\\"/"/g' "$OUT/logcat-browser.txt" | grep -E 'MioYTFocus.*state .*"installed":true' | grep -q '"style":true'; then OK=1; break; fi
 done
 sleep 3
 adb logcat -d -v time > "$OUT/logcat-browser.txt"
@@ -23,12 +24,14 @@ FAIL=0
 if grep -q "FATAL EXCEPTION" "$OUT/logcat-browser.txt"; then echo "FAIL: crash"; FAIL=1; fi
 [ "$OK" = 1 ] || { echo "FAIL: YouTube focus script not detected on $URL (rate-limited? rerun only this job)"; FAIL=1; }
 if [ "$OK" = 1 ]; then
-  LINE=$(grep -E 'MioYTFocus.*state .*"installed":true' "$OUT/logcat-browser.txt" | tail -1)
+  LINE=$(sed 's/\\"/"/g' "$OUT/logcat-browser.txt" | grep -E 'MioYTFocus.*state .*"installed":true' | tail -1)
   RULES=$(echo "$LINE" | sed -E 's/.*"rules":([0-9]+).*/\1/')
   case "$RULES" in ''|*[!0-9]*) RULES=0 ;; esac
   [ "$RULES" -ge 40 ] || { echo "FAIL: only $RULES CSS rules in mio-yt-focus-style"; FAIL=1; }
   echo "$LINE" | grep -q '"playables":true' || { echo "FAIL: Playables hiding not on by default"; FAIL=1; }
   echo "$LINE" | grep -q 'docStart' && echo "mode: document-start" || echo "mode: evaluateJavascript fallback"
+  # 底部栏 Shorts 入口：logged-out 的 m.youtube 一般有，晚于 onPageFinished 出现，只报告不卡门槛
+  echo "pivot: $(echo "$LINE" | sed -E 's/.*"pivot":([0-9]+).*/\1/') items, $(echo "$LINE" | sed -E 's/.*"pivotHidden":([0-9]+).*/\1/') marked as Shorts"
 fi
 [ "$FAIL" = 0 ] && echo "PASS: YouTube focus injected on m.youtube.com"
 exit $FAIL

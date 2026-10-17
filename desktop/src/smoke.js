@@ -53,7 +53,11 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
     const wc = browser.content.webContents;
     await waitLoad(wc, 45000);
     await wait(6000);
+    const ytf = require('./youtube-focus');
     result.steps.youtube = {
+      ytFocusScriptBytes: ytf.template().length,
+      ytFocusFor: ytf.scriptFor(wc.getURL(), adblock.settings).length,
+      resourcesPath: process.resourcesPath,
       url: wc.getURL(),
       title: wc.getTitle(),
       blocked: adblock.blockedCount(wc.id),
