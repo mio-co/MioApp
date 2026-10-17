@@ -32,6 +32,35 @@ final class MioAccessAuthTests: XCTestCase {
         XCTAssertEqual(MioAccessAuth.popupDisposition(opener: URL(string: "https://example.com/"), target: google, prefs: prefs), .newTab)
         // Access 登录页打开的普通链接（例如帮助）照常新标签
         XCTAssertEqual(MioAccessAuth.popupDisposition(opener: login, target: URL(string: "https://developers.cloudflare.com/"), prefs: prefs), .newTab)
+        // MioCore 上的 /cdn-cgi/access/*（authorized / logout 页）也算 Access 页面
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: URL(string: "https://mio.300031.xyz/cdn-cgi/access/authorized?x=1"), target: google, prefs: prefs), .openerTab)
+    }
+
+    /// 回归（v0.4.0）：MioCore 导航页里的链接 / window.open 一律新标签，只有 Access 页面本身才在 MioCore 标签里继续
+    func testMioCorePopupsOpenNewTabsUnlessAccess() {
+        let nav = URL(string: "https://mio.300031.xyz/mio/nav")
+        for t in ["https://example.org/", "https://www.youtube.com/watch?v=1", "https://mio.300031.xyz/mio/notes",
+                  // 导航页里指向身份提供商的站点卡片：也是普通链接，开新标签
+                  "https://accounts.google.com/", "https://github.com/login", "https://login.microsoftonline.com/",
+                  "https://appleid.apple.com/"] {
+            XCTAssertEqual(MioAccessAuth.popupDisposition(opener: nav, target: URL(string: t), prefs: prefs), .newTab, t)
+            XCTAssertEqual(MioAccessAuth.popupDisposition(opener: URL(string: "mio://home"), target: URL(string: t), prefs: prefs), .newTab, t)
+        }
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: nav, target: login, prefs: prefs), .openerTab)
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: nav, target: URL(string: "https://mio.300031.xyz/cdn-cgi/access/logout"), prefs: prefs), .openerTab)
+        // 普通网站：什么都开新标签（含它自己的 Access / 登录弹窗）
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: URL(string: "https://example.com/"), target: URL(string: "https://example.org/"), prefs: prefs), .newTab)
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: URL(string: "https://example.com/"), target: login, prefs: prefs), .newTab)
+        // 身份提供商页面自己弹的窗口：新标签（不在登录流程里吞标签）
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: URL(string: "https://accounts.google.com/signin"), target: URL(string: "https://support.google.com/"), prefs: prefs), .newTab)
+        // 没有打开者 / 没有目标
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: nil, target: login, prefs: prefs), .newTab)
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: nav, target: nil, prefs: prefs), .newTab)
+        // 改了 MioCore 地址：旧地址不再算 MioCore
+        let custom = MioMemoryPrefs()
+        custom.set("https://hub.example.net", forKey: MioCoreOrigin.originKey)
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: URL(string: "https://hub.example.net/mio/nav"), target: login, prefs: custom), .openerTab)
+        XCTAssertEqual(MioAccessAuth.popupDisposition(opener: URL(string: "https://hub.example.net/mio/nav"), target: URL(string: "https://example.org/"), prefs: custom), .newTab)
     }
 
     func testSafariUserAgentForGoogle() {

@@ -9,7 +9,8 @@
 //
 // 宿主要做的：
 //   1. 这些地址一律在当前 WebView 里放行（不当外部 App / 通用链接打开，不弹「在 App 中打开」）：isAuthFlowURL
-//   2. 登录页里 window.open / target=_blank 打开的登录地址 → 在打开者标签里继续（popupDisposition == .openerTab）
+//   2. Access 登录页里 window.open / target=_blank 打开的登录地址（或 MioCore 弹出的 Access 页面）→ 在打开者标签里继续
+//      （popupDisposition == .openerTab）；其他弹窗一律新标签（MioLinkOpening 决定前台 / 后台）
 //   3. 登录页不挂广告拦截规则（MioAdblockModule.shouldApplyContentRules 已处理）
 //   4. Google 登录页用 Safari 式 UA（needsSafariUserAgent）：Google 对内嵌 WebView 回 403 disallowed_useragent，
 //      对版本号很怪的 UA（例如 FxiOS/0）报「此浏览器不安全」
@@ -77,16 +78,24 @@ public enum MioAccessAuth {
     public enum PopupDisposition: Equatable {
         /// 照常开新标签（保留 window.opener：第三方网站的「用 Google 登录」弹窗靠 postMessage 回传）
         case newTab
-        /// 在打开者标签里继续（Access 登录页 / MioCore 打开的登录地址）
+        /// 在打开者标签里继续（Access 登录页打开的登录地址 / MioCore 弹出的 Access 页面）
         case openerTab
     }
 
-    /// window.open / target=_blank：打开者是 Access 登录页或 MioCore（含 mio:// 内置页），目标又是登录流程 → 打开者标签里继续。
+    /// window.open / target=_blank 的去向。只有 Cloudflare Access 登录流程才在打开者标签里继续：
+    ///   - 打开者是 Access 页面（*.cloudflareaccess.com，或 MioCore 上的 /cdn-cgi/access/*），目标是 Access / 身份提供商登录页
+    ///   - 打开者是 MioCore（含 mio:// 内置页），目标是 Access 页面本身（会话过期后 MioCore 弹出的重新登录）
+    /// 其余一律新标签：MioCore 导航页里的普通链接（哪怕指向 accounts.google.com / github.com/login 这类地址）、
+    /// 普通网站的 target=_blank / window.open、第三方网站的「用 Google 登录」弹窗（保留 window.opener / postMessage）。
     /// Access 的流程全是整页跳转，最后回到 redirect_url；放进新标签反而会让原标签停在登录页。
+    /// （v0.4.0 曾把「MioCore 打开的任何登录地址」都算进来，导航页里指向身份提供商的站点卡片会被吞进当前标签）
     public static func popupDisposition(opener: URL?, target: URL?, prefs: MioPrefs) -> PopupDisposition {
-        guard isAuthFlowURL(target, prefs: prefs) else { return .newTab }
-        if isAccessURL(opener, prefs: prefs) { return .openerTab }
-        if let o = opener, MioCoreOrigin.isMioCore(o, prefs: prefs) || MioHomeModel.isInternal(o) { return .openerTab }
+        if isAccessURL(opener, prefs: prefs) {
+            return isAuthFlowURL(target, prefs: prefs) ? .openerTab : .newTab
+        }
+        if let o = opener, MioCoreOrigin.isMioCore(o, prefs: prefs) || MioHomeModel.isInternal(o) {
+            return isAccessURL(target, prefs: prefs) ? .openerTab : .newTab
+        }
         return .newTab
     }
 

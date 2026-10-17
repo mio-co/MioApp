@@ -8,6 +8,10 @@
 //      查找栏、Mio 扩展面板、应用菜单（含子视图滑动）、侧边栏 / 垂直标签、全屏；录屏（.mov）+ 每个动画的连拍帧条 + 帧率
 //   4b. Mio 扩展（MioKit）接通：测试页（example.com）上的广告请求被内容规则拦下（门槛）；在「Mio 扩展」面板里关掉广告拦截 / WebRTC 防护
 //       → 重新载入后规则卸下、WebRTC 防护脚本不再注入，再打开又恢复（门槛）；用户脚本安装后注入页面（只记录）
+//   4c. 链接开新标签（门槛，本地测试页 MioNewTabFixture，loadHTMLString + baseURL 模拟来源）：普通网站 target=_blank / window.open → 前台新标签
+//       （window.open 拿得到窗口对象）、同标签链接当前标签跳转；MioCore 来源（appShell → MioDesktop.browser.open({url})）站点卡片 / window.open
+//       → 前台新标签，导航页里指向身份提供商的卡片也开新标签；MioCore 弹出的 Access 页面、Access 登录页弹出的 Google 登录 → 当前标签继续。
+//       ⌘ 点 → 后台新标签、中键 → 后台新标签（合成事件，只记录）
 //   6. 设置窗口（about:preferences 风格）截图 → MIO_SMOKE_SHOTS 目录（默认与 json 同目录）
 
 import AppKit
@@ -139,6 +143,11 @@ final class MioMacSmoke {
         report["miokit"] = kitReport
         let blockOK = (kitReport["blockOK"] as? Bool) ?? false
         let toggleOK = (kitReport["toggleOK"] as? Bool) ?? false
+
+        // 4c. 链接开新标签（v0.4.0 回归：MioCore 导航页点链接不开新标签）——本地测试页，门槛
+        let newTabReport = await newTabSmoke()
+        report["newTab"] = newTabReport
+        let newTabOK = (newTabReport["ok"] as? Bool) ?? false
 
         // 5. Firefox 式界面 + 动画证据
         try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -515,14 +524,116 @@ final class MioMacSmoke {
         report["blockOK"] = blockOK
         report["toggleOK"] = toggleOK
         report["bridgeOK"] = bridgeOK
+        report["newTabOK"] = newTabOK
         // 门槛：原有（MSE / 缩放 / 容器 / 快捷键 / 模块）+ Firefox 布局 + MioKit 桥来源校验 + 广告拦截生效 + 扩展开关生效；
         // 动画 / 截图 / 首页（依赖外网）/ 用户脚本注入只记录
-        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK && modulesOK && bridgeOK && blockOK && toggleOK
+        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK && modulesOK && bridgeOK && blockOK && toggleOK && newTabOK
         report["pass"] = pass
         report["seconds"] = Int(Date().timeIntervalSince(started))
         write()
         print("MIO_MAC_NATIVE_SMOKE " + (pass ? "PASS" : "FAIL"))
         exit(pass ? 0 : 1)
+    }
+
+    // MARK: - 链接开新标签（MioNewTabFixture）
+
+    private func newTabSmoke() async -> [String: Any] {
+        let c = controller
+        let host = MioMacKit.shared
+        var r: [String: Any] = [:]
+        var cases: [String: Any] = [:]
+        let previousActive = c.activeTabID
+        r["bridgeWindowIsSmokeWindow"] = host.currentWindow() === c
+        guard let base = c.newTab(url: "about:blank") else { r["error"] = "no tab"; r["ok"] = false; return r }
+        await waitLoad(base.id, timeout: 10)
+        let wv = base.webView
+
+        func loadPage(_ html: String, _ baseURL: String) async {
+            c.select(base.id)
+            wv.loadHTMLString(html, baseURL: URL(string: baseURL))
+            let end = Date().addingTimeInterval(15)
+            while Date() < end {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                if !wv.isLoading, wv.url?.absoluteString == baseURL { break }
+            }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+
+        /// 跑一段 JS，等标签数变化 / 当前标签跳走；记录新标签数、新标签地址、前台与否、当前标签地址，然后关掉新开的标签
+        func tryCase(_ name: String, _ js: String, expectNew: Int, expectForeground: Bool? = nil, expectURL: String? = nil,
+                 expectSameTabHost: String? = nil, expectSameTabAccess: Bool = false, expectReturn: String? = nil) async -> Bool {
+            let before = Set(c.store.tabs.map(\.id))
+            let activeBefore = c.activeTabID
+            let urlBefore = wv.url?.absoluteString
+            let ret = await callAsync(wv, js)
+            let end = Date().addingTimeInterval(8)
+            var newIDs: [Int] = []
+            while Date() < end {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                newIDs = c.store.tabs.map(\.id).filter { !before.contains($0) }
+                if expectNew > 0 && newIDs.count >= expectNew { try? await Task.sleep(nanoseconds: 500_000_000); break }
+                if expectNew == 0, let h = expectSameTabHost, wv.url?.host == h, !wv.isLoading { break }
+                if expectNew == 0, expectSameTabAccess, MioAccessAuth.isAccessURL(wv.url, prefs: host.kit.prefs), !wv.isLoading { break }
+            }
+            newIDs = c.store.tabs.map(\.id).filter { !before.contains($0) }
+            let newURLs = newIDs.map { id -> String in
+                c.webViews[id]?.url?.absoluteString ?? c.store.tab(id)?.url ?? ""
+            }
+            let activeAfter = c.activeTabID
+            let foreground = newIDs.first.map { activeAfter == $0 } ?? false
+            var ok = newIDs.count == expectNew
+            if let f = expectForeground, expectNew > 0 { ok = ok && foreground == f && (f || activeAfter == activeBefore) }
+            if let u = expectURL { ok = ok && newURLs.contains(where: { $0.hasPrefix(u) || ($0.removingPercentEncoding ?? $0).hasPrefix(u) }) }
+            if let h = expectSameTabHost { ok = ok && wv.url?.host == h }
+            if expectSameTabAccess { ok = ok && MioAccessAuth.isAccessURL(wv.url, prefs: host.kit.prefs) }
+            if let e = expectReturn { ok = ok && ret == e }
+            cases[name] = ["ok": ok, "newTabs": newIDs.count, "newURLs": newURLs, "foreground": foreground, "returned": ret,
+                           "sameTabBefore": orNull(urlBefore), "sameTabAfter": orNull(wv.url?.absoluteString),
+                           "activeBefore": orNull(activeBefore), "activeAfter": orNull(activeAfter)] as [String: Any]
+            for id in newIDs { c.closeTab(id) }
+            c.select(base.id)
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            return ok
+        }
+
+        typealias F = MioNewTabFixture
+        var gate: [Bool] = []
+        // 普通网站
+        await loadPage(F.plainPage, F.plainBase)
+        gate.append(await tryCase("plainBlank", F.clickJS("blank"), expectNew: 1, expectForeground: true, expectURL: F.blankTarget))
+        gate.append(await tryCase("plainWindowOpen", F.windowOpenJS(F.openTarget), expectNew: 1, expectForeground: true, expectURL: F.openTarget, expectReturn: "window"))
+        // ⌘ 点 / ⇧⌘ 点 / 中键（合成事件，只记录）
+        _ = await tryCase("plainCmdClick", F.modifierClickJS("modifier", meta: true), expectNew: 1, expectForeground: false, expectURL: F.modifierTarget)
+        _ = await tryCase("plainShiftCmdClick", F.modifierClickJS("modifier", meta: true, shift: true), expectNew: 1, expectForeground: true, expectURL: F.modifierTarget)
+        _ = await tryCase("plainMiddleClick", F.modifierClickJS("modifier", meta: false, button: 1), expectNew: 1, expectForeground: false, expectURL: F.modifierTarget)
+        await loadPage(F.plainPage, F.plainBase)
+        gate.append(await tryCase("plainSameTab", F.clickJS("same"), expectNew: 0, expectSameTabHost: "example.org"))
+
+        // MioCore（appShell 接管 → 本机桥 openTab）
+        await loadPage(F.mioCorePage, F.mioCoreBase)
+        let shell = await callAsync(wv, "return String(window.__appShell) + '/' + typeof window.MioDesktop")
+        cases["mioCoreAppShell"] = shell
+        gate.append(shell == "true/object")
+        gate.append(await tryCase("mioCoreTile", F.clickJS("tile"), expectNew: 1, expectForeground: true, expectURL: F.coreTileTarget))
+        gate.append(await tryCase("mioCoreWindowOpen", F.windowOpenJS(F.coreOpenTarget), expectNew: 1, expectForeground: true, expectURL: F.coreOpenTarget))
+        gate.append(await tryCase("mioCoreIdPTile", F.clickJS("idp"), expectNew: 1, expectForeground: true, expectURL: F.coreIdPTarget))
+        // 不经过 appShell 的原始 window.open：走 createWebViewWith（popupDisposition）
+        gate.append(await tryCase("mioCoreRawOpenIdP", F.windowOpenJS(F.coreIdPTarget, raw: true), expectNew: 1, expectForeground: true, expectURL: F.coreIdPTarget, expectReturn: "window"))
+        gate.append(await tryCase("mioCoreRawOpenAccess", F.windowOpenJS(F.coreAccessTarget, raw: true), expectNew: 0,
+                              expectSameTabAccess: true))
+        let opened = await callAsync(wv, "return (window.__opened || []).join(',')")
+        cases["mioCoreBridgeLog"] = opened
+
+        // Cloudflare Access 登录页弹出 Google 登录：当前标签继续
+        await loadPage(F.accessPage, F.accessBase)
+        gate.append(await tryCase("accessIdPPopup", F.windowOpenJS(F.accessIdPTarget), expectNew: 0, expectSameTabHost: "accounts.google.com"))
+
+        c.closeTab(base.id)
+        if let p = previousActive, c.store.tab(p) != nil { c.select(p) }
+        r["cases"] = cases
+        r["gate"] = gate
+        r["ok"] = !gate.isEmpty && gate.allSatisfy { $0 }
+        return r
     }
 
     // MARK: - Mio 扩展（MioKit）冒烟
