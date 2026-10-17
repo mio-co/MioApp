@@ -138,6 +138,56 @@ final class MioWebKitTests: XCTestCase {
         withExtendedLifetime(mods) {}
     }
 
+    /// 回归（v0.4.0 导航页链接点不开）：MioCore 调 window.MioDesktop.browser.open({ url }) 传的是对象，
+    /// shim 曾把它 String() 成 "[object Object]" → 桥回 bad_request，而 MioCore 已经 preventDefault
+    func testMioDesktopShimOpensTabsForMioCoreLinks() async throws {
+        let kit = makeKit()
+        let host = FakeBridgeHost()
+        kit.bridge.delegate = host
+        let (wv, mods, nav) = makeWebView(kit)
+        defer { withExtendedLifetime(mods) {} }
+        let page = """
+        <html><body>
+        <a id="ext" href="https://example.org/nav-tile" target="_blank" rel="noopener noreferrer">ext</a>
+        <a id="same" href="/mio/notes" target="_blank">same-host</a>
+        <script>\(MioNewTabFixture.mioCoreAppShellJS)</script>
+        </body></html>
+        """
+        await load(wv, nav, html: page, base: "https://mio.300031.xyz/mio/nav")
+        let shape = await js(wv, "return typeof window.MioDesktop + '/' + typeof (window.MioDesktop && window.MioDesktop.browser.open)")
+        XCTAssertEqual(shape as? String, "object/function")
+
+        // 1. 对象签名（MioCore / Capacitor / Electron 壳）
+        let r1 = await js(wv, "const r = await window.MioDesktop.browser.open({ url: 'https://example.org/obj' }); return JSON.stringify(r);")
+        XCTAssertEqual(r1 as? String, "{\"opened\":true}")
+        // 2. 字符串 + { background }（v0.3.x 文档写法）
+        _ = await js(wv, "await window.MioDesktop.browser.open('https://example.org/str', { background: true }); return 1;")
+        // 3. 相对地址按页面解析
+        _ = await js(wv, "await window.MioDesktop.browser.open({ url: '/mio/drop' }); return 1;")
+        // 4. 站点卡片点击（MioCore 的 document click 接管）
+        _ = await js(wv, "document.getElementById('ext').click(); await new Promise(r => setTimeout(r, 300)); return window.__opened.join(',');")
+        // 5. 搜索框 / handleOpenLink 的 window.open（被 MioCore 包过）
+        _ = await js(wv, "window.open('https://example.org/search?q=1', '_blank', 'noopener,noreferrer'); await new Promise(r => setTimeout(r, 300)); return 1;")
+        XCTAssertEqual(host.opened.map(\.absoluteString), [
+            "https://example.org/obj", "https://example.org/str", "https://mio.300031.xyz/mio/drop",
+            "https://example.org/nav-tile", "https://example.org/search?q=1",
+        ])
+        XCTAssertEqual(host.backgrounds, [false, true, false, false, false])
+        let log = await js(wv, "return window.__opened.join(',')") as? String ?? ""
+        XCTAssertFalse(log.contains("rejected"), log)
+
+        // 打不开的地址：同步抛错（MioCore 就不 preventDefault，交给浏览器），不调桥
+        let bad = await js(wv, """
+        const out = [];
+        for (const u of [{ url: 'javascript:alert(1)' }, { url: '' }, {}, 'data:text/html,x', null]) {
+          try { window.MioDesktop.browser.open(u); out.push('no-throw'); } catch (e) { out.push(e.name); }
+        }
+        return out.join(',');
+        """)
+        XCTAssertEqual(bad as? String, "TypeError,TypeError,TypeError,TypeError,TypeError")
+        XCTAssertEqual(host.opened.count, 5)
+    }
+
     func testSchemeHandlerServesInternalPages() async throws {
         let kit = makeKit()
         let (wv, mods, nav) = makeWebView(kit)

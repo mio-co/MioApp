@@ -55,9 +55,22 @@ public final class MioCoreBridgeHandler: NSObject {
             });
           }
           Object.defineProperty(window, 'Mio', { value: Object.freeze({ api: \(MioCoreBridge.apiVersion), call: call }), configurable: false, writable: false });
-          // v0.3.x 兼容：MioCore 页面里的 window.MioDesktop.browser.open(url)
+          // v0.3.x 兼容：MioCore 页面里的 window.MioDesktop.browser.open(…)（MioCore utils/appShell.ts 接管站外链接点击和 window.open 时调用）。
+          // MioCore 传的是对象 { url, mode? }（与 Capacitor MioBrowser 插件 / Electron 壳同一签名），也接受字符串 + { background }。
+          // 地址不能解析成 http(s) / mio:// 时同步抛错：MioCore 的 openInAppBrowser 收到异常就不 preventDefault，链接照常走浏览器自己的
+          // target=_blank / window.open（新标签），不会出现「点了没反应」。（v0.4.0 把对象 String() 成 "[object Object]"，桥回 bad_request，
+          // 而 MioCore 已经 preventDefault —— 导航页的链接全部点不开）
           if (!window.MioDesktop) {
-            window.MioDesktop = { browser: { open: function (u, opts) { return call('openTab', { url: String(u), background: !!(opts && opts.background) }); } } };
+            var openTab = function (u, opts) {
+              var o = (u && typeof u === 'object' && !(u instanceof URL)) ? u : (opts || {});
+              var raw = (u && typeof u === 'object' && !(u instanceof URL)) ? (u.url || u.href) : u;
+              if (raw === undefined || raw === null || raw === '') throw new TypeError('MioDesktop.browser.open: url required');
+              var abs;
+              try { abs = new URL(String(raw), location.href); } catch (e) { throw new TypeError('MioDesktop.browser.open: bad url'); }
+              if (!/^(https?|mio):$/.test(abs.protocol)) throw new TypeError('MioDesktop.browser.open: unsupported scheme ' + abs.protocol);
+              return call('openTab', { url: abs.href, background: !!(o && o.background) });
+            };
+            window.MioDesktop = { browser: { open: openTab } };
           }
         })();
         """

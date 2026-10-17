@@ -61,11 +61,12 @@ final class MioBridgeOriginTests: XCTestCase {
 
 final class FakeBridgeHost: MioCoreBridgeDelegate {
     var opened: [URL] = []
+    var backgrounds: [Bool] = []
     var saved: [(String, [String: Any])] = []
     var asked: [MioBridgePermission] = []
     var grant = false
     func bridgeDeviceInfo() -> MioDeviceInfo { MioDeviceInfo(platform: "macos", model: "Mac14,7", osVersion: "15.0", appVersion: "0.4.0", appBuild: "10", locale: "zh-Hans") }
-    func bridgeOpenTab(_ url: URL, background: Bool) -> Bool { opened.append(url); return true }
+    func bridgeOpenTab(_ url: URL, background: Bool) -> Bool { opened.append(url); backgrounds.append(background); return true }
     func bridgeSaveToMio(kind: String, payload: [String: Any]) async -> [String: Any] { saved.append((kind, payload)); return ["ok": true, "kind": kind, "id": "n1"] }
     func bridgeRequestPermission(_ permission: MioBridgePermission, origin: MioFrameOrigin) async -> Bool { asked.append(permission); return grant }
 }
