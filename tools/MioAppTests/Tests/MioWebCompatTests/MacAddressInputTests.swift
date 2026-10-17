@@ -14,6 +14,8 @@ final class MacAddressInputTests: XCTestCase {
         XCTAssertEqual(r("  https://mio.300031.xyz/mio/nav "), "https://mio.300031.xyz/mio/nav")
         XCTAssertEqual(r("http://example.com/a?b=1"), "http://example.com/a?b=1")
         XCTAssertEqual(r("about:blank"), "about:blank")
+        XCTAssertEqual(r("mio://home"), "mio://home")
+        XCTAssertEqual(r("about:home"), "mio://home")
     }
 
     func testDomainsGetHTTPS() {

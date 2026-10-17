@@ -49,6 +49,8 @@ enum MioMacWebKit {
         c.preferences.javaScriptCanOpenWindowsAutomatically = false
         c.allowsAirPlayForMediaPlayback = true
         installScripts(c.userContentController)
+        // mio://home 的本机桥（占位）：只回应 MioCore 来源，其他网站调用一律拒绝。API 本体由 MioKit（线路 C）提供
+        c.userContentController.addScriptMessageHandler(MioMacHomeBridge.shared, contentWorld: .page, name: MioMacHomeBridge.name)
         return c
     }
 
@@ -72,5 +74,25 @@ enum MioMacWebKit {
     static func colorFor(container: MioContainer?) -> NSColor? {
         guard let c = container, let hex = MioContainerCore.colorHex[c.color] else { return nil }
         return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+}
+
+/// MioCore 本机桥占位（window.webkit.messageHandlers.mioHome.postMessage(...)）：
+/// 来源校验在这里（MioMacHome.isTrustedOrigin），具体能力（相册同步、控制本机……）等 MioKit 的 MioCore 桥接入后转发过去。
+@MainActor
+final class MioMacHomeBridge: NSObject, WKScriptMessageHandlerWithReply {
+    static let shared = MioMacHomeBridge()
+    static let name = "mioHome"
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) async -> (Any?, String?) {
+        let origin = message.frameInfo.securityOrigin
+        var c = URLComponents()
+        c.scheme = origin.protocol
+        c.host = origin.host
+        if origin.port != 0 { c.port = origin.port }
+        guard message.frameInfo.isMainFrame, MioMacHome.isTrustedOrigin(c.url) else { return (nil, "origin-not-allowed") }
+        let op = (message.body as? [String: Any])?["op"] as? String ?? ""
+        if op == "ping" { return (["ok": true, "platform": "macOS", "bridge": "placeholder"], nil) }
+        return (nil, "not-implemented")
     }
 }

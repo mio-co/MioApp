@@ -4,7 +4,9 @@
 //   3. 新标签打开 YouTube 视频页（桌面 Safari UA）：记录 MSE isTypeSupported、ytInitialPlayerResponse 的可用格式
 //      （playabilityStatus 不是 OK —— 例如 LOGIN_REQUIRED / 机房 IP 被要求登录 —— 只记录，不算失败）
 //   4. 容器：新容器标签用 WKWebsiteDataStore(forIdentifier: 容器 UUID) 加载页面
-//   5. 截图：窗口（工具栏 + 标签条 + 网页）→ MIO_SMOKE_SHOTS 目录（默认与 json 同目录）
+//   5. Firefox 式界面：mio://home、本机桥来源校验、固定 / 静音 / 拖拽排序 / 关闭 / 溢出 / 拖出成新窗口、地址栏下拉、缩放 HUD、
+//      查找栏、Mio 扩展面板、应用菜单（含子视图滑动）、侧边栏 / 垂直标签、全屏；录屏（.mov）+ 每个动画的连拍帧条 + 帧率
+//   6. 设置窗口（about:preferences 风格）截图 → MIO_SMOKE_SHOTS 目录（默认与 json 同目录）
 
 import AppKit
 import WebKit
@@ -130,50 +132,414 @@ final class MioMacSmoke {
             report["youtubeModuleMenu"] = MioMacWebKit.modules.menuItems(page: controller.currentPage).map { $0.id }
         }
 
-        // 5. 截图 + 界面结构
+        // 5. Firefox 式界面 + 动画证据
         try? await Task.sleep(nanoseconds: 1_500_000_000)
-        let shotsDir = ProcessInfo.processInfo.environment["MIO_SMOKE_SHOTS"] ?? (outPath as NSString).deletingLastPathComponent
+        let dir = ProcessInfo.processInfo.environment["MIO_SMOKE_SHOTS"] ?? (outPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        self.dir = dir
+        let c = controller
+        var ui: [String: Any] = [:]
         var shots: [String: Any] = [:]
-        shots["main"] = await screenshot(window: controller.window, webView: controller.activeWebView, dir: shotsDir, name: "mac-native-window", chrome: true)
-        // 侧边栏展开（Safari macOS 布局）
-        controller.setSidebar(visible: true)
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
-        shots["sidebar"] = await screenshot(window: controller.window, webView: controller.activeWebView, dir: shotsDir, name: "mac-native-sidebar", chrome: false)
-        report["sidebarTabs"] = controller.sidebarModel.tabs.count
-        shots["screenSidebar"] = screencapture(dir: shotsDir, name: "screen-sidebar")
-        // 设置窗口（Safari 分区 + Mio 分区），选中「模块」
-        if let d = delegate {
-            d.openSettings(section: .modules)
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            shots["settings"] = await screenshot(window: d.settingsWindow, webView: nil, dir: shotsDir, name: "mac-native-settings", chrome: false)
-            shots["screenSettings"] = screencapture(dir: shotsDir, name: "screen-settings")
-            report["settingsWindow"] = d.settingsWindow?.isVisible ?? false
+        shots["main"] = await screenshot(window: c.window, webView: c.activeWebView, dir: dir, name: "mac-native-window-cache", chrome: false)
+        shot("mac-native-window", &shots)
+        shotChrome("mac-native-tabstrip", &shots)
+
+        let rec = MioMacRecorder()
+        rec.start(path: (dir as NSString).appendingPathComponent("mac-native-anim.mov"), fps: 20) { [weak c] in c?.window?.frame ?? .zero }
+        let meter = MioFrameMeter()
+        meter.start(on: c.tabBar)
+        var strips: [String: Any] = [:]
+
+        // 5a. mio://home 首页（地址栏显示「Mio」）
+        let homeStrip = await strip("anim-tab-open", title: "新建标签页（mio://home）：标签从 0 宽度展开 + 淡入，其余标签收缩", chromeOnly: true) {
+            c.newTab(url: MioMacHome.address)
         }
+        strips["tabOpen"] = homeStrip
+        if let hid = c.activeTabID { await waitLoad(hid, timeout: 25) }
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        ui["homeAddressBar"] = c.navBar.urlBar.displayedText
+        ui["homeURL"] = orNull(c.activeWebView?.url?.absoluteString)
+        ui["homeIsHome"] = c.isHome(c.activeWebView?.url)
+        ui["homeSecurity"] = c.navBar.urlBar.security.rawValue
+        let homeOK = c.navBar.urlBar.displayedText == MioMacHome.displayName && c.isHome(c.activeWebView?.url)
+        ui["homeOK"] = homeOK
+        shot("mac-native-home", &shots)
+
+        // 5b. 本机桥只对 MioCore 来源开放
+        let bridgeJS = "try { const r = await window.webkit.messageHandlers.mioHome.postMessage({op:'ping'}); return 'allowed:' + JSON.stringify(r); } catch (e) { return 'rejected:' + (e && e.message ? e.message : String(e)); }"
+        var bridge: [String: Any] = [:]
+        if let hwv = c.activeWebView { bridge["home"] = await callAsync(hwv, bridgeJS) }
+        if let ex = c.store.tabs.first(where: { $0.url.contains("example.com") }), let ewv = c.webViews[ex.id] {
+            bridge["example"] = await callAsync(ewv, bridgeJS)
+        }
+        let bridgeOK = ((bridge["example"] as? String) ?? "").hasPrefix("rejected:") && ((bridge["example"] as? String) ?? "").contains("origin-not-allowed")
+        bridge["gateOK"] = bridgeOK
+        ui["bridge"] = bridge
+
+        // 5c. 多标签：固定、静音、正在播放
+        c.newTab(url: "https://example.org/", activate: false)
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        if let first = c.store.tabs.first { c.togglePin(first.id) }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        if let yt = c.store.tabs.first(where: { $0.url.contains("youtube") }) { c.debugSetAudible(yt.id, true) }
+        if let ex2 = c.store.tabs.first(where: { $0.url.contains("example.org") }) { c.toggleMute(ex2.id) }
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        shot("mac-native-tabs", &shots)
+        shotChrome("mac-native-tabstrip-multi", &shots)
+        ui["pinnedOK"] = c.tabBar.items.first?.pinned == true && (c.tabBar.tabFrames[c.tabBar.items.first?.id ?? -1]?.width ?? 0) <= 40
+        ui["tabItems"] = c.tabBar.items.map { ["id": $0.id, "title": $0.title, "pinned": $0.pinned, "audible": $0.audible, "muted": $0.muted, "home": $0.isHome] as [String: Any] }
+
+        // 5d. 拖拽排序（模拟鼠标：最后一个标签拖到第一个普通标签的位置）
+        let orderBefore = c.store.tabs.map(\.id)
+        var dragOK = false
+        if let last = c.tabBar.items.last, !last.pinned {
+            c.tabBar.beginProgrammaticDrag(last.id)
+            let start = c.tabBar.dragStartPoint ?? .zero
+            let firstNormalX = c.tabBar.items.first(where: { !$0.pinned }).flatMap { c.tabBar.tabFrames[$0.id]?.midX } ?? 120
+            let distance = start.x - (firstNormalX + c.tabBar.tabsOriginX) + 20
+            let dragStrip = await strip("anim-tab-drag", title: "拖拽排序：被拖标签跟手（抬起阴影），其余标签让位", chromeOnly: true, count: 14, intervalMs: 50) {
+                Task { @MainActor in
+                    for i in 1...16 {
+                        c.tabBar.dragMoved(to: NSPoint(x: start.x - distance * CGFloat(i) / 16, y: start.y), screenPoint: .zero)
+                        try? await Task.sleep(nanoseconds: 35_000_000)
+                    }
+                    c.tabBar.dragEnded(screenPoint: .zero)
+                }
+            }
+            strips["tabDrag"] = dragStrip
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            let after = c.store.tabs.map(\.id)
+            dragOK = after != orderBefore && after.firstIndex(of: last.id) ?? 99 < orderBefore.firstIndex(of: last.id) ?? 0
+            ui["dragOrder"] = ["before": orderBefore, "after": after]
+        }
+        ui["dragOK"] = dragOK
+
+        // 5e. 关闭标签（收缩 + 补位）
+        if let victim = c.store.tabs.first(where: { $0.url.contains("example.org") }) {
+            strips["tabClose"] = await strip("anim-tab-close", title: "关闭标签：宽度收缩到 0 + 淡出，其余标签平滑补位", chromeOnly: true) {
+                c.closeTab(victim.id)
+            }
+        }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        // 5f. 地址栏聚焦 + 下拉建议
+        strips["urlbarFocus"] = await strip("anim-urlbar-focus", title: "地址栏聚焦：突出放大 + 描边 + 阴影，下拉建议淡入下滑", chromeOnly: false, count: 8, intervalMs: 35) {
+            c.focusAddressBar()
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                c.navBar.urlBar.field.stringValue = "exam"
+                c.navBar.urlBar.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: c.navBar.urlBar.field))
+            }
+        }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        ui["urlbarFocused"] = c.navBar.urlBar.isFocused
+        ui["dropdownVisible"] = c.navBar.urlBar.dropdown.isVisible
+        ui["dropdownRows"] = c.navBar.urlBar.dropdown.rowCount
+        ui["suggestions"] = c.suggestions(for: "exam").map { "\($0.kind.rawValue): \($0.title)" }
+        shot("mac-native-urlbar-dropdown", &shots)
+        c.navBar.urlBar.dropdown.hide(animated: false)
+        if let wv = c.activeWebView { c.window?.makeFirstResponder(wv) }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        // 5g. ⌘+ 缩放提示 HUD + 地址栏百分比
+        if let ex = c.store.tabs.first(where: { $0.url.contains("example.com") && !$0.url.contains("container") }) { c.select(ex.id) }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        strips["zoomHUD"] = await strip("anim-zoom-hud", title: "⌘+ 缩放：中央 HUD 淡入 + 微缩放，地址栏滑出 115%", chromeOnly: false, count: 8, intervalMs: 40) {
+            c.zoomIn(nil)
+        }
+        ui["zoomHUDShown"] = c.zoomHUD.isShowing
+        ui["zoomPill"] = c.navBar.urlBar.zoomButton.titleLabel.stringValue
+        shot("mac-native-zoom-hud", &shots)
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        c.zoomReset(nil)
+        try? await Task.sleep(nanoseconds: 1_300_000_000)
+
+        // 5h. 查找栏
+        strips["findbar"] = await strip("anim-findbar", title: "⌘F 查找栏从底部滑出", chromeOnly: false, count: 8, intervalMs: 35) {
+            c.showFindBar(nil)
+        }
+        c.findBar.field.stringValue = "Example"
+        c.findBar.find(backwards: false, fresh: true)
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        ui["findStatus"] = c.findBar.status.stringValue
+        ui["findBarVisible"] = c.findBarVisible
+        shot("mac-native-findbar", &shots)
+        c.hideFindBar()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        // 5i. Mio 扩展面板
+        strips["extensions"] = await strip("anim-extensions-panel", title: "Mio 扩展面板：淡入 + 下滑 + 微缩放", chromeOnly: false, count: 7, intervalMs: 35) {
+            c.showExtensionsPanel()
+        }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        ui["extensionsPanel"] = MioMacPopupPanel.current?.isVisible ?? false
+        ui["extensionRows"] = rowTitles(MioMacPopupPanel.current?.contentView)
+        shot("mac-native-extensions", &shots)
+        c.dismissPanel()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        // 5j. 应用菜单 + 子菜单滑动
+        strips["appMenu"] = await strip("anim-appmenu", title: "≡ 应用菜单打开", chromeOnly: false, count: 7, intervalMs: 35) {
+            c.showAppMenu()
+        }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        ui["appMenuRows"] = rowTitles(MioMacPopupPanel.current?.contentView)
+        shot("mac-native-appmenu", &shots)
+        if let row = findRow("更多工具", in: MioMacPopupPanel.current?.contentView) {
+            strips["appMenuSub"] = await strip("anim-appmenu-subview", title: "应用菜单子视图左右滑动（更多工具）", chromeOnly: false, count: 8, intervalMs: 35) {
+                row.onClick?()
+            }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            shot("mac-native-appmenu-sub", &shots)
+        }
+        c.dismissPanel()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        // 5k. 列出所有标签页
+        c.showAllTabsPanel(from: c.tabBar.listAllButton)
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        shot("mac-native-alltabs", &shots)
+        c.dismissPanel()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        // 5l. 侧边栏（垂直标签）滑入 / 垂直标签模式
+        strips["sidebar"] = await strip("anim-sidebar", title: "侧边栏滑入（垂直标签页）", chromeOnly: false, count: 9, intervalMs: 40) {
+            c.setSidebar(visible: true, animated: true)
+        }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        shot("mac-native-sidebar", &shots)
+        UserDefaults.standard.set(true, forKey: MioMacPreferencesView.verticalTabsKey)
+        strips["verticalMode"] = await strip("anim-vertical-tabs-mode", title: "切换垂直标签模式：横向标签条收起，导航栏升到红绿灯一行", chromeOnly: false, count: 8, intervalMs: 40) {
+            c.applyPreferences()
+        }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        ui["verticalMode"] = c.verticalTabsMode
+        shot("mac-native-vertical-tabs", &shots)
+        UserDefaults.standard.set(false, forKey: MioMacPreferencesView.verticalTabsKey)
+        c.applyPreferences()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        c.setSidebar(visible: false, animated: true)
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        // 5m. 标签溢出：横向滚动 + 右端 +
+        let extraBefore = c.store.count
+        for _ in 0..<14 {
+            c.newTab(url: "about:blank", activate: false)
+            try? await Task.sleep(nanoseconds: 60_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        ui["overflow"] = c.tabBar.layoutResult.overflow
+        ui["overflowTabWidth"] = c.tabBar.layoutResult.tabWidth
+        shotChrome("mac-native-tabs-overflow", &shots)
+        if let lastBlank = c.store.tabs.last { c.select(lastBlank.id) }
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        shotChrome("mac-native-tabs-overflow-scrolled", &shots)
+        for t in c.store.tabs where t.url == "about:blank" { c.closeTab(t.id) }
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        ui["overflowRestored"] = c.store.count == extraBefore
+
+        // 5n. 拖出成新窗口
+        var detachOK = false
+        if let ytTab = c.store.tabs.first(where: { $0.url.contains("youtube") }), let d = delegate, let w = c.window {
+            let before = d.controllers.count
+            c.detachTab(ytTab.id, at: NSPoint(x: w.frame.midX + 60, y: w.frame.midY))
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if d.controllers.count == before + 1, let nw = d.controllers.last, nw !== c {
+                detachOK = nw.store.count == 1 && nw.activeWebView?.url?.host?.contains("youtube") == true
+                MioMacRecorder.savePNG(MioMacRecorder.capture(window: nw.window), to: (dir as NSString).appendingPathComponent("mac-native-detached.png"))
+                nw.window?.performClose(nil)
+                nw.window?.close()
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+        ui["detachOK"] = detachOK
+        c.window?.makeKeyAndOrderFront(nil)
+
+        // 5o. 右键菜单内容
+        if let id = c.activeTabID { ui["tabContextMenu"] = c.tabContextMenu(id)?.items.map { $0.isSeparatorItem ? "—" : $0.title } ?? [] }
+
+        // 5p. 全屏过渡（CI 虚拟机上可能不可用：只记录）
+        var fullscreen: [String: Any] = [:]
+        if ProcessInfo.processInfo.environment["MIO_SMOKE_FULLSCREEN"] != "0", let w = c.window {
+            let fsStrip = await strip("anim-fullscreen", title: "进入全屏：系统过渡 + 标签条左侧留白收回", chromeOnly: false, count: 10, intervalMs: 120, screen: true) {
+                w.toggleFullScreen(nil)
+            }
+            strips["fullscreen"] = fsStrip
+            var waited = 0
+            while !w.styleMask.contains(.fullScreen) && waited < 30 { try? await Task.sleep(nanoseconds: 100_000_000); waited += 1 }
+            fullscreen["entered"] = w.styleMask.contains(.fullScreen)
+            fullscreen["tabBarInset"] = c.tabBar.leadingInset
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            if w.styleMask.contains(.fullScreen) {
+                MioMacRecorder.savePNG(MioMacRecorder.capture(screenRect: w.screen?.frame ?? w.frame), to: (dir as NSString).appendingPathComponent("mac-native-fullscreen.png"))
+                w.toggleFullScreen(nil)
+                waited = 0
+                while w.styleMask.contains(.fullScreen) && waited < 40 { try? await Task.sleep(nanoseconds: 100_000_000); waited += 1 }
+                try? await Task.sleep(nanoseconds: 800_000_000)
+            }
+            fullscreen["exited"] = !w.styleMask.contains(.fullScreen)
+        }
+        ui["fullscreen"] = fullscreen
+
+        meter.stop()
+        ui["animation"] = meter.report
+        ui["recording"] = await rec.stop()
+        ui["strips"] = strips
+
+        // 5q. 减少动态效果：动画时长 0，新标签立即到位
+        MioMotion.forceReduce = true
+        if let r = c.newTab(url: "about:blank", activate: false) {
+            let wNow = c.tabBar.tabFrames[r.id]?.width ?? 0
+            ui["reduceMotionImmediateWidth"] = wNow
+            ui["reduceMotionOK"] = wNow > 30 && MioMotion.duration(MioMotion.normal) == 0
+            c.closeTab(r.id)
+        }
+        MioMotion.forceReduce = nil
+
+        // 5r. 布局结构（Firefox：标签条在导航栏上方、与红绿灯同一行）
+        if let w = c.window, let cv = w.contentView {
+            let tb = c.tabBar.convert(c.tabBar.bounds, to: nil)
+            let nb = c.navBar.convert(c.navBar.bounds, to: nil)
+            let close = w.standardWindowButton(.closeButton).map { $0.convert($0.bounds, to: nil) } ?? .zero
+            ui["layout"] = ["tabBar": [tb.minX, tb.minY, tb.width, tb.height], "navBar": [nb.minX, nb.minY, nb.width, nb.height],
+                            "closeButton": [close.minX, close.minY, close.width, close.height], "content": [cv.bounds.width, cv.bounds.height]]
+            ui["tabsAboveNav"] = tb.minY >= nb.maxY - 0.5 && tb.maxY >= cv.bounds.height - 0.5
+            ui["trafficLightsInTabRow"] = close.midY >= tb.minY && close.midY <= tb.maxY
+        }
+
+        // 6. 设置窗口（about:preferences 风格）
+        if let d = delegate {
+            d.openSettings(pane: .extensions)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            MioMacRecorder.savePNG(MioMacRecorder.capture(window: d.settingsWindow), to: (dir as NSString).appendingPathComponent("mac-native-settings.png"))
+            shots["settingsCache"] = await screenshot(window: d.settingsWindow, webView: nil, dir: dir, name: "mac-native-settings-cache", chrome: false)
+            d.openSettings(pane: .general)
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            MioMacRecorder.savePNG(MioMacRecorder.capture(window: d.settingsWindow), to: (dir as NSString).appendingPathComponent("mac-native-settings-general.png"))
+            report["settingsWindow"] = d.settingsWindow?.isVisible ?? false
+            d.settingsWindow?.close()
+        }
+        report["ui"] = ui
         report["screenshots"] = shots
-        report["settingsSections"] = MioSettingsSection.allCases.map { $0.title }
+        report["settingsPanes"] = MioMacPrefsPane.allCases.map { $0.title }
         report["modules"] = MioMacWebKit.modules.modules.map { ["id": $0.id, "section": $0.section.rawValue, "enabled": $0.isEnabled(MioMacWebKit.modules.prefs)] as [String: Any] }
         report["moduleScripts"] = MioMacWebKit.modules.scripts().map { $0.moduleID }
-        let toolbarIDs = controller.window?.toolbar?.items.map { $0.itemIdentifier.rawValue } ?? []
-        report["toolbarItems"] = toolbarIDs
         report["tabs"] = controller.store.tabs.map { ["id": $0.id, "url": $0.url, "title": $0.title, "container": $0.containerID] as [String: Any] }
-        report["tabStripItems"] = controller.tabStrip.items.count
+        report["tabStripItems"] = controller.tabBar.items.count
         let keys = MioMacMenu.keyEquivalents(NSApp.mainMenu)
         report["menuKeyEquivalents"] = keys
-        let requiredKeys = ["⌘,", "⌘t", "⌘w", "⌘l", "⌘+", "⌘-", "⌘0", "⌘=", "⇧⌘t", "⌘r", "⌘[", "⌘]"]
-        let keysOK = requiredKeys.allSatisfy { keys.contains($0) }
-        let chromeOK = ["mio.back", "mio.forward", "mio.address", "mio.newTab", "mio.menu"].allSatisfy { toolbarIDs.contains($0) } && controller.store.tabs.count >= 3
+        let requiredKeys = ["⌘,", "⌘t", "⌘n", "⌘w", "⌘l", "⌘+", "⌘-", "⌘0", "⌘=", "⇧⌘t", "⌘r", "⌘[", "⌘]", "⌘f", "⌘g", "⌘d", "⌃⇥", "⌃⇧⇥", "⌥⌘i", "⌃⌘s", "⌥⌘→"]
+        let missingKeys = requiredKeys.filter { !keys.contains($0) }
+        report["missingKeys"] = missingKeys
+        let keysOK = missingKeys.isEmpty
+        let navIDs = ["mio.nav.back", "mio.nav.forward", "mio.nav.reload", "mio.nav.extensions", "mio.nav.menu", "mio.nav.sidebar"]
+        let foundIDs = Set(allIdentifiers(c.navBar))
+        report["navBarIdentifiers"] = Array(foundIDs).sorted()
+        let chromeOK = navIDs.allSatisfy { foundIDs.contains($0) } && foundIDs.contains("mio.urlbar") && controller.store.tabs.count >= 3
+            && ((ui["tabsAboveNav"] as? Bool) ?? false)
         report["keysOK"] = keysOK
         report["chromeOK"] = chromeOK
         report["mseOK"] = mseOK
         let zoomOK = (report["zoomOK"] as? Bool) ?? false
         let modulesOK = MioMacWebKit.modules.scripts().count >= 2 && ((report["youtubeModuleMenu"] as? [String]) ?? []).contains("youtubeFocus.settings")
         report["modulesOK"] = modulesOK
-        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK && modulesOK
+        // 门槛：原有（MSE / 缩放 / 容器 / 快捷键 / 模块）+ Firefox 布局 + 桥来源校验；动画 / 截图 / 首页（依赖外网）只记录
+        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK && modulesOK && bridgeOK
         report["pass"] = pass
         report["seconds"] = Int(Date().timeIntervalSince(started))
         write()
         print("MIO_MAC_NATIVE_SMOKE " + (pass ? "PASS" : "FAIL"))
         exit(pass ? 0 : 1)
+    }
+
+    // MARK: - UI 冒烟工具
+
+    private var dir = ""
+
+    /// 窗口（含子窗口面板）截图；屏幕截图不可用时退回 cacheDisplay
+    private func shot(_ name: String, _ shots: inout [String: Any]) {
+        let path = (dir as NSString).appendingPathComponent("\(name).png")
+        if MioMacRecorder.savePNG(MioMacRecorder.capture(window: controller.window), to: path) {
+            shots[name] = path
+        } else if let w = controller.window, let fv = w.contentView?.superview, let rep = fv.bitmapImageRepForCachingDisplay(in: fv.bounds) {
+            fv.cacheDisplay(in: fv.bounds, to: rep)
+            if let png = rep.representation(using: .png, properties: [:]), (try? png.write(to: URL(fileURLWithPath: path))) != nil { shots[name] = path + " (cacheDisplay)" }
+        }
+    }
+
+    /// 只截顶部（标签条 + 导航栏）
+    private func shotChrome(_ name: String, _ shots: inout [String: Any]) {
+        guard let w = controller.window else { return }
+        let path = (dir as NSString).appendingPathComponent("\(name).png")
+        if MioMacRecorder.savePNG(MioMacRecorder.capture(screenRect: chromeRect(w)), to: path) { shots[name] = path }
+    }
+
+    private func chromeRect(_ w: NSWindow) -> NSRect {
+        let h = MioMacTabBar.height + MioMacNavBar.height + 2
+        return NSRect(x: w.frame.minX, y: w.frame.maxY - h, width: w.frame.width, height: h)
+    }
+
+    /// 动作 + 连拍 → 帧条 PNG；返回 {path, frames, changed}
+    private func strip(_ name: String, title: String, chromeOnly: Bool, count: Int = 8, intervalMs: UInt64 = 30, screen: Bool = false,
+                       _ action: @escaping () -> Void) async -> [String: Any] {
+        guard let w = controller.window else { return ["error": "no window"] }
+        let rect: () -> NSRect = { [weak w] in
+            guard let w else { return .zero }
+            if screen { return w.screen?.frame ?? w.frame }
+            return chromeOnly ? self.chromeRect(w) : w.frame
+        }
+        let task = Task { @MainActor in await MioMacRecorder.burst(count: count, intervalMs: intervalMs, rect: rect) }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+        action()
+        let frames = await task.value
+        let path = (dir as NSString).appendingPathComponent("\(name).png")
+        let saved = MioMacRecorder.saveStrip(screen ? frames.map { scaled($0, 0.5) } : frames, intervalMs: Int(intervalMs), title: title, to: path)
+        var changed = 0
+        for i in 1..<max(1, frames.count) where MioMacRecorder.differs(frames[i - 1], frames[i]) { changed += 1 }
+        return ["path": saved ? path as Any : NSNull() as Any, "frames": frames.count, "framesThatChanged": changed]
+    }
+
+    private func scaled(_ img: CGImage, _ f: CGFloat) -> CGImage {
+        let w = Int(CGFloat(img.width) * f), h = Int(CGFloat(img.height) * f)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return img }
+        ctx.interpolationQuality = .medium
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage() ?? img
+    }
+
+    private func callAsync(_ wv: WKWebView, _ js: String) async -> String {
+        await withCheckedContinuation { cont in
+            wv.callAsyncJavaScript(js, arguments: [:], in: nil, in: .page) { result in
+                switch result {
+                case .success(let v): cont.resume(returning: (v as? String) ?? "\(v)")
+                case .failure(let e): cont.resume(returning: "error:\(e.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private func allIdentifiers(_ v: NSView) -> [String] {
+        var out: [String] = []
+        let id = v.accessibilityIdentifier()
+        if !id.isEmpty { out.append(id) }
+        for s in v.subviews { out += allIdentifiers(s) }
+        return out
+    }
+
+    private func rowTitles(_ v: NSView?) -> [String] {
+        guard let v else { return [] }
+        var out: [String] = []
+        if let r = v as? MioMacMenuRow { out.append(r.title.stringValue) }
+        for s in v.subviews where !s.isHidden { out += rowTitles(s) }
+        return out
+    }
+
+    private func findRow(_ title: String, in v: NSView?) -> MioMacMenuRow? {
+        guard let v else { return nil }
+        if let r = v as? MioMacMenuRow, r.title.stringValue == title { return r }
+        for s in v.subviews { if let r = findRow(title, in: s) { return r } }
+        return nil
     }
 
     private func orNull(_ v: Any?) -> Any { v ?? NSNull() }
@@ -234,7 +600,7 @@ final class MioMacSmoke {
 
         guard chrome else { return result }
         // 只要顶部：标题栏 + 工具栏 + 标签条
-        let chromeHeight = bounds.height - win.contentLayoutRect.height + MioMacTabStrip.height + 4
+        let chromeHeight = bounds.height - win.contentLayoutRect.height + MioMacTabBar.height + MioMacNavBar.height + 2
         let scale = CGFloat(out.pixelsHigh) / bounds.height
         let cropPx = CGRect(x: 0, y: 0, width: CGFloat(out.pixelsWide), height: min(CGFloat(out.pixelsHigh), (chromeHeight * scale).rounded()))
         if let cg = out.cgImage, let cropped = cg.cropping(to: cropPx) { // CGImage 原点在左上

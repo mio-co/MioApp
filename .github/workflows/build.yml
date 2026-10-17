@@ -577,7 +577,7 @@ jobs:
           otool -L "$APP/Contents/MacOS/MioMac" | grep -E 'WebKit|AppKit'
           ! otool -L "$APP/Contents/MacOS/MioMac" | grep -i -E 'UIKit|Capacitor'
 
-      - name: Smoke (MSE gate, YouTube formats, tabs / containers / zoom / shortcuts, screenshots)
+      - name: Smoke (MSE gate, YouTube formats, Firefox-style UI, animations, screenshots + recording)
         run: |
           set +e -u
           mkdir -p mac-native-smoke
@@ -585,18 +585,23 @@ jobs:
           MIO_SMOKE_OUT="$OUT" MIO_SMOKE_SHOTS="$PWD/mac-native-smoke" "mac-native-dist/Mio Preview.app/Contents/MacOS/MioMac" > mac-native-smoke/app.log 2>&1 &
           PID=$!
           SHOT=0
-          for i in $(seq 1 240); do
+          for i in $(seq 1 420); do
             kill -0 $PID 2>/dev/null || break
             if [ $SHOT = 0 ] && [ $i -ge 70 ]; then screencapture -x mac-native-smoke/screen.png 2>/dev/null; SHOT=1; fi
             sleep 1
           done
-          if kill -0 $PID 2>/dev/null; then echo "still running after 240s"; screencapture -x mac-native-smoke/screen-timeout.png 2>/dev/null; kill $PID; fi
+          if kill -0 $PID 2>/dev/null; then echo "still running after 420s"; screencapture -x mac-native-smoke/screen-timeout.png 2>/dev/null; kill $PID; fi
           wait $PID
           CODE=$?
           echo "--- app.log (tail) ---"; tail -40 mac-native-smoke/app.log
           echo "--- smoke.json ---"; cat "$OUT" 2>/dev/null || echo "(no smoke json)"
           echo "--- summary ---"
-          jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
+          jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, modulesOK, missingKeys, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
+          echo "--- Firefox UI ---"
+          jq -c '.ui | {homeOK, homeAddressBar, bridge, pinnedOK, dragOK, detachOK, overflow, dropdownRows, zoomHUDShown, zoomPill, findStatus, verticalMode, reduceMotionOK, tabsAboveNav, trafficLightsInTabRow, layout}' "$OUT" 2>/dev/null
+          jq -c '.ui | {animation, recording, fullscreen}' "$OUT" 2>/dev/null
+          jq -c '.ui.strips | to_entries | map({(.key): {frames: .value.frames, changed: .value.framesThatChanged}}) | add' "$OUT" 2>/dev/null
+          ls -la mac-native-smoke
           jq -c '.youtube | {playability, hlsManifest, dashManifest, adaptiveCount, maxAdaptiveHeight, qualityLevels, playbackQuality, video, mediaSource, managedMediaSource}' "$OUT" 2>/dev/null
           jq -c '[.youtube.adaptiveVideo[]? | "\(.q) \(.mime)"] | unique' "$OUT" 2>/dev/null
           ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i -E 'MioMac' | head -2 | while read f; do echo "--- crash $f ---"; head -60 ~/Library/Logs/DiagnosticReports/"$f"; done

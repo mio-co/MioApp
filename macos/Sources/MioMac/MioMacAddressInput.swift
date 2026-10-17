@@ -16,6 +16,7 @@ enum MioMacAddressInput {
             return search(s)
         }
         if lower == "about:blank" { return URL(string: "about:blank") }
+        if MioMacHome.isHomeAddress(s) { return URL(string: MioMacHome.address) } // mio://home（Firefox 的 about:home）
         if !s.contains(" "), let host = hostPart(s) {
             if host == "localhost" || isIPv4(host) { return URL(string: "http://" + s) }
             if looksLikeDomain(host) { return URL(string: "https://" + s) }
