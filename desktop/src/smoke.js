@@ -37,6 +37,8 @@ async function tabsSmoke({ browser, ytWc, wc2, out, getMainWindow }) {
     // 新建标签页 = 设置里的地址（默认 MioCore 导航；CI 没登录 → Access 登录页）
     browser.command('newTab');
     const nt = browser.content.webContents;
+    // 新标签页打开 MioCore 前先同步登录 Cookie（异步），所以等到真正开始加载
+    for (let i = 0; i < 60 && !nt.getURL(); i++) await wait(250);
     await waitLoad(nt, 30000);
     r.newTabUrl = nt.getURL();
     r.newTabCount = store.size;
@@ -64,6 +66,8 @@ async function tabsSmoke({ browser, ytWc, wc2, out, getMainWindow }) {
     const before = store.size;
     browser.command('closeTab');
     r.afterClose = store.size;
+    // webContents.close() 是异步的
+    for (let i = 0; i < 20 && !nt.isDestroyed(); i++) await wait(100);
     r.closedDestroyed = nt.isDestroyed();
     browser.command('reopenTab');
     r.afterReopen = store.size;

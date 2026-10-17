@@ -731,7 +731,7 @@ final class MioTabStripView: UIView {
     func close(_ id: Int) { tabs?.closeTab(id) }
 }
 
-final class MioTabStripCell: UIControl, UIContextMenuInteractionDelegate {
+final class MioTabStripCell: UIControl {
     weak var strip: MioTabStripView?
     private(set) var tabID = 0
     private(set) var isActive = false
@@ -761,9 +761,10 @@ final class MioTabStripCell: UIControl, UIContextMenuInteractionDelegate {
         }, for: .touchUpInside)
         // 中键点击关闭（Mac 鼠标 / iPad 触控板）
         let middle = UITapGestureRecognizer(target: self, action: #selector(middleClick))
-        middle.buttonMaskRequired = .tertiary
+        middle.buttonMaskRequired = .button(3)
         addGestureRecognizer(middle)
-        addInteraction(UIContextMenuInteraction(delegate: self))
+        // 右键 / 长按：UIControl 自带的上下文菜单交互
+        isContextMenuInteractionEnabled = true
         isAccessibilityElement = true
         accessibilityTraits = .button
     }
@@ -791,7 +792,7 @@ final class MioTabStripCell: UIControl, UIContextMenuInteractionDelegate {
 
     @objc private func middleClick() { strip?.close(tabID) }
 
-    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+    override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
         let id = tabID
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             guard let tabs = self?.strip?.tabs else { return nil }
