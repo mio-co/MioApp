@@ -44,6 +44,44 @@ ipa 未签名。用电脑上的 [iloader](https://iloader.app) → Import IPA，
 - `Mio-Setup-…exe` 装到当前用户（可选目录，不需要管理员）；`Mio-Portable-…exe` 免安装（数据在 `%APPDATA%\Mio`）。
 - 未签名：SmartScreen 提示「Windows 已保护你的电脑」→ **更多信息 → 仍要运行**。Windows 10 / 11 x64。
 
+## 软件内更新（0.3.3 起）
+
+各平台启动 / 回到前台时，如果「自动检查更新」开着、距上次检查超过 24 小时，就查一次
+[GitHub Releases latest](https://api.github.com/repos/mio-co/MioApp/releases/latest)（公开仓库，不需要 token）。
+设置里有「自动检查更新」开关和「立即检查」（iOS / Mac：内置浏览器设置 › 软件更新；Android：浏览器设置；Windows：文件 › 浏览器设置…）。
+发现新版本时弹窗显示更新说明，可以「稍后」或「跳过此版本」。
+
+| 平台 | 怎么更新 | 校验 |
+|---|---|---|
+| Android | App 内下载 `Mio.apk` 到私有目录 → PackageInstaller 安装（第一次要允许 Mio「安装未知应用」） | `Mio.apk.sha256` + GitHub 资产 digest；安装前比对 APK 签名证书与当前 App 一致（调试包签名不同，不能覆盖） |
+| Windows 安装版 | electron-updater 下载 `Mio-Setup-…exe`（差分 blockmap），重启安装或退出时安装 | `latest.yml` 里的 sha512；安装包未做代码签名，可能出现「未知发布者」提示 |
+| Windows 便携版 | 只提示，打开下载页 | — |
+| Mac | App 内下载 `Mio-<版本>-mac.zip` → Mio 退出 → 辅助脚本替换当前 `Mio.app`、去掉 quarantine、重新打开（日志 `~/Library/Logs/Mio-update.log`）。从 dmg 里直接运行 / 目录不可写时改为打开下载页 | `SHA256SUMS.txt`（CI 生成）+ GitHub 资产 digest，Info.plist 的 bundle id 必须一致 |
+| iPhone / iPad | 侧载版不能自己装 ipa：弹窗「在 SideStore 中更新」添加 Mio 源，然后在 SideStore「我的 App」里更新 | SideStore / AltStore 按源里的版本和大小下载 Release 的 `Mio.ipa` |
+
+### SideStore / AltStore 源
+
+源地址（每次发版自动更新）：
+
+```
+https://github.com/mio-co/MioApp/releases/latest/download/altstore-source.json
+```
+
+- SideStore：**源（Sources）→ 右上角 + → 粘贴上面的地址 → 添加**，在 Mio 页面点「获取 / Get」。已经装过 Mio 时，之后的新版本出现在「我的 App（My Apps）」的更新里，
+  用同一个 Apple ID 重签，数据保留。也可以在 iPhone 上直接打开
+  `sidestore://source?url=https%3A%2F%2Fgithub.com%2Fmio-co%2FMioApp%2Freleases%2Flatest%2Fdownload%2Faltstore-source.json`。
+- AltStore Classic：浏览（Browse）→ 源（Sources）→ + → 同一地址。
+- Mio 里发现新版本时点「在 SideStore 中更新」会自动打开上面的添加源链接（没装 SideStore 时依次尝试 AltStore，都没有就打开 Release 页）。
+
+### 发版产物（release job 自动生成）
+
+- `SHA256SUMS.txt`：本次 Release 全部 CI 产物的 sha256（`sha256sum -c` 格式）。
+- `altstore-source.json`：AltStore 源 v2 格式（`bundleIdentifier` = `xyz.mio.app`，`versions[0]` = 本次 `Mio.ipa` 的版本 / buildVersion / 日期 / 大小 / minOSVersion，
+  `appPermissions.privacy` 取自 Info.plist）。生成脚本 `scripts/release-manifests.mjs`，单测 `tools/MioAppTests/js/release-manifests.test.mjs`，PR 的 `unit` job 里会对假产物跑一遍。
+- `latest.yml` + `Mio-Setup-…exe.blockmap`：electron-builder 按 `desktop/package.json` 的 `build.publish`（GitHub）生成，electron-updater 用。
+- `Mio.apk` + `Mio.apk.sha256`：发布后由本地签名脚本（固定 keystore）上传。Release 里还没有 `Mio.apk` 时 Android 不提示更新（1 小时后再查）；
+  校验值优先用 `Mio.apk.sha256`，没有时用 GitHub 记录的资产 digest，两者都有时必须一致。
+
 ## 结构
 
 | 路径 | 说明 |

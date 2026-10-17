@@ -11,3 +11,11 @@ contextBridge.exposeInMainWorld('mioSettings', {
   clearData: () => ipcRenderer.invoke('mio-settings:clear-data'),
   onChange: (fn) => ipcRenderer.on('mio-settings:changed', (_e, s) => fn(s)),
 });
+
+// 软件更新（desktop/src/updater.js）
+contextBridge.exposeInMainWorld('mioUpdate', {
+  get: () => ipcRenderer.invoke('mio-update:get'),
+  setAuto: (on) => ipcRenderer.invoke('mio-update:set-auto', !!on),
+  check: () => ipcRenderer.invoke('mio-update:check'),
+  onChange: (fn) => ipcRenderer.on('mio-update:changed', (_e, s) => fn(s)),
+});

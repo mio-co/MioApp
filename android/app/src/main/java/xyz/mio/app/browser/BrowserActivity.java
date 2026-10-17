@@ -762,6 +762,8 @@ public class BrowserActivity extends Activity {
         allow.setOnClickListener(v -> showAllowlist(allow));
         box.addView(allow);
 
+        xyz.mio.app.update.UpdateUi.addSettingsSection(this, box);
+
         TextView lic = new TextView(this);
         lic.setText("\n开源组件：Brave adblock-rust（MPL-2.0）、AdGuard Scriptlets / ExtendedCss（GPL-3.0）；过滤列表：AdGuard（GPL-3.0）、EasyList / EasyPrivacy（GPL-3.0 / CC BY-SA 3.0）。详见仓库 NOTICE。");
         lic.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);

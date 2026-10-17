@@ -34,6 +34,11 @@
             android:windowSoftInputMode="adjustResize"
             android:exported="false" />
 
+        <!-- 软件内更新：PackageInstaller 会话结果（xyz.mio.app.update） -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -48,4 +53,6 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 软件内更新：安装从 GitHub Releases 下载的 Mio.apk（同一 keystore 签名，安装前校验证书） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>
