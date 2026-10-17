@@ -15,9 +15,10 @@ else
         CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=)
 fi
 # v0.4.1 瘦身：-xcconfig MioRelease.xcconfig（关代码覆盖率插桩 / testability，-Osize + WMO，dead strip，dSYM 单独），
-# 对所有 target（含 Swift 包）生效；-enableCodeCoverage NO：Firefox scheme 的 UnitTest.xctestplan 开了覆盖率，v0.4.0 的 build 带上了插桩
+# 对所有 target（含 Swift 包）生效（Firefox scheme 的 UnitTest.xctestplan 开了覆盖率，v0.4.0 的 build 带上了插桩；
+# -enableCodeCoverage 只能用于 test，所以靠 xcconfig 里的 CLANG_ENABLE_CODE_COVERAGE / CLANG_COVERAGE_MAPPING 关掉，下面 otool 检查兜底）
 xcodebuild -project "$PROJ" -scheme Firefox -configuration Firefox -derivedDataPath "$DD" \
-  -skipPackagePluginValidation -skipMacroValidation -enableCodeCoverage NO \
+  -skipPackagePluginValidation -skipMacroValidation \
   -xcconfig apple/ios/mio/ci/MioRelease.xcconfig COMPILER_INDEX_STORE_ENABLE=NO \
   "${ARGS[@]}" build > "$LOG" 2>&1
 RC=$?

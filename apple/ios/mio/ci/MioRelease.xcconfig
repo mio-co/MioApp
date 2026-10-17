@@ -6,6 +6,7 @@
 // the Firefox scheme's UnitTest.xctestplan turns coverage on and `xcodebuild build -scheme Firefox` inherited it.
 CLANG_ENABLE_CODE_COVERAGE = NO
 CLANG_COVERAGE_MAPPING = NO
+CLANG_COVERAGE_MAPPING_LINKER_ARGS = NO
 
 // Common.xcconfig sets ENABLE_TESTABILITY = YES for every configuration (keeps internal symbols exported and
 // blocks dead-code stripping / inlining across files).

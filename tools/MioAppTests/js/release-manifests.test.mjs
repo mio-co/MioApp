@@ -110,7 +110,7 @@ test('generate writes SHA256SUMS.txt (covering altstore-source.json) and the sou
   assert.deepEqual(Object.keys(parseSha256Sums(r2.sums)), ['a.exe']);
 });
 
-test('v0.4.0: iOS version info comes from the apple/ios fork (xcconfig + Info.plist)', async () => {
+test('v0.4.x: iOS version info comes from the apple/ios fork (xcconfig + Info.plist)', async () => {
   const { readIOSFork, readXcconfig } = await import('../../../scripts/release-manifests.mjs');
   const fs = await import('node:fs');
   const root = new URL('../../../apple/ios/firefox-ios/', import.meta.url);
@@ -119,7 +119,9 @@ test('v0.4.0: iOS version info comes from the apple/ios fork (xcconfig + Info.pl
     commonXcconfig: fs.readFileSync(new URL('Client/Configuration/Common.xcconfig', root), 'utf8'),
     plistText: fs.readFileSync(new URL('Client/Info.plist', root), 'utf8'),
   });
-  assert.deepEqual(info, { marketingVersion: '0.4.0', buildVersion: '10', minOSVersion: '15.0' });
+  // fork version = package.json version (Mac uses package.json); v0.4.1 = build 11
+  const pkg = JSON.parse(fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
+  assert.deepEqual(info, { marketingVersion: pkg.version, buildVersion: '11', minOSVersion: '15.0' });
   assert.equal(readXcconfig('A = 1 // c\nA = 2\nB[sdk=iphoneos*] = x').A, '1');
   assert.equal(readIOSFork({ plistText: '<key>CFBundleVersion</key><string>$(BUILD)</string>' }).buildVersion, null);
 });
