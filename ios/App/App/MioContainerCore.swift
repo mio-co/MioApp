@@ -1,7 +1,7 @@
 // MioContainerCore.swift — 内置浏览器「容器」（登录状态隔离）纯逻辑，只依赖 Foundation。
 // tools/MioAppTests 在 Linux 上单测（Sources/MioWebCompat/MioContainerCore.swift 是指向这里的符号链接）。
 //
-// 与 Windows 的 desktop/src/containers-core.js、Android 的 xyz.mio.app.containers.ContainerState 同一套规则、同一份 JSON：
+// 持久化格式（与 v0.3.4 及以前 Android / Windows 版写出的 JSON 相同，便于迁移）：
 //   { "version": 1,
 //     "containers": [{ "id": "<uuid 小写>", "name": "工作", "color": "blue", "createdAt": <ms> }],
 //     "tabs": { "<tabKey>": { "containerId": "<id>", "locked": true } },

@@ -154,4 +154,29 @@ final class MioUpdateCoreTests: XCTestCase {
         XCTAssertTrue(s.contains(#"PID="$1"; ZIP="$2"; TARGET="$3"; WORK="$4"; LOG="$5"; BUNDLE_ID="$6""#))
         XCTAssertTrue(s.contains(#"/bin/mv "$WORK/old.app" "$TARGET""#))
     }
+
+    /// v0.4.0（iOS = firefox-ios fork、Mac = 原生 AppKit）发版后，已装的 v0.3.3 / v0.3.4（Capacitor iOS、Mac Catalyst）更新器
+    /// 用同一份 MioUpdateCore（v0.3.3 → v0.3.4 只改了注释）：能发现新版本、找到 Mac zip / ipa、拿到校验值
+    func testV040ReleaseIsFoundByV03xUpdaters() throws {
+        let zipSha = String(repeating: "a", count: 64), dmgSha = String(repeating: "b", count: 64), ipaSha = String(repeating: "c", count: 64)
+        let json = """
+        {"tag_name":"v0.4.0","name":"Mio 0.4.0","body":"Apple-only","html_url":"https://github.com/mio-co/MioApp/releases/tag/v0.4.0",
+         "draft":false,"prerelease":false,"assets":[
+          {"name":"Mio.ipa","browser_download_url":"https://github.com/mio-co/MioApp/releases/download/v0.4.0/Mio.ipa","size":90000000,"digest":"sha256:\(ipaSha)"},
+          {"name":"Mio-0.4.0-mac.zip","browser_download_url":"https://github.com/mio-co/MioApp/releases/download/v0.4.0/Mio-0.4.0-mac.zip","size":9000000,"digest":"sha256:\(zipSha)"},
+          {"name":"Mio-0.4.0-mac.dmg","browser_download_url":"https://github.com/mio-co/MioApp/releases/download/v0.4.0/Mio-0.4.0-mac.dmg","size":9500000,"digest":"sha256:\(dmgSha)"},
+          {"name":"SHA256SUMS.txt","browser_download_url":"https://github.com/mio-co/MioApp/releases/download/v0.4.0/SHA256SUMS.txt","size":300},
+          {"name":"altstore-source.json","browser_download_url":"https://github.com/mio-co/MioApp/releases/download/v0.4.0/altstore-source.json","size":2000}
+        ]}
+        """
+        let r = try XCTUnwrap(MioUpdateCore.parseRelease(Data(json.utf8)))
+        XCTAssertEqual(r.version, "0.4.0")
+        XCTAssertTrue(MioUpdateCore.isNewer(r.version, than: "0.3.3"))
+        XCTAssertTrue(MioUpdateCore.isNewer(r.version, than: "0.3.4"))
+        XCTAssertEqual(r.macZip?.name, "Mio-0.4.0-mac.zip", "Catalyst 更新器只认 zip，不能挑到 dmg")
+        XCTAssertEqual(r.ipa?.name, "Mio.ipa")
+        let sums = MioUpdateCore.parseSha256Sums("\(ipaSha)  Mio.ipa\n\(zipSha)  Mio-0.4.0-mac.zip\n\(dmgSha)  Mio-0.4.0-mac.dmg\n")
+        XCTAssertEqual(try MioUpdateCore.expectedSha256(for: XCTUnwrap(r.macZip), sums: sums), zipSha)
+        XCTAssertEqual(MioUpdateCore.bundleIdentifier, "xyz.mio.app", "Mac 原生版必须沿用 xyz.mio.app，否则安装脚本拒绝替换")
+    }
 }
