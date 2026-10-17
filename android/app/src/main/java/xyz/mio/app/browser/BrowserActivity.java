@@ -733,7 +733,7 @@ public class BrowserActivity extends Activity {
             case "openInContainer": {
                 String u = curUrl();
                 if (u == null) break;
-                pickContainer("在容器中打开此页", current != null ? current.containerId : null, false, id -> openTab(u, true, false, id));
+                pickContainer("在容器中打开此页", current != null ? current.containerId : null, false, cid -> openTab(u, true, false, cid));
                 break;
             }
             case "siteContainer": {
@@ -745,9 +745,9 @@ public class BrowserActivity extends Activity {
                     if (host.equals(r.host) || host.endsWith("." + r.host)) { ruleHost = r.host; cur = r.containerId; }
                 }
                 final String existing = ruleHost;
-                pickContainer("此网站始终用这个容器打开（" + (existing != null ? existing : host) + "，含子域名）", cur, true, id -> {
+                pickContainer("此网站始终用这个容器打开（" + (existing != null ? existing : host) + "，含子域名）", cur, true, cid -> {
                     try {
-                        if (id != null) cm.setSiteRule(host, id);
+                        if (cid != null) cm.setSiteRule(host, cid);
                         else if (existing != null) cm.removeSiteRule(existing);
                     } catch (Exception e) {
                         Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show();
