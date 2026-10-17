@@ -2,8 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-// Mio (v0.4.1): Mozilla Sync is not part of the Mio app. The Client target no longer links / embeds
-// Sync.framework and builds with MIO_NO_SYNC (Firefox.xcconfig). This file provides:
+// Mio (v0.4.1): Mozilla Sync is not part of the Mio app. The Client target builds with MIO_NO_SYNC
+// (Firefox.xcconfig), so no app source imports Sync; Client only weak-links Sync.framework (keeps upstream's
+// build graph, otherwise Xcode links the Swift packages statically and Sync / WidgetKitExtension fail with
+// duplicate symbols) and apple/ios/mio/ci/slim-app.sh deletes the embedded copy. This file provides:
 //   * MioNoSyncManager: a no-op SyncManager used by BrowserProfile instead of RustSyncManager;
 //   * RustSyncManagerAPI.TogglableEngine: the only Sync.framework type the Client still names
 //     (SyncContentSettingsViewController, which is unreachable in Mio because Firefox account

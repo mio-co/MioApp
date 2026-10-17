@@ -34,6 +34,23 @@ find "$APP" \( -name '*.swiftmodule' -o -name '*.swiftdoc' -o -name '*.swiftinte
   -o -name '*.swiftsourceinfo' -o -name '*.dSYM' -o -name '*.bcsymbolmap' \) -prune -print0 | while IFS= read -r -d '' f; do rm -rf "$f"; done
 shopt -u nullglob
 
+# Mozilla Sync（v0.4.1，MIO_NO_SYNC）：Client 只弱链接 Sync.framework（保持上游的构建图，否则 Xcode 把 Kingfisher 等 Swift 包
+# 改成静态链接，Sync / WidgetKitExtension 链接时符号重复），App 内没有代码用它，所以删掉嵌入的副本。
+# 删除前确认 Client 和其余框架都没有强引用（LC_LOAD_DYLIB）Sync，否则启动会崩，宁可构建失败。
+if [ -d "$APP/Frameworks/Sync.framework" ]; then
+  strong=""
+  for bin in "$APP/Client" "$APP"/Frameworks/*.framework/*; do
+    [ -f "$bin" ] && [ -x "$bin" ] || continue
+    case "$bin" in */Sync.framework/*) continue;; esac
+    if otool -l "$bin" 2>/dev/null | awk '/^ *cmd /{c=$2} /^ *name .*\/Sync\.framework\/Sync /{print c}' | grep -qx LC_LOAD_DYLIB; then
+      strong="$strong $bin"
+    fi
+  done
+  if [ -n "$strong" ]; then echo "error: Sync.framework is strongly linked by:$strong"; exit 1; fi
+  rm -rf "$APP/Frameworks/Sync.framework"; removed_files=$((removed_files + 1))
+  echo "slim-app: removed Frameworks/Sync.framework (weak-linked, unused)"
+fi
+
 after=$(du -sk "$APP" | cut -f1)
 left=$(find "$APP" -type d -name '*.lproj' -prune | sed 's#.*/##' | sort | uniq -c | tr -s ' ' | tr '\n' ' ')
 echo "slim-app: removed $removed_lproj .lproj dirs, $removed_files non-runtime items; ${before} KB -> ${after} KB; lproj left: $left"
