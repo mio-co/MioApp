@@ -75,6 +75,7 @@ final class MioMacKit {
         kit = MioKitContainer(appVersion: version)
         blocker = MioContentBlocker(manager: kit.filters)
         dataStores = MioContainerDataStores(manager: kit.containers)
+        kit.containers.seedPresetsIfNeeded() // 预置 个人 / 工作 / 购物 / 银行（只在还没有自建容器时建一次，与 iOS 一致）
         schemeHandler = MioSchemeHandler(kit: kit)
         let pv = ProcessInfo.processInfo.operatingSystemVersion
         deviceInfo = MioDeviceInfo(platform: "macos", model: Self.hardwareModel(),
