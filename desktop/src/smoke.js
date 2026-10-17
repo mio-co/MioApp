@@ -21,7 +21,7 @@ function waitLoad(wc, timeout) {
   });
 }
 
-async function runSmoke({ out, adblock, browser, getMainWindow }) {
+async function runSmoke({ out, adblock, browser, containers, getMainWindow }) {
   const result = { ok: false, platform: process.platform, version: app.getVersion(), steps: {} };
   const finish = (code) => {
     try {
@@ -97,6 +97,9 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
     adblock.settings.removeWhitelist('speedtest.net');
     result.steps.whitelist = { blockedOn, blockedOff };
 
+    // 容器（登录状态隔离）：两个容器访问同一个本地测试页互不可见（desktop/src/containers-smoke.js）
+    if (containers) result.steps.containers = await require('./containers-smoke').run({ containers, adblock });
+
     const s = result.steps;
     result.ok =
       s.engine.ready &&
@@ -107,7 +110,8 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
       s.youtube.page.ytFocusStyle === true &&
       s.youtube.page.media === true &&
       blockedOn > 0 &&
-      blockedOff === 0;
+      blockedOff === 0 &&
+      (!containers || (s.containers && s.containers.ok === true));
     clearTimeout(guard);
     finish(result.ok ? 0 : 1);
   } catch (e) {

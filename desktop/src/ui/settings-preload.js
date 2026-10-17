@@ -19,3 +19,13 @@ contextBridge.exposeInMainWorld('mioUpdate', {
   check: () => ipcRenderer.invoke('mio-update:check'),
   onChange: (fn) => ipcRenderer.on('mio-update:changed', (_e, s) => fn(s)),
 });
+
+// 容器管理（desktop/src/containers.js）
+contextBridge.exposeInMainWorld('mioContainers', {
+  get: () => ipcRenderer.invoke('mio-containers:get'),
+  create: (name, color) => ipcRenderer.invoke('mio-containers:create', String(name), String(color || '')),
+  update: (id, patch) => ipcRenderer.invoke('mio-containers:update', String(id), patch && typeof patch === 'object' ? { name: patch.name, color: patch.color } : {}),
+  remove: (id) => ipcRenderer.invoke('mio-containers:remove', String(id)),
+  setSiteRule: (host, id) => ipcRenderer.invoke('mio-containers:site-rule-set', String(host), String(id)),
+  removeSiteRule: (host) => ipcRenderer.invoke('mio-containers:site-rule-remove', String(host)),
+});

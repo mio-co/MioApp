@@ -364,6 +364,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     private var media: MioMediaController?
     /// 阅读模式 / 强制深色 / 存到 Mio（MioPageTools.swift）
     private var pageTools: MioPageTools!
+    /// 这个浏览器 WebView 用的容器（登录状态隔离，MioContainerStore.swift）。必须在 viewDidLoad 之前设置；默认 = 原来的浏览数据
+    var containerId: String = MioContainerCore.defaultId
 
     init(url: URL) {
         initialURL = url
@@ -388,12 +390,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
-        let config = WKWebViewConfiguration()
-        if #available(iOS 17.0, macCatalyst 17.0, *) {
-            config.websiteDataStore = WKWebsiteDataStore(forIdentifier: MioBrowserSettings.dataStoreID)
-        } else {
-            config.websiteDataStore = .default()
-        }
+        // 容器：默认容器 = 固定 UUID 的 WKWebsiteDataStore（iOS 17+），旧系统 .default()，与以前一致
+        let config = MioContainerStore.shared.makeConfiguration(for: containerId)
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsPictureInPictureMediaPlayback = true
@@ -1085,6 +1083,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
     private enum Row {
         case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, youtubeFocus, youtubeInterval, youtubePlayables, hideToolbars, media, passkeyInfo, openInSafari(URL), licenses, version
         case updateAuto, updateCheck // 软件更新（MioUpdater.swift）
+        case containers // 容器管理（MioContainerStore.swift）
     }
 
     private let currentHost: String?
@@ -1152,6 +1151,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
         var login: [Row] = [.passkeyInfo]
         if let u = currentURL { login.append(.openInSafari(u)) }
         s.append(("通行密钥与钥匙串", Self.passkeyFooter, login))
+        s.append(("容器", "同一网站登录多个账号：每个容器的 Cookie、网站数据、缓存互相隔离。", [.containers]))
         s.append(("软件更新", MioUpdaterSettingsUI.footer, [.updateAuto, .updateCheck]))
         s.append((nil, nil, [.licenses, .version]))
         sections = s.map { (title: $0.0, footer: $0.1, rows: $0.2) }
@@ -1285,6 +1285,12 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.accessoryView = makeSwitch(MioUpdateSettings.autoCheck) { MioUpdateSettings.autoCheck = $0 }
         case .updateCheck:
             MioUpdaterSettingsUI.configureCheckCell(cell, formatter: fmt)
+        case .containers:
+            cell.textLabel?.text = "容器管理"
+            let n = MioContainerStore.shared.containers.count
+            cell.detailTextLabel?.text = MioContainerStore.isSupported ? "\(n) 个容器（含默认）" : "需要 iOS 17 / macOS 14"
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
         }
         return cell
     }
@@ -1336,6 +1342,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
             rebuild()
         case .media:
             navigationController?.pushViewController(MioMediaSettingsViewController(), animated: true)
+        case .containers:
+            navigationController?.pushViewController(MioContainersViewController(), animated: true)
         case .youtubeInterval:
             let current = MioBrowserSettings.youtubeFocusInterval
             let a = UIAlertController(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒", preferredStyle: .actionSheet)
