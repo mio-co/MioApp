@@ -12,6 +12,18 @@
   if (w.__mioYTFocus) return;
   w.__mioYTFocus = true;
 
+  // Electron 的 preload（webFrame.executeJavaScript）可能早到 <html> 还没创建：等 documentElement 出现再初始化
+  function boot(start) {
+    if (d.documentElement || typeof MutationObserver !== 'function') { start(); return; }
+    var mo = new MutationObserver(function () {
+      if (!d.documentElement) return;
+      mo.disconnect();
+      start();
+    });
+    mo.observe(d, { childList: true });
+  }
+  boot(function () {
+
   var INTERVAL = Number('__MIO_YT_INTERVAL_MS__');
   if (!(INTERVAL >= 5000)) INTERVAL = 60000;
   var PLAYABLES = '__MIO_YT_PLAYABLES__' !== '0';   // 占位符没替换时默认屏蔽
@@ -297,4 +309,5 @@
     scanNavSoon();
   });
   route();
+  });
 })();

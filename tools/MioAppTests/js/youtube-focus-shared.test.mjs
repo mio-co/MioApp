@@ -148,3 +148,20 @@ test('each hide selector is its own rule (old WebView without :has only drops th
   assert.ok(hideRules.length > 40, `got ${hideRules.length}`);
   for (const r of hideRules) assert.doesNotMatch(r.selectorText, /,/, r.selectorText);
 });
+
+test('runs even when injected before <html> exists (Electron preload timing)', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', { url: 'https://www.youtube.com/', runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window;
+  const d = w.document;
+  d.removeChild(d.documentElement);
+  assert.equal(d.documentElement, null);
+  w.eval(render());
+  assert.equal(w.__mioYTFocus, true);
+  const html = d.createElement('html');
+  html.appendChild(d.createElement('head'));
+  html.appendChild(d.createElement('body'));
+  d.appendChild(html);
+  await new Promise((r) => setImmediate(r));
+  assert.ok(d.getElementById('mio-yt-focus-style'), 'style added once <html> appears');
+  assert.ok(d.documentElement.classList.contains('mio-hide-playables'));
+});
