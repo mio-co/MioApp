@@ -11,6 +11,13 @@ try {
 }
 
 const parts = [];
+// WebRTC 控制（webrtc.js）：最先注入；站点被放行 / 总开关关闭时为 null
+try {
+  const rtc = ipcRenderer.sendSync('mio-webrtc:script', location.href);
+  if (rtc) parts.push(rtc);
+} catch {
+  // 主进程没有注册（旧版本）
+}
 if (result && result.background) {
   parts.push(`(function(){try{
     Object.defineProperty(document,'hidden',{configurable:true,get:function(){return false;}});

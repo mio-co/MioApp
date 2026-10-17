@@ -109,6 +109,8 @@ public class BrowserActivity extends Activity {
     /** 这个 WebView 用的容器（登录状态隔离，xyz.mio.app.containers.ContainerManager）；默认 = 原来的浏览数据 */
     private String containerId = xyz.mio.app.containers.ContainerState.DEFAULT_ID;
     private TranslateBridge translate;
+    /** WebRTC 控制（WebRtcGuard.java，与 iOS 同一段脚本） */
+    private final WebRtcGuard rtcGuard = new WebRtcGuard();
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -126,6 +128,7 @@ public class BrowserActivity extends Activity {
         store = AdblockStore.get(this);
         buildUi();
         setupWebView();
+        rtcGuard.install(this, webView);
 
         String url = getIntent().getStringExtra(EXTRA_URL);
         boolean settings = getIntent().getBooleanExtra(EXTRA_SETTINGS, false);
@@ -696,6 +699,11 @@ public class BrowserActivity extends Activity {
                 actions.add(() -> { BrowserPrefs.setAllowlisted(this, host, true); afterSettingChange(true); });
             }
         }
+        if (host != null && WebRtcGuard.enabled(this)) {
+            boolean rtcAllowed = WebRtcGuard.isAllowed(this, host);
+            items.add(rtcAllowed ? "此站点恢复屏蔽 WebRTC" : "此站点允许 WebRTC（网页通话）");
+            actions.add(() -> { WebRtcGuard.setAllowed(this, host, !rtcAllowed); rtcGuard.install(this, webView); webView.reload(); });
+        }
         items.add("拦截设置…");
         actions.add(() -> showSettings(false));
         new AlertDialog.Builder(this)
@@ -772,6 +780,8 @@ public class BrowserActivity extends Activity {
         system.setChecked(BrowserPrefs.preferSystemBrowser(this));
         system.setOnCheckedChangeListener((b, on) -> BrowserPrefs.setPreferSystemBrowser(this, on));
         box.addView(system);
+
+        rtcGuard.addSettingsRows(this, box, host, webView);
 
         TextView title = new TextView(this);
         title.setText("\n过滤规则（AdGuard 官方源，超过 24 小时自动检查更新）");

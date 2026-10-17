@@ -311,6 +311,7 @@ class BrowserManager {
           items.push({ label: s.siteWhitelisted ? '在此网站启用拦截' : '在此网站停用拦截', click: () => this.command('toggleSite') });
         }
         if (!s.adblockEnabled) items.push({ label: '打开广告拦截', click: () => this.settings.set('adblockEnabled', true) });
+        if (this.webrtc) items.push(...this.webrtc.menuItems(s.host, () => wc.reload()));
         items.push({ label: '拦截设置…', click: () => this.command('settings') });
         const { width } = this.win.getContentBounds();
         Menu.buildFromTemplate(items).popup({ window: this.win, x: Math.max(0, width - 260), y: TOOLBAR_HEIGHT });

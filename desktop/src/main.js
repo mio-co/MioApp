@@ -237,6 +237,9 @@ if (!app.requestSingleInstanceLock()) {
     });
     // 翻译（网页双语 / 划词 / YouTube 双语字幕）：工具栏「译」按钮
     browser.translate = new Translate({ session: browserSession, icon, uiPartition: UI_PARTITION, isBrowserSession: (ses) => containers.isBrowserSession(ses) });
+    // WebRTC 控制（webrtc.js）：frame preload 注入脚本 + 按站点设置 IP 处理策略；盾牌菜单里开关 / 放行（所有容器会话）
+    browser.webrtc = new (require('./webrtc').WebRtcControl)(path.join(app.getPath('userData'), 'webrtc.json'));
+    browser.webrtc.attach({ app, ipcMain, browserSession, isBrowserSession: (ses) => containers.isBrowserSession(ses) });
 
     // 主会话、浏览器会话都不需要的权限一律拒绝；常见的（通知、剪贴板、全屏、媒体自动播放）放行
     const allow = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'notifications', 'pointerLock', 'media', 'window-management']);

@@ -82,6 +82,19 @@ async function runSmoke({ out, adblock, browser, containers, getMainWindow }) {
       )
       .catch((e) => String(e));
 
+    // WebRTC 控制：默认屏蔽（YouTube 页面里 RTCPeerConnection 不存在），放行 example.com 后可用
+    const rtc = browser.webrtc;
+    result.steps.webrtc = { blocked: await wc.executeJavaScript('typeof RTCPeerConnection'), policy: wc.getWebRTCIPHandlingPolicy() };
+    if (rtc) {
+      rtc.setAllowed('example.com', true);
+      browser.open('https://example.com/');
+      await waitLoad(wc, 30000);
+      await wait(1500);
+      result.steps.webrtc.allowed = await wc.executeJavaScript('typeof RTCPeerConnection');
+      result.steps.webrtc.allowedPolicy = wc.getWebRTCIPHandlingPolicy();
+      rtc.setAllowed('example.com', false);
+    }
+
     // 白名单后同一页面不再拦截
     adblock.resetCount(wc.id);
     browser.open('https://www.speedtest.net/');
@@ -111,6 +124,8 @@ async function runSmoke({ out, adblock, browser, containers, getMainWindow }) {
       s.youtube.page.media === true &&
       blockedOn > 0 &&
       blockedOff === 0 &&
+      s.webrtc.blocked === 'undefined' &&
+      s.webrtc.allowed === 'function' &&
       (!containers || (s.containers && s.containers.ok === true));
     clearTimeout(guard);
     finish(result.ok ? 0 : 1);
