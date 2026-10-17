@@ -63,10 +63,17 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
       blocked: adblock.blockedCount(wc.id),
       page: JSON.parse(
         await wc.executeJavaScript(
-          "JSON.stringify({ media: !!window.__mioMedia, sbVideo: window.__mioMedia ? window.__mioMedia.state.videoId : null, hidden: document.hidden, visibility: document.visibilityState, hasPlayerResponse: typeof window.ytInitialPlayerResponse === 'object' && window.ytInitialPlayerResponse !== null, adPlacements: window.ytInitialPlayerResponse ? typeof window.ytInitialPlayerResponse.adPlacements : 'n/a', playerAds: window.ytInitialPlayerResponse ? typeof window.ytInitialPlayerResponse.playerAds : 'n/a', ytFocus: !!window.__mioYTFocus, ytFocusStyle: !!document.getElementById('mio-yt-focus-style'), ytPlayables: document.documentElement.classList.contains('mio-hide-playables') })",
+          "JSON.stringify({ media: !!window.__mioMedia, mediaError: window.__mioMediaError || null, sbVideo: window.__mioMedia ? window.__mioMedia.state.videoId : null, hidden: document.hidden, visibility: document.visibilityState, hasPlayerResponse: typeof window.ytInitialPlayerResponse === 'object' && window.ytInitialPlayerResponse !== null, adPlacements: window.ytInitialPlayerResponse ? typeof window.ytInitialPlayerResponse.adPlacements : 'n/a', playerAds: window.ytInitialPlayerResponse ? typeof window.ytInitialPlayerResponse.playerAds : 'n/a', ytFocus: !!window.__mioYTFocus, ytFocusStyle: !!document.getElementById('mio-yt-focus-style'), ytPlayables: document.documentElement.classList.contains('mio-hide-playables') })",
         ),
       ),
     };
+
+    try {
+      const media = require('./media');
+      result.steps.youtube.mediaScript = { length: media.scriptFor(wc.getURL(), (k) => adblock.settings.get(k)).length, config: media.config((k) => adblock.settings.get(k)) };
+    } catch (e) {
+      result.steps.youtube.mediaScript = String((e && e.stack) || e);
+    }
 
     // Widevine（只记录）：官方 Electron 不带 Widevine CDM，预期 NotSupportedError
     result.steps.youtube.widevine = await wc

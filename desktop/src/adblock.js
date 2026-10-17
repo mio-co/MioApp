@@ -134,7 +134,11 @@ class Adblock {
           // YouTube 防沉迷：只给顶层 frame（脚本自己也检查 window.top / 主机名），与拦截开关、白名单无关
           if (event.senderFrame && event.senderFrame.parent === null) result.ytFocus = require('./youtube-focus').scriptFor(url, this.settings);
           // YouTube 媒体脚本（SponsorBlock / MediaSession / 画中画），与拦截开关无关
-          result.media = require('./media').scriptFor(url, (k) => this.settings.get(k), !!(event.senderFrame && event.senderFrame.parent === null));
+          try {
+            result.media = require('./media').scriptFor(url, (k) => this.settings.get(k), !!(event.senderFrame && event.senderFrame.parent === null));
+          } catch (e) {
+            result.mediaError = String((e && e.stack) || e);
+          }
           const top = event.senderFrame && event.senderFrame.top ? event.senderFrame.top.url : topUrlOf(event);
           if (this.activeFor(top || url)) {
             const parsed = require('tldts-experimental').parse(url);
