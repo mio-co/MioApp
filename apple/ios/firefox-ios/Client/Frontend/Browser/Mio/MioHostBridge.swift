@@ -26,7 +26,11 @@ final class MioNoopHostBridge: MioHostBridge {
     static let shared = MioNoopHostBridge()
 
     func install(on webView: WKWebView) {
-        // TODO(MioKit): replace with MioKit's bridge (`MioCoreBridge`) once apple/MioKit is linked into Client.
+        // TODO(MioKit): once apple/MioKit is linked into Client (README "接入 A"):
+        //   config.setURLSchemeHandler(MioSchemeHandler(kit: kit), forURLScheme: "mio")
+        //   let mods = MioWebViewModules(kit: kit, controller: config.userContentController, blocker: blocker)
+        //   mods.install(); mods.webView = webView
+        // MioKit's bridge does its own origin check (MioCore origin + mio:// only).
     }
 
     func isAllowed(origin url: URL?) -> Bool {

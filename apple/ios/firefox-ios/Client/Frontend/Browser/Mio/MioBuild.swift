@@ -19,6 +19,8 @@ enum MioBuild {
     /// MioCore site that renders mio://home (minimal implementation; the native bridge comes from MioKit).
     static let homeContentURL = URL(string: "https://mio.300031.xyz/")!
 
+    private static let homePaths: Set<String> = ["", "/", "/mio/nav", "/mio/nav/"]
+
     /// True for mio://… URLs (handled in-app, never sent to WebKit as-is).
     static func isMioScheme(_ url: URL?) -> Bool {
         return url?.scheme?.lowercased() == homeScheme
@@ -32,8 +34,9 @@ enum MioBuild {
               url.host?.lowercased() == homeContentURL.host,
               url.port == nil || url.port == 443
         else { return false }
+        // MioCore root, or its nav page (MioKit's default home path is /mio/nav)
         let path = url.path
-        return (path.isEmpty || path == "/") && (url.query ?? "").isEmpty
+        return homePaths.contains(path) && (url.query ?? "").isEmpty
     }
 
     /// Where a mio:// URL actually loads. Only mio://home exists for now; anything else falls back to it.
