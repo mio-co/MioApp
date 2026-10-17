@@ -14,10 +14,17 @@
 //   homeOK    mio://home starts a main-frame navigation to the MioCore origin (https://mio.300031.xyz) and lands on
 //             MioCore (true), or on the Cloudflare Access login page ("access-login": CI is not signed in; not a
 //             failure as long as the login page gets no ad-block rule lists and Safari's UA)
+//   newTabOK  local fixture pages (MioNewTabFixture, loadHTMLString + baseURL to fake the origin): plain-site target=_blank /
+//             window.open → new selected tab (window.open returns a window), same-tab link navigates in place; MioCore origin
+//             (appShell → MioDesktop.browser.open({url}) → bridge openTab) tile / window.open / identity-provider tile → new
+//             selected tab; MioCore popup to its Access page and Access login page popup to Google → stay in the opener tab
 //   bridgeOK  example.com: window.Mio undefined and the bridge answers forbidden; mio://about: ping → pong
 //   blockOK   example.com: Mio ad-block rule lists attached, doubleclick request blocked, same-origin request loads
 //   settingsOK  Settings → "Mio 扩展" page (MioExtensionsView) renders with module rows
-//   (recorded only) tab overview via the app's own deep link
+//   adblockOK   downloaded subscriptions > 10k rules; probe page in a real tab: ad request blocked, ## hidden, scriptlet applied
+//   containersOK  two containers on the same local page keep separate cookies / storage (MioContainerSmoke.swift);
+//             the relaunch phase (MIO_SMOKE_PHASE=restore) checks the tabs come back in the same containers
+//   (recorded only) tab overview via the app's own deep link; tabTrayOK = only normal + private panes (v0.4.1)
 
 import Foundation
 @preconcurrency import MioKit
@@ -64,9 +71,99 @@ final class MioSmoke {
     return JSON.stringify({ ad: ad, control: control });
     """
 
+    // MARK: - Links → new tabs
+
+    private func newTabSmoke() async -> [String: Any] {
+        var r: [String: Any] = [:]
+        var cases: [String: Any] = [:]
+        guard let manager = tabManager(), let base = openTab(URL(string: "about:blank")!, select: true),
+              let wv = await webView(of: base) else {
+            r["error"] = "no tab"; r["ok"] = false; return r
+        }
+        await waitLoad(wv, timeout: 10)
+
+        func loadPage(_ html: String, _ baseURL: String) async {
+            manager.selectTab(base, previous: manager.selectedTab)
+            wv.loadHTMLString(html, baseURL: URL(string: baseURL))
+            var waited = 0
+            while waited < 75 {
+                try? await Task.sleep(nanoseconds: 200_000_000); waited += 1
+                if !wv.isLoading, wv.url?.absoluteString == baseURL { break }
+            }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+
+        func tryCase(_ name: String, _ js: String, expectNew: Int, expectURL: String? = nil, expectSameTabHost: String? = nil,
+                 expectSameTabAccess: Bool = false, expectReturn: String? = nil) async -> Bool {
+            // Firefox throttles popups per tab (2 within 2 s)
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            let before = Set(manager.tabs.map { $0.tabUUID })
+            let urlBefore = wv.url?.absoluteString
+            let ret = await callJS(wv, js)
+            var newTabs: [Tab] = []
+            var waited = 0
+            while waited < 40 {
+                try? await Task.sleep(nanoseconds: 250_000_000); waited += 1
+                newTabs = manager.tabs.filter { !before.contains($0.tabUUID) }
+                let urlsReady = newTabs.allSatisfy { ($0.webView?.url ?? $0.url).map { $0.scheme == "https" } ?? false }
+                if expectNew > 0 && newTabs.count >= expectNew && urlsReady { break }
+                if expectNew == 0, let h = expectSameTabHost, wv.url?.host == h, !wv.isLoading { break }
+                if expectNew == 0, expectSameTabAccess, MioAccessAuth.isAccessURL(wv.url, prefs: MioKitHost.shared.kit.prefs), !wv.isLoading { break }
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            newTabs = manager.tabs.filter { !before.contains($0.tabUUID) }
+            let newURLs = newTabs.map { ($0.webView?.url ?? $0.url)?.absoluteString ?? "" }
+            let selected = manager.selectedTab
+            let foreground = newTabs.first.map { $0.tabUUID == selected?.tabUUID } ?? false
+            var ok = newTabs.count == expectNew
+            if expectNew > 0 { ok = ok && foreground }
+            if let u = expectURL { ok = ok && newURLs.contains(where: { MioNewTabFixture.landed($0, on: u) }) }
+            if let h = expectSameTabHost { ok = ok && wv.url?.host == h }
+            if expectSameTabAccess { ok = ok && MioAccessAuth.isAccessURL(wv.url, prefs: MioKitHost.shared.kit.prefs) }
+            if let e = expectReturn { ok = ok && ret == e }
+            cases[name] = ["ok": ok, "newTabs": newTabs.count, "newURLs": newURLs, "foreground": foreground, "returned": ret,
+                           "sameTabBefore": orNull(urlBefore), "sameTabAfter": orNull(wv.url?.absoluteString)] as [String: Any]
+            if !newTabs.isEmpty { manager.removeTabs(newTabs) }
+            manager.selectTab(base, previous: manager.selectedTab)
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            return ok
+        }
+
+        typealias F = MioNewTabFixture
+        var gate: [Bool] = []
+        await loadPage(F.plainPage, F.plainBase)
+        gate.append(await tryCase("plainBlank", F.clickJS("blank"), expectNew: 1, expectURL: F.blankTarget))
+        gate.append(await tryCase("plainWindowOpen", F.windowOpenJS(F.openTarget), expectNew: 1, expectURL: F.openTarget, expectReturn: "window"))
+        gate.append(await tryCase("plainSameTab", F.clickJS("same"), expectNew: 0, expectSameTabHost: "example.org"))
+
+        await loadPage(F.mioCorePage, F.mioCoreBase)
+        let shell = await callJS(wv, "return String(window.__appShell) + '/' + typeof window.MioDesktop")
+        cases["mioCoreAppShell"] = shell
+        gate.append(shell == "true/object")
+        gate.append(await tryCase("mioCoreTile", F.clickJS("tile"), expectNew: 1, expectURL: F.coreTileTarget))
+        gate.append(await tryCase("mioCoreWindowOpen", F.windowOpenJS(F.coreOpenTarget), expectNew: 1, expectURL: F.coreOpenTarget))
+        gate.append(await tryCase("mioCoreIdPTile", F.clickJS("idp"), expectNew: 1, expectURL: F.coreIdPTarget))
+        gate.append(await tryCase("mioCoreRawOpenIdP", F.windowOpenJS(F.coreIdPTarget, raw: true), expectNew: 1, expectURL: F.coreIdPTarget,
+                              expectReturn: "window"))
+        gate.append(await tryCase("mioCoreRawOpenAccess", F.windowOpenJS(F.coreAccessTarget, raw: true), expectNew: 0,
+                              expectSameTabAccess: true))
+        cases["mioCoreBridgeLog"] = await callJS(wv, "return (window.__opened || []).join(',')")
+
+        await loadPage(F.accessPage, F.accessBase)
+        gate.append(await tryCase("accessIdPPopup", F.windowOpenJS(F.accessIdPTarget), expectNew: 0, expectSameTabHost: "accounts.google.com"))
+
+        manager.removeTabs([base])
+        r["cases"] = cases
+        r["gate"] = gate
+        r["ok"] = !gate.isEmpty && gate.allSatisfy { $0 }
+        return r
+    }
+
     // MARK: - Run
 
     private func run() async {
+        // Relaunch phase of the container smoke (restore into the same container): MioContainerSmoke.swift
+        if MioContainerSmoke.isRestorePhase { return await MioContainerSmoke(dir: dir).runRestore() }
         log("waiting for go file in \(dir.path)")
         let go = dir.appendingPathComponent("go")
         var waited = 0
@@ -168,6 +265,17 @@ final class MioSmoke {
         report["bridge"] = bridge
         report["block"] = block
 
+        // 3b. Links open new tabs (v0.4.0 regression: MioCore nav page links did nothing) — local fixture pages
+        let newTabReport = await newTabSmoke()
+        report["newTab"] = newTabReport
+        let newTabOK = (newTabReport["ok"] as? Bool) ?? false
+
+        // 3c. Ad-block depth (MioAdblockSmoke.swift): >10k rules from downloaded subscriptions, request blocked,
+        //     ## element hidden, real scriptlet applied in a real tab; adblock.turtlecute.org score + screenshot
+        let adblock = await MioAdblockSmoke.run(host: host, dir: dir)
+        report["adblock"] = adblock
+        let adblockOK = (adblock["ok"] as? Bool) == true
+
         // 4. Settings → Mio 扩展
         var settings: [String: Any] = [:]
         let groups = host.kit.settingsModel.groups()
@@ -191,6 +299,11 @@ final class MioSmoke {
         settings["ok"] = settingsOK
         report["settings"] = settings
 
+        // 5. Containers (isolation, data stores, inheritance, picker / settings screenshots): MioContainerSmoke.swift
+        let containers = await MioContainerSmoke(dir: dir).run()
+        report["containers"] = containers
+        let containersOK = (containers["ok"] as? Bool) == true
+
         // Back to the first tab so the script's own steps start from the launch state
         if let firstTab, let manager = tabManager() {
             manager.selectTab(firstTab, previous: manager.selectedTab)
@@ -201,14 +314,28 @@ final class MioSmoke {
             _ = await UIApplication.shared.open(tray, options: [:])
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             await shot("08-tab-tray")
+            // v0.4.1: the tab overview has only normal + private tabs (no upstream "Synced tabs" pane)
+            var tray: [String: Any] = ["found": false]
+            if let vc = MioSmoke.find(TabTrayViewController.self, from: MioKitHost.topViewController()) {
+                tray["found"] = true
+                tray["panels"] = vc.childPanelControllers.count
+                tray["remoteTabsPanel"] = vc.childPanelControllers.contains { $0.topViewController is RemoteTabsPanel }
+                tray["ok"] = vc.childPanelControllers.count == 2
+                    && !vc.childPanelControllers.contains { $0.topViewController is RemoteTabsPanel }
+            }
+            report["tabTray"] = tray
+            report["tabTrayOK"] = (tray["ok"] as? Bool) ?? false
         }
 
         let homePassed = (homeOK as? Bool) == true || (homeOK as? String) == "access-login"
-        let pass = homePassed && bridgeOK && blockOK && settingsOK
+        let pass = homePassed && bridgeOK && blockOK && settingsOK && newTabOK && adblockOK && containersOK
+        report["adblockOK"] = adblockOK
         report["homeOK"] = homeOK
+        report["newTabOK"] = newTabOK
         report["bridgeOK"] = bridgeOK
         report["blockOK"] = blockOK
         report["settingsOK"] = settingsOK
+        report["containersOK"] = containersOK
         report["pass"] = pass
         report["seconds"] = Int(Date().timeIntervalSince(started))
         write()
@@ -216,6 +343,17 @@ final class MioSmoke {
     }
 
     // MARK: - Helpers
+
+    /// First view controller of `type` in the presented / child hierarchy starting at `root`.
+    private static func find<T: UIViewController>(_ type: T.Type, from root: UIViewController?) -> T? {
+        guard let root else { return nil }
+        if let hit = root as? T { return hit }
+        var next: [UIViewController] = root.children
+        if let presented = root.presentedViewController { next.append(presented) }
+        if let nav = root as? UINavigationController { next.append(contentsOf: nav.viewControllers) }
+        for vc in next { if let hit = find(type, from: vc) { return hit } }
+        return nil
+    }
 
     private func orNull(_ s: String?) -> Any {
         if let s { return s }

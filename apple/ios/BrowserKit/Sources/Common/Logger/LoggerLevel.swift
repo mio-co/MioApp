@@ -3,7 +3,6 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import Foundation
-import Sentry
 
 // Log levels are kept to a minimum to make sure they are relevant and useful. If your log isn't important enough
 // to make it to this list, then it shouldn't be logged.
@@ -46,18 +45,5 @@ public enum LoggerLevel: String {
 
     func isGreaterOrEqualThanLevel(_ level: LoggerLevel) -> Bool {
         return value >= level.value
-    }
-
-    var sentryLevel: SentryLevel {
-        switch self {
-        case .debug:
-            return SentryLevel.debug
-        case .info:
-            return SentryLevel.info
-        case .warning:
-            return SentryLevel.error
-        case .fatal:
-            return SentryLevel.fatal
-        }
     }
 }

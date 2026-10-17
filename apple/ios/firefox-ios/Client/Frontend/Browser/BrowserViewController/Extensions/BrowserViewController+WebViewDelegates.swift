@@ -284,7 +284,9 @@ extension BrowserViewController: WKUIDelegate {
                                         image: elements.image,
                                         currentTab: currentTab,
                                         webView: webView)
-            return UIMenu(title: url.normalizedHostWithLRI ?? url.absoluteString, children: actions)
+            // Mio: 「在容器中打开」
+            let children = MioContainerUI.shared.linkMenu(adding: actions, url: url, currentTab: currentTab, bvc: self)
+            return UIMenu(title: url.normalizedHostWithLRI ?? url.absoluteString, children: children)
         }
     }
 

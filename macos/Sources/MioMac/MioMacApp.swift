@@ -19,7 +19,7 @@ final class MioMacAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MioMacMenu.build(target: self)
         applyAppearance()
-        // MioKit 宿主：桥 / 用户脚本打开标签到当前窗口；设置变了刷新窗口和设置页；广告拦截规则（CI 冒烟不查订阅更新，只编译内置列表）
+        // MioKit 宿主：桥 / 用户脚本打开标签到当前窗口；设置变了刷新窗口和设置页；广告拦截规则（CI 冒烟也真实下载订阅，验证 >1 万条）
         let host = MioMacKit.shared
         host.currentWindow = { [weak self] in self?.current }
         host.onSettingsChanged = { [weak self] in
@@ -27,7 +27,7 @@ final class MioMacAppDelegate: NSObject, NSApplicationDelegate {
             self.settingsModel.refresh()
             for c in self.controllers { c.refreshTabs(); c.refreshChrome() }
         }
-        host.prepare(checkUpdates: Self.smokeOut == nil)
+        host.prepare(checkUpdates: true)
         if let out = Self.smokeOut {
             let c = makeWindow()
             c.newTab(url: "https://example.com/")

@@ -536,7 +536,10 @@ class Tab: NSObject,
     func createWebview(with restoreSessionData: Data? = nil, configuration: WKWebViewConfiguration) {
         guard webView == nil else { return }
 
-        let requiredConfiguration = requiredPopupConfiguration ?? configuration
+        // Mio: container tabs get a copy with their own WKWebsiteDataStore; popups keep WebKit's (parent's store)
+        let requiredConfiguration = MioContainerUI.shared.configuration(forTab: self,
+                                                                        base: requiredPopupConfiguration ?? configuration,
+                                                                        isPopup: requiredPopupConfiguration != nil)
         // Ensures we inject scripts into a new content controller
         requiredConfiguration.userContentController = .init()
         self.configuration = requiredConfiguration
@@ -656,6 +659,7 @@ class Tab: NSObject,
 
         contentScriptManager.uninstall(tab: self)
         MioKitHost.shared.detach(webView: webView) // Mio
+        MioContainerUI.shared.tabDidClose(tabUUID) // Mio: forget the tab's container
         webView?.removeAllUserScripts()
 
         if let webView = webView {

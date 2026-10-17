@@ -84,12 +84,14 @@ class LaunchScreenViewModel {
     private func loadLaunchType() {
         var order: [LaunchType] = []
 
-        if introScreenManager.shouldUseContinuousOnboarding {
+        // Mio: Firefox onboarding (video intro, intro cards, continuous onboarding) is never shown, and its media is
+        // not shipped (MioBuild.firefoxOnboardingEnabled)
+        if MioBuild.firefoxOnboardingEnabled, introScreenManager.shouldUseContinuousOnboarding {
             // Count this launch as an active day
             introScreenManager.recordContinuousOnboardingActiveDay()
         }
 
-        if introScreenManager.shouldShowIntroScreen {
+        if MioBuild.firefoxOnboardingEnabled, introScreenManager.shouldShowIntroScreen {
             // Day 1 keeps normal onboarding
             if introScreenManager.shouldShowVideoIntro {
                 order.append(.videoIntro)

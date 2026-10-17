@@ -166,15 +166,19 @@ extension BrowserViewController: PhotonActionSheetProtocol {
         let newTab = getNewTabAction()
         let newPrivateTab = getNewPrivateTabAction()
         let closeTab = getCloseTabAction()
+        // Mio: 「新建容器标签…」
+        let mio = MioContainerUI.shared.newTabLongPressActions(bvc: self)
 
-        return [[newTab, newPrivateTab], [closeTab]]
+        return [[newTab, newPrivateTab] + mio, [closeTab]]
     }
 
     func getNewTabLongPressActions() -> [[PhotonRowActions]] {
         let newTab = getNewTabAction()
         let newPrivateTab = getNewPrivateTabAction()
+        // Mio: 「新建容器标签…」
+        let mio = MioContainerUI.shared.newTabLongPressActions(bvc: self)
 
-        return [[newTab, newPrivateTab]]
+        return [[newTab, newPrivateTab] + mio]
     }
 
     private func getNewTabAction() -> PhotonRowActions {
