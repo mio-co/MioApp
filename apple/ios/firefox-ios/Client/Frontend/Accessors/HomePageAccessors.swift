@@ -1,0 +1,33 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/
+
+import Foundation
+import Shared
+
+// Accessors for homepage details from the app state.
+// These are pure functions, so it's quite ok to have them
+// as static.
+
+// This HomePagePref is only used when setting the HomePage on the newTab
+// and not setting a custom URL for the Home button.
+class NewTabHomePageAccessors {
+    static func getHomePage(_ prefs: Prefs) -> URL? {
+        let string = prefs.stringForKey(PrefsKeys.NewTabCustomUrlPrefKey) ?? getDefaultHomePageString(prefs)
+        guard let urlString = string else { return nil }
+        return URL(string: urlString)
+    }
+
+    static func getDefaultHomePageString(_ prefs: Prefs) -> String? {
+        // Mio: fall back to mio://home content
+        return prefs.stringForKey(PrefsKeys.KeyDefaultHomePageURL) ?? MioBuild.homeContentURL.absoluteString
+    }
+}
+
+class HomeButtonHomePageAccessors {
+    static func getHomePage(_ prefs: Prefs) -> URL? {
+        // Mio: fall back to mio://home content
+        let urlString = prefs.stringForKey(PrefsKeys.HomeButtonHomePageURL) ?? MioBuild.homeContentURL.absoluteString
+        return URL(string: urlString)
+    }
+}
