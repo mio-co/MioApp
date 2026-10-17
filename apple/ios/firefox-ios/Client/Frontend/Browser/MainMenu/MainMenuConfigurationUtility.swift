@@ -244,6 +244,10 @@ struct MainMenuConfigurationUtility: Equatable, FeatureFlaggable {
             options.append(configureSummarizerItem(with: uuid, tabInfo: tabInfo))
         }
         options.append(configureUserAgentItem(with: uuid, tabInfo: tabInfo))
+        // Mio: 「在容器中重新打开…」
+        if !tabInfo.isHomepage, let item = MioContainerUI.shared.mainMenuElement(windowUUID: uuid, tabUUID: tabInfo.tabID) {
+            options.append(item)
+        }
         if !isExpanded {
             options.append(configureMoreLessItem(with: uuid, tabInfo: tabInfo, isExpanded: isExpanded))
         } else {

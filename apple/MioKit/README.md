@@ -17,7 +17,8 @@ Sources/MioKit/
   ContentBlocking/ 规则转换（AdGuard / 内置子集）、超 15 万条拆分、订阅下载与缓存、广告拦截模块
   UserScripts/     用户脚本引擎（安装/更新/启停/GM 值）、用户脚本模块
   Bridge/          MioCore 本机桥（来源校验、API v1、权限）、mio://home 模型
-  Containers/      容器管理（状态持久化、数据存储 ID 映射）、容器模块
+  Containers/      容器管理（状态持久化、数据存储 ID 映射、预置 个人/工作/购物/银行、图标）、容器模块、
+                   MioContainerTabPolicy（新 web view 进哪个容器：恢复 / 菜单指定 / 弹窗继承 / 父标签继承 / 站点规则）
   WebKit/          WebKit 适配：MioWebViewModules、MioCoreBridgeHandler、MioSchemeHandler、MioContentBlocker、
                    MioContainerDataStores、MioUserScriptBridge、MioSaveRunner
   Resources/       js/（reader、dark、mio-save、mio-translate）、filters/（mio-basic 内置精简列表、mio-youtube）
@@ -49,7 +50,8 @@ let kit = MioKitContainer(appVersion: "0.4.0")      // UserDefaults.standard + �
 let blocker = MioContentBlocker(manager: kit.filters)
 kit.adblock.recompile = { await blocker.reload() }
 Task { await blocker.prepare() }                    // 先加载已编译规则（秒开），需要时编译；每天检查一次订阅
-let dataStores = MioContainerDataStores(manager: kit.containers)
+let dataStores = MioContainerDataStores(manager: kit.containers)   // iOS fork：defaultStore: { .default() }（默认容器沿用 Firefox 的存储）
+kit.containers.seedPresetsIfNeeded()                                 // 首次启动建 个人 / 工作 / 购物 / 银行（已有自建容器则跳过）
 kit.bridge.delegate = myBridgeHost                  // MioCoreBridgeDelegate
 kit.media.onMediaState = { state in /* iOS: MPNowPlayingInfoCenter 兜底（页面没有 mediaSession 时） */ }
 ```

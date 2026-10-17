@@ -109,6 +109,8 @@ class TopTabCell: UICollectionViewCell, ThemeApplicable, ReusableCell {
         } else {
             favicon.manuallySetImage(UIImage(named: ImageIdentifiers.firefoxFavicon) ?? UIImage())
         }
+        // Mio: container color line
+        MioContainerUI.decorate(contentView, tabUUID: tab.tabUUID, isPrivate: tab.isPrivate, style: .topTab)
     }
 
     required init?(coder aDecoder: NSCoder) {

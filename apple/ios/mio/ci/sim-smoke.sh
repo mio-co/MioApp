@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Mio iOS（firefox-ios fork）模拟器冒烟：
 #   1. 冷启动 → 等待 → 截图（首页 = mio://home，地址栏应显示「Mio」）
-#   2. App 内 MioKit 断言（MioSmoke.swift → kit-smoke.json）：mio://home→MioCore、本机桥来源校验、广告拦截、Mio 扩展设置页截图
+#   2. App 内 MioKit 断言（MioSmoke.swift → kit-smoke.json）：mio://home→MioCore、本机桥来源校验、广告拦截、Mio 扩展设置页截图、
+#      容器（MioContainerSmoke.swift：本地页 127.0.0.1 在两个容器里设不同 Cookie 互不可见、数据存储、子标签继承、截图）
+#   3. 容器重启恢复：结束 App → MIO_SMOKE_PHASE=restore 重新启动 → 标签回到同一个容器（restore.json）
 # 任一步骤 App 进程消失即失败。
 # 用法：apple/ios/mio/ci/sim-smoke.sh <Client.app> <输出目录>
 set -uo pipefail
@@ -48,11 +50,25 @@ SCHEME=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLScheme
 
 FAIL=0
 SUMMARY="$OUT/summary.txt"; : > "$SUMMARY"
+
+# 容器冒烟用的本地页（模拟器和宿主机共用网络，App 里访问 http://127.0.0.1:$CT_PORT/containers.html）
+CT_PORT="${CT_PORT:-8765}"
+mkdir -p "$OUT/www"
+cat > "$OUT/www/containers.html" <<'HTML'
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Mio 容器冒烟</title>
+<body style="font:17px -apple-system;padding:24px"><h1>容器冒烟</h1><p id="c"></p>
+<script>document.getElementById('c').textContent = 'cookie: ' + (document.cookie || '（空）') + ' · storage: ' + (localStorage.getItem('mio_ct') || '（空）');</script>
+HTML
+python3 -m http.server "$CT_PORT" --bind 127.0.0.1 --directory "$OUT/www" > "$OUT/http-server.log" 2>&1 &
+HTTP_PID=$!
+trap 'kill $HTTP_PID 2>/dev/null' EXIT
 touch "$OUT/.start"
 
 xcrun simctl install "$DEV" "$APP" || { echo "INSTALL_FAILED" | tee -a "$SUMMARY"; exit 1; }
 # SIMCTL_CHILD_MIO_SMOKE=1 → App 里的 MioSmoke（Client/Frontend/Browser/Mio/MioSmoke.swift）等 go 文件后跑 MioKit 断言
-LOUT=$(SIMCTL_CHILD_MIO_SMOKE=1 xcrun simctl launch --terminate-running-process --stdout="$OUT/stdout.txt" --stderr="$OUT/stderr.txt" "$DEV" "$BID" 2>&1)
+LOUT=$(SIMCTL_CHILD_MIO_SMOKE=1 SIMCTL_CHILD_MIO_SMOKE_LOCAL_URL="http://127.0.0.1:$CT_PORT/containers.html" \
+  xcrun simctl launch --terminate-running-process --stdout="$OUT/stdout.txt" --stderr="$OUT/stderr.txt" "$DEV" "$BID" 2>&1)
 echo "$LOUT" > "$OUT/launch.txt"
 PID=${LOUT##*: }
 
@@ -107,6 +123,7 @@ kit_smoke() {
   done
   [ -n "$smoke" ] || { echo "kit-smoke NO_CONTAINER" | tee -a "$SUMMARY"; FAIL=1; return 1; }
   echo "kit-smoke dir: $smoke"
+  SMOKE_DIR="$smoke"
   mkdir -p "$smoke"; rm -f "$smoke/report.json"; touch "$smoke/go"
   for i in $(seq 1 "${KIT_SMOKE_TIMEOUT:-900}"); do
     if ! alive; then echo "kit-smoke CRASHED (gone after ~${i}s)" | tee -a "$SUMMARY"; FAIL=1; break; fi
@@ -128,7 +145,7 @@ kit_smoke() {
   python3 - "$OUT/kit-smoke.json" <<'PY' | tee -a "$SUMMARY"
 import json, sys
 r = json.load(open(sys.argv[1]))
-for k in ("homeOK", "bridgeOK", "blockOK", "settingsOK"):
+for k in ("homeOK", "bridgeOK", "blockOK", "settingsOK", "containersOK"):
     v = r.get(k)
     # homeOK == "access-login": MioCore is behind Cloudflare Access and CI is not signed in (login page reached = OK)
     print(f"kit-smoke {k} {v if isinstance(v, str) else ('OK' if v else 'FAIL')}")
@@ -141,6 +158,41 @@ PY
   fi
 }
 if [ "$FAIL" = 0 ]; then kit_smoke || true; fi
+
+# 容器重启恢复：结束 App，带 MIO_SMOKE_PHASE=restore 重新启动，App 等 go-restore 后检查标签是否回到原容器
+restore_smoke() {
+  local i name
+  [ -n "${SMOKE_DIR:-}" ] || return 1
+  rm -f "$SMOKE_DIR/restore.json" "$SMOKE_DIR/go-restore" "$SMOKE_DIR/shot-request"
+  run_to 60 xcrun simctl terminate "$DEV" "$BID" >/dev/null 2>&1 || true
+  sleep 3
+  LOUT=$(SIMCTL_CHILD_MIO_SMOKE=1 SIMCTL_CHILD_MIO_SMOKE_PHASE=restore SIMCTL_CHILD_MIO_SMOKE_LOCAL_URL="http://127.0.0.1:$CT_PORT/containers.html" \
+    xcrun simctl launch --terminate-running-process --stdout="$OUT/stdout-restore.txt" --stderr="$OUT/stderr-restore.txt" "$DEV" "$BID" 2>&1)
+  echo "$LOUT" > "$OUT/launch-restore.txt"
+  PID=${LOUT##*: }
+  sleep 5
+  touch "$SMOKE_DIR/go-restore"
+  for i in $(seq 1 "${RESTORE_SMOKE_TIMEOUT:-300}"); do
+    if ! alive; then echo "containers-restore CRASHED (gone after ~${i}s)" | tee -a "$SUMMARY"; FAIL=1; return 1; fi
+    if [ -f "$SMOKE_DIR/shot-request" ]; then
+      name=$(cat "$SMOKE_DIR/shot-request")
+      run_to 60 xcrun simctl io "$DEV" screenshot "$OUT/$name.png" >/dev/null 2>&1 || echo "screenshot $name timed out"
+      rm -f "$SMOKE_DIR/shot-request"
+    fi
+    [ -f "$SMOKE_DIR/restore.json" ] && break
+    sleep 1
+  done
+  cp "$SMOKE_DIR"/12-*.png "$OUT/" 2>/dev/null || true
+  [ -f "$SMOKE_DIR/restore.json" ] || { echo "containers-restore TIMEOUT" | tee -a "$SUMMARY"; FAIL=1; return 1; }
+  cp "$SMOKE_DIR/restore.json" "$OUT/containers-restore.json"
+  echo "--- containers-restore.json"; cat "$OUT/containers-restore.json"; echo
+  if [ "$(python3 -c 'import json,sys; print(1 if json.load(open(sys.argv[1])).get("containersRestoreOK") else 0)' "$OUT/containers-restore.json")" = 1 ]; then
+    echo "kit-smoke containersRestoreOK OK" | tee -a "$SUMMARY"
+  else
+    echo "kit-smoke containersRestoreOK FAIL" | tee -a "$SUMMARY"; FAIL=1; return 1
+  fi
+}
+if [ "$FAIL" = 0 ]; then restore_smoke || true; fi
 crop_bottom "$OUT/06-smoke-example.png" "$OUT/06-smoke-example-bottom-toolbar.png"
 
 run_to 90 xcrun simctl spawn "$DEV" log show --style compact --last 5m \

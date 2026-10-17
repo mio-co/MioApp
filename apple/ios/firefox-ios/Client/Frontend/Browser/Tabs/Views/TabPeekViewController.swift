@@ -140,6 +140,8 @@ final class TabPeekViewController: UIViewController,
             })
         }
 
-        return UIMenu(title: "", children: actions)
+        // Mio: 「在容器中重新打开」
+        let children = MioContainerUI.shared.tabMenu(adding: actions, tabUUID: tabModel.tabUUID, windowUUID: windowUUID)
+        return UIMenu(title: "", children: children)
     }
 }

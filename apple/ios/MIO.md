@@ -22,6 +22,9 @@ picked up automatically):
 | `MioBuild.swift` | switches for disabled Mozilla services, mio://home URLs, first-run / privacy defaults |
 | `MioKitHost.swift` | glue to the shared `apple/MioKit` package: one `MioKitContainer`, mio:// scheme handler, per-tab `MioWebViewModules` (module scripts, MioCore bridge, ad-block rule lists), `MioCoreBridgeDelegate` (device info, open tab, save to Mio, permission prompt) |
 | `MioExtensionsSetting.swift` | Settings → "Mio 扩展" page generated from MioKit's `MioExtensionSettingsModel` (module switches + sub-settings) |
+| `MioContainerUI.swift` | containers (Multi-Account Containers style, iOS 17+): per-tab container decision + data store (`Tab.createWebview`), entry points (new-tab / tabs-button long press, link context menu, tab tray peek menu, main menu), container picker sheet, color badges (address bar, tab tray, iPad top tabs) |
+| `MioContainersSetting.swift` | Settings → 容器: create / rename / color / icon / delete (closes its tabs, deletes its data store) / clear one container's data |
+| `MioContainerSmoke.swift` | CI smoke for containers (cookie isolation on a local page, data store ids, inheritance, relaunch restore) |
 
 MioKit (`apple/MioKit`, interface in its README) is linked into the Client target as a local Swift package
 (`Client.xcodeproj` file reference `../../MioKit`, product `MioKit`); its SafariConverterLib dependency is pinned in
@@ -96,3 +99,21 @@ tab overview, downloads, passwords / autofill (local only), settings.
 
 The ipa is unsigned (same as the 0.3.x SideStore flow). Without an app group the profile already falls back to
 Documents and tab session data falls back to Application Support (Mio change in `TabFileManager`).
+
+## Containers (v0.4.1)
+
+Firefox Multi-Account Containers style login isolation, same container list / JSON / rules as the Mac app (MioKit
+`MioContainerManager`, key `mio.containers.state`). Needs iOS 17 (`WKWebsiteDataStore(forIdentifier:)`); on older iOS every
+entry point is hidden and Settings → 容器 says why.
+
+- Default container = `WKWebsiteDataStore.default()` (what every normal tab used before; existing logins and the Access
+  cookie Keychain backup are unchanged). Each other container gets `WKWebsiteDataStore(forIdentifier: <container id>)`.
+  Private tabs never use containers.
+- Presets 个人 / 工作 / 购物 / 银行 are created once on first launch when there are no containers yet.
+- Tab → container is stored by `tabUUID`, so restored tabs come back in their container. A tab opened from a container tab
+  (link → new tab, `target=_blank`, `window.open`) stays in that container; popups always use WebKit's configuration
+  (the parent's data store). Site rules (Mio 扩展 › 容器 switch) only apply to tabs opened from another tab.
+- Entry points: long press「+」/ tabs button →「新建容器标签…」; link long press →「在容器中打开」; tab tray long press and
+  the page menu →「在容器中重新打开」; Settings → 容器.
+- Indicators: a line in the container color + icon / name pill at the address bar, on tab tray cells, and a line under
+  iPad top tabs.
