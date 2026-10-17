@@ -1,11 +1,9 @@
 // WebRTC 控制脚本（ios/App/App/MioWebRTCGuard.swift 的 webrtcGuard）在 jsdom 里跑：
-// 屏蔽 RTC* / MediaStreamTrack、getUserMedia 拒绝、放行列表（含子域名 / 顶层站点）、动态 iframe、
-// 以及 Android / Windows 的副本与 Swift 里的唯一来源完全一致。
+// 屏蔽 RTC* / MediaStreamTrack、getUserMedia 拒绝、放行列表（含子域名 / 顶层站点）、动态 iframe。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { extractFrom, repoPath } from './swift-js.mjs';
+import { extractFrom } from './swift-js.mjs';
 
 const TEMPLATE = extractFrom('ios/App/App/MioWebRTCGuard.swift', 'webrtcGuard');
 const script = (allow = []) => TEMPLATE.replace('__MIO_WEBRTC_CONFIG__', JSON.stringify({ allow }));
@@ -112,11 +110,4 @@ test('重复注入是幂等的', () => {
   const w = setup();
   w.eval(script());
   assert.equal(w.eval('typeof RTCPeerConnection'), 'undefined');
-});
-
-test('Android / Windows 的副本与 Swift 里的唯一来源一致（node scripts/sync-webrtc-guard.mjs）', () => {
-  for (const f of ['android/app/src/main/assets/mio-webrtc-guard.js', 'desktop/src/inject/webrtc-guard.js']) {
-    const body = readFileSync(repoPath(f), 'utf8').split('\n').slice(1).join('\n');
-    assert.equal(body, TEMPLATE + '\n', f);
-  }
 });

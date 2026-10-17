@@ -6,8 +6,7 @@
 //   顶部 top：地址栏在顶部，工具按钮在底部
 //   三种布局向下滚动都收缩成一个小域名胶囊 / 域名条（不是完全消失），向上滚动或点它恢复。
 // - 地址栏手势：左右滑动切换标签（最后一个再往左 = 新建标签，Safari 行为），上滑 = 标签概览。
-// - 页面菜单：所有原来散在底部工具栏 / 顶栏的功能都收进来（条目 id 与 Android MobileChromeCore.java 一致）。
-// Android 端同一份规则：android/app/src/main/java/xyz/mio/app/browser/MobileChromeCore.java
+// - 页面菜单：所有原来散在底部工具栏 / 顶栏的功能都收进来。
 
 import Foundation
 

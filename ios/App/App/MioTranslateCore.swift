@@ -4,7 +4,6 @@
 // - 从 Bing 翻译页里按正则摘参数（避免把 600 KB 的页面传回网页）
 // - 持久缓存（LRU，JSON 文件）
 // - 设置项的规范化（自动翻译站点、API 地址）和注入配置
-// 与 desktop/src/translate-core.js、Android TranslateCore.java 的规则保持一致。
 
 import Foundation
 

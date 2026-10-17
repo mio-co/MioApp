@@ -1,5 +1,5 @@
 // MioTabsCore.swift — 内置浏览器多标签页的纯逻辑（只依赖 Foundation；tools/MioAppTests 在 Linux 上单测）。
-// 与 Windows 的 desktop/src/tabs-core.js、Android 的 TabsCore.java 同一套规则：
+// 规则：
 //   - 新标签插在当前标签右边；从当前标签打开的一串后台标签按打开顺序排在一起（openerID）
 //   - 关闭当前标签 → 激活右边的，没有就左边的；最近关闭的最多记 20 个，可恢复（原位置、原容器）
 //   - 标签数上限；超过「同时加载」上限时按最近使用卸载后台标签（只留 URL / 标题）

@@ -105,9 +105,8 @@ final class AdblockQualityAuditTests: XCTestCase {
     func testBundledListsDoNotDegradeYouTubeQuality() throws {
         let here = URL(fileURLWithPath: #filePath)
         let bundle = here.deletingLastPathComponent().appendingPathComponent("../../../../ios/App/App/AdblockBundle").standardized
-        let desktop = here.deletingLastPathComponent().appendingPathComponent("../../../../desktop/filters").standardized
         var checked = 0
-        for dir in [bundle, desktop] {
+        for dir in [bundle] {
             let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
             for f in files where f.hasSuffix(".txt") {
                 let text = try String(contentsOf: dir.appendingPathComponent(f), encoding: .utf8)

@@ -6,8 +6,7 @@
 // 在拿到 contentWindow 或插入文档时同样处理（防止从干净的 about:blank frame 里取回原始构造函数）。
 // 全局开关默认开；按站点放行列表（含子域名；放行的站点无论在顶层还是作为 iframe 都不处理）。
 //
-// 同一段 JS（MIO_JS_BEGIN webrtcGuard）也是 Android（assets/mio-webrtc-guard.js）和 Windows（desktop/src/inject/webrtc-guard.js）
-// 用的那份；tools/MioAppTests/js/webrtc-guard.test.mjs 检查三份完全一致。
+// 注入的 JS 在 MIO_JS_BEGIN webrtcGuard 段里，tools/MioAppTests/js/webrtc-guard.test.mjs 抽出来用 jsdom 跑。
 //
 // 纯逻辑部分只依赖 Foundation（swift test 在 Linux 上跑），WKUserScript 和设置页在下面的 #if canImport(UIKit) 段。
 

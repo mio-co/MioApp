@@ -2,12 +2,11 @@
   "name": "mio-app",
   "version": "0.3.4",
   "private": true,
-  "description": "iOS shell for MioCore (https://mio.300031.xyz)",
+  "description": "iOS / iPadOS / Mac shell for MioCore (https://mio.300031.xyz)",
   "scripts": {
     "sync": "cap sync ios"
   },
   "dependencies": {
-    "@capacitor/android": "8.5.3",
     "@capacitor/core": "8.5.3",
     "@capacitor/ios": "8.5.3"
   },

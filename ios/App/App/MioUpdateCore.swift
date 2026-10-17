@@ -1,5 +1,5 @@
 // MioUpdateCore.swift — 软件内更新的纯逻辑（只依赖 Foundation，tools/MioAppTests 在 Linux / macOS 上 swift test）
-// 与 Android（xyz.mio.app.update.UpdateLogic）、Electron（desktop/src/update-core.js）同一套规则：
+// 规则：
 // - 版本比较：semver（v 前缀、缺省段补 0、预发布 < 正式版，+build 忽略）
 // - GitHub releases/latest 解析（草稿 / 预发布 / tag 不是版本号 → 忽略）
 // - sha256：SHA256SUMS.txt（CI 生成，sha256sum 格式）+ GitHub 资产 digest 交叉校验，都没有就拒绝安装

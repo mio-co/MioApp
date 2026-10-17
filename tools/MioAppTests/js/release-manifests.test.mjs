@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,6 +70,10 @@ test('AltStore source has the v2 required shape', () => {
   const app = s.apps[0];
   assert.equal(app.bundleIdentifier, 'xyz.mio.app');
   for (const k of ['name', 'developerName', 'localizedDescription', 'iconURL', 'versions', 'appPermissions']) assert.ok(k in app, k);
+  // 图标按 tag 固定，且仓库里确实有这个文件
+  assert.equal(app.iconURL, 'https://raw.githubusercontent.com/mio-co/MioApp/v0.3.3/assets/icon.png');
+  assert.equal(s.iconURL, app.iconURL);
+  assert.ok(existsSync(join(ROOT, 'assets/icon.png')));
   const v = app.versions[0];
   assert.deepEqual(
     { version: v.version, buildVersion: v.buildVersion, date: v.date, downloadURL: v.downloadURL, size: v.size, minOSVersion: v.minOSVersion },
@@ -84,7 +88,7 @@ test('generate writes SHA256SUMS.txt (covering altstore-source.json) and the sou
   const d = mkdtempSync(join(tmpdir(), 'mio-dist-'));
   writeFileSync(join(d, 'Mio.ipa'), 'ipa-bytes');
   writeFileSync(join(d, 'Mio-0.3.3-mac.zip'), 'zip-bytes');
-  writeFileSync(join(d, 'latest.yml'), 'version: 0.3.3\n');
+  writeFileSync(join(d, 'Mio-0.3.3-mac.dmg'), 'dmg-bytes');
   writeFileSync(join(d, 'SHA256SUMS.txt'), 'stale');
   const r = await generate({
     dist: d, tag: 'v0.3.3', date: '2026-10-17T00:00:00Z', notes: 'notes',
@@ -92,7 +96,7 @@ test('generate writes SHA256SUMS.txt (covering altstore-source.json) and the sou
     plistText: readFileSync(join(ROOT, 'ios/App/App/Info.plist'), 'utf8'),
   });
   const sums = parseSha256Sums(readFileSync(join(d, 'SHA256SUMS.txt'), 'utf8'));
-  assert.deepEqual(Object.keys(sums).sort(), ['Mio-0.3.3-mac.zip', 'Mio.ipa', 'altstore-source.json', 'latest.yml']);
+  assert.deepEqual(Object.keys(sums).sort(), ['Mio-0.3.3-mac.dmg', 'Mio-0.3.3-mac.zip', 'Mio.ipa', 'altstore-source.json']);
   assert.equal(sums['Mio-0.3.3-mac.zip'], sha('zip-bytes'));
   assert.equal(sums['altstore-source.json'], sha(readFileSync(join(d, 'altstore-source.json'))));
   const src = JSON.parse(readFileSync(join(d, 'altstore-source.json'), 'utf8'));

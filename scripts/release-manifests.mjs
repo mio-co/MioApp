@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 // 发版清单（软件内更新用）：在 release job 里对 dist/ 里的全部产物生成
-//   - SHA256SUMS.txt          sha256sum 格式（"<hex>  <文件名>"），Mac 更新器 / Android 校验用
+//   - SHA256SUMS.txt          sha256sum 格式（"<hex>  <文件名>"），Mac 更新器校验用
 //   - altstore-source.json    AltStore / SideStore 源（v2 格式），指向本次 Release 的 Mio.ipa
-// Android 的签名包 Mio.apk 是发版后本地签名再上传的（keystore 不进 CI），它的 sha256 由
-// mioapp-keys/sign-and-upload.sh 另外上传为 Mio.apk.sha256。
 //
 // 用法：node scripts/release-manifests.mjs --dist dist --tag v0.3.3 [--repo mio-co/MioApp] [--date 2026-10-17T00:00:00Z]
 //       [--notes-file notes.md] [--pbxproj ios/App/App.xcodeproj/project.pbxproj] [--plist ios/App/App/Info.plist]
@@ -102,14 +100,15 @@ export function buildAltStoreSource({ repo, tag, version, buildVersion, minOSVer
   if (!repo || !tag || !version) throw new Error('repo / tag / version required');
   if (!Number.isInteger(ipaSize) || ipaSize <= 0) throw new Error('ipa size required');
   const base = `https://github.com/${repo}`;
-  const raw = `https://raw.githubusercontent.com/${repo}/main`;
+  // 图标按 tag 固定（之后 main 上挪动文件也不影响已发布的源）
+  const icon = `https://raw.githubusercontent.com/${repo}/${encodeURIComponent(tag)}/assets/icon.png`;
   const app = {
     name: 'Mio',
     bundleIdentifier: BUNDLE_ID,
     developerName: 'Mio',
     subtitle: 'MioCore 客户端 + 内置广告拦截浏览器',
     localizedDescription: 'MioCore（mio.300031.xyz）的 iOS / iPadOS 客户端：后台导航页、内置浏览器（AdGuard 规则广告拦截、YouTube 防沉迷、后台播放）。免签名安装包，由 SideStore / AltStore 用你自己的 Apple ID 签名。',
-    iconURL: `${raw}/desktop/assets/icon.png`,
+    iconURL: icon,
     tintColor: '#F0A3BF',
     category: 'utilities',
     screenshots: [],
@@ -130,7 +129,7 @@ export function buildAltStoreSource({ repo, tag, version, buildVersion, minOSVer
     identifier: `${BUNDLE_ID}.source`,
     subtitle: 'Mio 官方源（GitHub Releases）',
     description: `Mio 的 SideStore / AltStore 源，每次发版自动更新。源地址：${base}/releases/latest/download/${SOURCE_NAME}`,
-    iconURL: `${raw}/desktop/assets/icon.png`,
+    iconURL: icon,
     website: base,
     sourceURL: `${base}/releases/latest/download/${SOURCE_NAME}`,
     tintColor: '#F0A3BF',

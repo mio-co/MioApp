@@ -1,7 +1,7 @@
 import XCTest
 @testable import MioWebCompat
 
-/// 与 desktop/test/tabs-core.test.js、Android TabsCoreTest 同样的用例
+/// MioTabsCore 纯逻辑用例
 final class MioTabsCoreTests: XCTestCase {
     private func hosts(_ s: MioTabStore) -> [String] { s.tabs.map { MioTabStore.displayHost($0.url) } }
 
