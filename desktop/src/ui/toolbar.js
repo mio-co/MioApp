@@ -138,6 +138,7 @@ $('back').onclick = () => window.mioToolbar.cmd('back');
 $('forward').onclick = () => window.mioToolbar.cmd('forward');
 $('reload').onclick = () => window.mioToolbar.cmd(state && state.loading ? 'stop' : 'reload');
 $('external').onclick = () => window.mioToolbar.cmd('openExternal');
+$('translate').onclick = () => window.mioToolbar.cmd('translateMenu');
 $('settings').onclick = () => window.mioToolbar.cmd('settings');
 $('shield').onclick = () => window.mioToolbar.cmd('shieldMenu');
 $('share').onclick = () => window.mioToolbar.cmd('share');

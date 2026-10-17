@@ -117,7 +117,40 @@ async function tabsSmoke({ browser, ytWc, wc2, out, getMainWindow }) {
   return r;
 }
 
-async function runSmoke({ out, adblock, browser, getMainWindow }) {
+/** 多标签 × 容器：新建容器标签用该容器会话、锁定继承、站点规则、删除容器关闭其标签 */
+async function tabsContainersSmoke({ browser, containers }) {
+  const r = { ok: false };
+  try {
+    const store = browser.store;
+    const c = containers.store.create({ name: 'smoke-tabs', color: 'green' });
+    const t = browser.newTab('https://example.com/', { activate: true, containerId: c.id });
+    const wc = browser.views.get(t.id).webContents;
+    r.containerSession = wc.session === containers.sessionFor(c.id) && wc.session !== containers.defaultSession();
+    r.mapped = (containers.store.getTab(t.key) || {}).containerId === c.id;
+    browser.setTabLocked(t.id, true);
+    const child = browser.openFrom(wc, 'https://example.com/?child', false, 'default');
+    r.childInherits = !!child && child.containerId === c.id && child.locked === true;
+    r.childSession = !!child && browser.views.get(child.id).webContents.session === wc.session;
+    containers.store.setSiteRule('example.org', c.id);
+    const ruled = browser.newTab('https://www.example.org/', { activate: false });
+    r.siteRule = !!ruled && ruled.containerId === c.id;
+    await wait(600);
+    const strip = await browser.toolbar.webContents
+      .executeJavaScript("JSON.stringify([...document.querySelectorAll('#tabs .tab')].map((n) => n.style.getPropertyValue('--container').trim()))")
+      .catch(() => '[]');
+    r.stripColors = JSON.parse(strip).filter((x) => x && x !== 'transparent').length;
+    const n0 = store.size;
+    const ids = [t.id, child && child.id, ruled && ruled.id].filter((x) => x != null);
+    await containers.removeContainer(c.id);
+    r.closedOnRemove = ids.every((id) => !store.get(id)) && store.size === n0 - ids.length;
+    r.ok = r.containerSession && r.mapped && r.childInherits && r.childSession && r.siteRule && r.stripColors >= 3 && r.closedOnRemove;
+  } catch (e) {
+    r.error = String((e && e.stack) || e);
+  }
+  return r;
+}
+
+async function runSmoke({ out, adblock, browser, containers, getMainWindow }) {
   const result = { ok: false, platform: process.platform, version: app.getVersion(), steps: {} };
   const finish = (code) => {
     try {
@@ -130,7 +163,7 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
   const guard = setTimeout(() => {
     result.error = 'timeout';
     finish(2);
-  }, 150000);
+  }, 210000);
   try {
     const t0 = Date.now();
     await adblock.readyPromise;
@@ -178,8 +211,45 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
       )
       .catch((e) => String(e));
 
-    // 白名单后同一页面不再拦截（MioCore 打开外链 = 新标签：speedtest 在第二个标签里）
     const ytWc = wc;
+    // WebRTC 控制：默认屏蔽（YouTube 页面里 RTCPeerConnection 不存在），放行 example.com 后可用
+    const rtc = browser.webrtc;
+    result.steps.webrtc = { blocked: await wc.executeJavaScript('typeof RTCPeerConnection'), policy: wc.getWebRTCIPHandlingPolicy() };
+    if (rtc) {
+      // 多标签：MioCore 打开外链 = 新标签；检查完关掉，后面的标签数不变
+      rtc.setAllowed('example.com', true);
+      browser.open('https://example.com/');
+      const rwc = browser.content.webContents;
+      await waitLoad(rwc, 30000);
+      await wait(1500);
+      result.steps.webrtc.allowed = await rwc.executeJavaScript('typeof RTCPeerConnection');
+      result.steps.webrtc.allowedPolicy = rwc.getWebRTCIPHandlingPolicy();
+      rtc.setAllowed('example.com', false);
+      browser.closeTab();
+    }
+
+    // 用户脚本（userscripts.js）：装一个隔离 world 脚本（@grant GM_setValue）+ 一个页面世界脚本（@grant none），
+    // 打开 example.com 检查两个都运行、隔离 world 看不到页面变量、GM_setValue 落到主进程存储
+    const us = browser.userscripts;
+    if (us) {
+      const iso = "// ==UserScript==\n// @name Mio smoke isolated\n// @namespace mio.smoke\n// @match https://example.com/*\n// @run-at document-end\n// @grant GM_setValue\n// ==/UserScript==\ndocument.documentElement.setAttribute('data-mio-us-iso', typeof window.__mioUsPage + ':' + typeof GM_setValue + ':' + typeof GM_info);\nGM_setValue('smoke', 42);\n";
+      const pg = "// ==UserScript==\n// @name Mio smoke page\n// @namespace mio.smoke\n// @match https://example.com/*\n// @run-at document-start\n// @grant none\n// ==/UserScript==\nwindow.__mioUsPage = 1;\n";
+      const { prepare } = require('./userscripts');
+      const a = us.store.install(await prepare(iso, null, us.fetch));
+      const b = us.store.install(await prepare(pg, null, us.fetch));
+      browser.open('https://example.com/');
+      const uwc = browser.content.webContents;
+      await waitLoad(uwc, 30000);
+      await wait(2000);
+      const page = JSON.parse(await uwc.executeJavaScript("JSON.stringify({ iso: document.documentElement.getAttribute('data-mio-us-iso'), page: typeof window.__mioUsPage, bridge: typeof window.mioUserScriptNative })"));
+      const stored = us.store.values(a.id).smoke;
+      us.store.delete(a.id);
+      us.store.delete(b.id);
+      browser.closeTab();
+      result.steps.userscripts = { page, stored, ok: page.iso === 'undefined:function:object' && page.page === 'number' && page.bridge === 'undefined' && stored === '42' };
+    }
+
+    // 白名单后同一页面不再拦截（MioCore 打开外链 = 新标签：speedtest 在第二个标签里）
     browser.open('https://www.speedtest.net/');
     const wc2 = browser.content.webContents;
     adblock.resetCount(wc2.id);
@@ -198,6 +268,11 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
     // 多标签页：两个标签各自一个 webContents、切换、新建（默认 MioCore 导航）、后台标签也有注入脚本、关闭 / 恢复、收起 + 角标
     result.steps.tabs = await tabsSmoke({ browser, ytWc, wc2, out, getMainWindow });
 
+    // 容器（登录状态隔离）：两个容器访问同一个本地测试页互不可见（desktop/src/containers-smoke.js）
+    if (containers) result.steps.containers = await require('./containers-smoke').run({ containers, adblock });
+    // 多标签 × 容器
+    if (containers) result.steps.tabsContainers = await tabsContainersSmoke({ browser, containers });
+
     const s = result.steps;
     result.ok =
       s.engine.ready &&
@@ -209,7 +284,12 @@ async function runSmoke({ out, adblock, browser, getMainWindow }) {
       s.youtube.page.media === true &&
       blockedOn > 0 &&
       blockedOff === 0 &&
-      s.tabs.ok === true;
+      s.webrtc.blocked === 'undefined' &&
+      s.webrtc.allowed === 'function' &&
+      (!s.userscripts || s.userscripts.ok === true) &&
+      s.tabs.ok === true &&
+      (!containers || (s.containers && s.containers.ok === true)) &&
+      (!containers || (s.tabsContainers && s.tabsContainers.ok === true));
     clearTimeout(guard);
     finish(result.ok ? 0 : 1);
   } catch (e) {

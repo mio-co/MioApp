@@ -245,6 +245,9 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             var ytFocus: [String: Any]?
             var tabsOK = false
             var media: [String: Any]?
+            var translate: [String: Any]?
+            // 用户脚本 + WebRTC 控制（MioUserScripts.swift 的 MioUserScriptSmoke）
+            var extrasOK = false
             func finish() {
                 let top = MioBrowserViewController.topPresenter(self)
                 let presented = top is MioBrowserViewController || top is MioTabsViewController
@@ -285,9 +288,12 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 report["media"] = media ?? "not checked"
                 let mediaOK = (media?["ok"] as? Bool) == true
                 report["mediaOK"] = mediaOK
+                report["translate"] = translate ?? ["checked": false]
+                let translateOK = (translate?["installed"] as? Bool) == true && (translate?["bridge"] as? Bool) == true
+                report["translateOK"] = translateOK
                 let page = report["page"] as? [String: Any]
                 report["tabsOK"] = tabsOK
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && tabsOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK && tabsOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
@@ -304,12 +310,20 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                         }
                         MioMediaSmoke.run { m in
                             media = m
-                            // 多标签页（MioTabs.swift）：第二个标签、切换、关闭、恢复；顶部工具栏 + 标签条；网页在工具栏下面
-                            MioTabsSmoke.run { r, ok in
-                                report["tabs"] = r
-                                tabsOK = ok
-                                NSLog("⚡️ Mio smoke: tabs %@ %@", ok ? "OK" : "FAILED", "\(r)")
-                                finish()
+                            MioTranslate.smokeCheck(network: true) { t in
+                                translate = t
+                                MioUserScriptSmoke.run { r, ok in
+                                    report["userscriptsWebRTC"] = r
+                                    extrasOK = ok
+                                    NSLog("⚡️ Mio smoke: userscripts/WebRTC %@ %@", ok ? "OK" : "FAILED", "\(r)")
+                                    // 多标签页（MioTabs.swift）：第二个标签、切换、关闭、恢复；顶部工具栏 + 标签条；网页在工具栏下面；容器标签
+                                    MioTabsSmoke.run { r, ok in
+                                        report["tabs"] = r
+                                        tabsOK = ok
+                                        NSLog("⚡️ Mio smoke: tabs %@ %@", ok ? "OK" : "FAILED", "\(r)")
+                                        finish()
+                                    }
+                                }
                             }
                         }
                     }

@@ -122,6 +122,12 @@ public class BrowserActivity extends Activity {
         /** 阅读模式 / 强制深色 / 存到 Mio（PageTools.java）；阅读按钮只交给当前标签，后台标签用自己的占位 View */
         PageTools pageTools;
         View readerDummy;
+        /** 翻译 / WebRTC 控制 / 用户脚本：每个标签的 WebView 各自安装 */
+        TranslateBridge translate;
+        final WebRtcGuard rtc = new WebRtcGuard();
+        UserScripts userScripts;
+        /** 这个标签 WebView 实际用的容器（系统不支持多 Profile 时 = default） */
+        String containerId = TabsCore.DEFAULT_CONTAINER;
         int progress = 100;
         volatile boolean activeCache = true;
         volatile String activeCacheHost = "";
@@ -157,6 +163,11 @@ public class BrowserActivity extends Activity {
     private boolean docStartSupported;
     private boolean ready;
     private final Runnable saveRunnable = this::saveNow;
+    /** 当前标签的翻译 / 用户脚本（工具栏、设置按「当前页」操作的代码用；每个标签各自一份，见 Tab） */
+    private TranslateBridge translate;
+    private UserScripts userScripts;
+    /** 容器（登录状态隔离，xyz.mio.app.containers.ContainerManager）：删除容器时关掉它的标签、改名换色时刷新 */
+    private xyz.mio.app.containers.ContainerManager.Listener containerListener;
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -175,7 +186,23 @@ public class BrowserActivity extends Activity {
         docStartSupported = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT);
         buildUi();
         applyCookies(getIntent());
+        // 容器模块接入（TabContainers → ContainerManager）：容器列表、Profile 绑定、新标签选容器、标签映射
+        TabContainers.useContainerManager(this);
         tabs.restore(readSession(), TabContainers.knownIds());
+        TabContainers.retainTabs(tabs.tabs());
+        containerListener = new xyz.mio.app.containers.ContainerManager.Listener() {
+            @Override
+            public void onContainerRemoved(String containerId, List<String> tabKeys) {
+                closeContainerTabs(containerId);
+            }
+
+            @Override
+            public void onContainersChanged() {
+                if (overview != null && overview.getVisibility() == View.VISIBLE) renderOverview();
+                updateButtons();
+            }
+        };
+        xyz.mio.app.containers.ContainerManager.get(this).addListener(containerListener);
 
         Intent in = getIntent();
         String url = in.getStringExtra(EXTRA_URL);
@@ -236,11 +263,18 @@ public class BrowserActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (userScripts != null) userScripts.onActivityResult(requestCode, resultCode, data, userScripts::showManager);
+    }
+
+    @Override
     protected void onDestroy() {
         worker.shutdownNow();
         main.removeCallbacks(saveRunnable);
         for (Tab t : new ArrayList<>(loaded.values())) destroyWebView(t);
         loaded.clear();
+        if (containerListener != null) xyz.mio.app.containers.ContainerManager.get(this).removeListener(containerListener);
         super.onDestroy();
     }
 
@@ -373,7 +407,8 @@ public class BrowserActivity extends Activity {
         InsetDrawable inset = new InsetDrawable(box, dp(14), dp(12), dp(14), dp(12));
         tabsBtn.setBackground(inset);
         tabsBtn.setOnLongClickListener(v -> { showTabsMenu(); return true; });
-        for (Button b : new Button[]{backBtn, fwdBtn, reloadBtn, share, external, mio, settings, tabsBtn}) {
+        Button translateBtn = glyph("译", "翻译", v -> { if (translate != null) translate.showMenu(); });
+        for (Button b : new Button[]{backBtn, fwdBtn, reloadBtn, share, translateBtn, external, mio, settings, tabsBtn}) {
             bottom.addView(b, new LinearLayout.LayoutParams(0, dp(48), 1));
         }
         col.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -458,11 +493,15 @@ public class BrowserActivity extends Activity {
     /** 新标签：fromCurrent = 从当前标签打开（插在它右边，继承容器 / 锁定） */
     private TabsCore.Tab openTab(String url, boolean activate, boolean fromCurrent, String containerId) {
         String target = TabsCore.isHttp(url) ? url : newTabUrl();
-        TabsCore.Tab rec = tabs.add(target, TabsCore.Opts.make().activate(activate).fromActive(fromCurrent).container(containerId));
+        // 锁定的打开者 > 显式指定 > 站点默认容器 > 未锁定的打开者 > 默认容器（ContainerManager.containerForNewTab）
+        TabsCore.Tab opener = fromCurrent && current != null ? tabs.get(current.id) : null;
+        String[] c = TabContainers.forNewTab(TabsCore.isHttp(url) ? url : null, opener, containerId);
+        TabsCore.Tab rec = tabs.add(target, TabsCore.Opts.make().activate(activate).fromActive(fromCurrent).container(c[0]).locked("1".equals(c[1])));
         if (rec == null) {
             Toast.makeText(this, "最多同时打开 " + tabs.maxTabs + " 个标签", Toast.LENGTH_SHORT).show();
             return null;
         }
+        TabContainers.mirror(rec);
         Tab t = ensureLoaded(rec.id, false);
         if (t != null && t.webView.getUrl() == null) {
             t.topUrl = target;
@@ -517,6 +556,8 @@ public class BrowserActivity extends Activity {
         ytFocus = t.ytFocus;
         media = t.media;
         pageTools = t.pageTools;
+        translate = t.translate;
+        userScripts = t.userScripts;
         if (switched && t.pageTools != null) {
             t.pageTools.setReaderButton(readerBtn);
             t.pageTools.onUrlChanged();
@@ -543,8 +584,9 @@ public class BrowserActivity extends Activity {
         if (t != null) destroyWebView(t);
         savedStates.remove(id);
         thumbs.remove(id);
-        if (current == t) { current = null; webView = null; ytFocus = null; media = null; pageTools = null; readerBtn.setVisibility(View.GONE); }
+        if (current == t) { current = null; webView = null; ytFocus = null; media = null; pageTools = null; translate = null; userScripts = null; readerBtn.setVisibility(View.GONE); }
         if (tabs.close(id) == null) return;
+        TabContainers.removeTab(id);
         saveNow();
         if (tabs.isEmpty()) {
             finish();
@@ -556,6 +598,7 @@ public class BrowserActivity extends Activity {
     private void reopenClosedTab() {
         TabsCore.Tab rec = tabs.reopenClosed();
         if (rec == null) return;
+        TabContainers.mirror(rec);
         showActive();
         scheduleSave();
     }
@@ -586,6 +629,12 @@ public class BrowserActivity extends Activity {
         if (t.webView == null) return;
         if (t.media != null) {
             try { t.media.destroy(); } catch (Exception ignored) {}
+        }
+        if (t.translate != null) {
+            try { t.translate.shutdown(); } catch (Exception ignored) {}
+        }
+        if (t.userScripts != null) {
+            try { t.userScripts.shutdown(); } catch (Exception ignored) {}
         }
         try {
             webFrame.removeView(t.webView);
@@ -642,6 +691,55 @@ public class BrowserActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    /** WebRTC 设置变了：每个已加载标签重新注册脚本（下一次加载生效） */
+    private void reinstallRtc() {
+        for (Tab x : loaded.values()) x.rtc.install(this, x.webView);
+    }
+
+    /** 删除容器：关掉它的所有标签（数据随后被删除，所以也从「最近关闭」里去掉） */
+    private void closeContainerTabs(String containerId) {
+        if (containerId == null || TabsCore.DEFAULT_CONTAINER.equals(containerId)) return;
+        List<Long> ids = new ArrayList<>();
+        for (TabsCore.Tab r : tabs.tabs()) if (containerId.equals(r.containerId)) ids.add(r.id);
+        for (Long id : ids) {
+            if (!tabs.isEmpty()) closeTab(id);
+        }
+        tabs.removeContainer(containerId);
+        saveNow();
+    }
+
+    /** 概览里长按标签卡片：在容器中重新打开 / 锁定容器 / 关闭 */
+    private void showTabCardMenu(long id) {
+        TabsCore.Tab rec = tabs.get(id);
+        if (rec == null) return;
+        List<String> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        if (TabContainers.list(this).size() > 1 && TabContainers.supported()) {
+            if (!rec.locked) {
+                items.add("在容器中重新打开…");
+                actions.add(() -> pickContainer(cid -> { if (!cid.equals(rec.containerId)) { hideOverview(); openTab(rec.url, true, false, cid); } }));
+            }
+            items.add(rec.locked ? "解除容器锁定" : "锁定在此容器");
+            actions.add(() -> setTabLocked(rec.id, !rec.locked));
+        }
+        items.add("关闭标签页");
+        actions.add(() -> { closeTab(rec.id); if (!isFinishing()) renderOverview(); });
+        TabContainers.Info ci = TabContainers.find(this, rec.containerId);
+        new AlertDialog.Builder(this)
+                .setTitle(ci != null && !TabsCore.DEFAULT_CONTAINER.equals(ci.id) ? "容器：" + ci.name : TabsCore.displayHost(rec.url))
+                .setItems(items.toArray(new String[0]), (d, which) -> actions.get(which).run())
+                .show();
+    }
+
+    /** 锁定 / 解锁当前标签的容器 */
+    private void setTabLocked(long id, boolean locked) {
+        if (!tabs.setLocked(id, locked)) return;
+        TabsCore.Tab r = tabs.get(id);
+        if (r != null) TabContainers.mirror(r);
+        scheduleSave();
+        if (overview.getVisibility() == View.VISIBLE) renderOverview();
+    }
+
     private void showTabsMenu() {
         List<String> items = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
@@ -655,6 +753,15 @@ public class BrowserActivity extends Activity {
         if (tabs.hasClosed()) {
             items.add("重新打开关闭的标签页");
             actions.add(this::reopenClosedTab);
+        }
+        TabsCore.Tab cur = current != null ? tabs.get(current.id) : null;
+        if (cur != null && containers.size() > 1 && TabContainers.supported()) {
+            if (!cur.locked) {
+                items.add("在容器中重新打开…");
+                actions.add(() -> pickContainer(id -> { if (!id.equals(cur.containerId)) openTab(cur.url, true, false, id); }));
+            }
+            items.add(cur.locked ? "解除容器锁定" : "锁定在此容器");
+            actions.add(() -> setTabLocked(cur.id, !cur.locked));
         }
         items.add("关闭此标签页");
         actions.add(() -> { if (current != null) closeTab(current.id); });
@@ -809,6 +916,7 @@ public class BrowserActivity extends Activity {
             c.addView(h);
             c.setContentDescription(title.getText() + "，" + host + (isActive ? "，当前标签" : ""));
             c.setOnClickListener(v -> { hideOverview(); selectTab(rec.id); });
+            c.setOnLongClickListener(v -> { showTabCardMenu(rec.id); return true; });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
             lp.setMargins(dp(6), dp(6), dp(6), dp(6));
             row.addView(c, lp);
@@ -828,8 +936,8 @@ public class BrowserActivity extends Activity {
         WebView wv = new WebView(this);
         t.webView = wv;
         TabsCore.Tab rec = tabs.get(t.id);
-        // 容器（登录隔离）：feat/containers-core 提供的 Profile 绑定，必须在任何加载之前
-        TabContainers.bind(wv, rec != null ? rec.containerId : TabsCore.DEFAULT_CONTAINER);
+        // 容器（登录隔离）：ContainerManager.apply 绑定容器的 Profile，必须紧跟 new WebView、任何 getSettings / loadUrl 之前
+        t.containerId = TabContainers.bind(wv, rec != null ? rec.containerId : TabsCore.DEFAULT_CONTAINER);
         WebSettings s = wv.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -846,8 +954,9 @@ public class BrowserActivity extends Activity {
         // 去掉 WebView 标识（"; wv"、"Version/4.0"）：否则 Google 登录拒绝（disallowed_useragent），YouTube 给降级页面
         String ua = s.getUserAgentString();
         if (ua != null) s.setUserAgentString(ua.replace("; wv)", ")").replace("Version/4.0 ", ""));
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true);
+        CookieManager cookies = xyz.mio.app.containers.ContainerManager.get(this).cookieManager(t.containerId);
+        cookies.setAcceptCookie(true);
+        cookies.setAcceptThirdPartyCookies(wv, true);
         wv.addJavascriptInterface(new Bridge(t), "MioAdblockBridge");
         // YouTube 防沉迷：先于通用脚本注册（通用脚本之后每次都会重新注册到最后）
         t.ytFocus = new YouTubeFocus(this, wv);
@@ -858,6 +967,15 @@ public class BrowserActivity extends Activity {
         t.pageTools = new PageTools(this, wv);
         t.readerDummy = new View(this);
         t.pageTools.setReaderButton(t.readerDummy);
+        // 翻译（网页双语 / 划词 / YouTube 双语字幕）：document-start 脚本 + WebMessageListener 原生桥（TranslateBridge）
+        t.translate = new TranslateBridge(this, wv);
+        t.translate.install();
+        // WebRTC 控制（与 iOS 同一段脚本）
+        t.rtc.install(this, wv);
+        // 用户脚本：GM_xmlhttpRequest 用这个标签容器的 CookieManager
+        t.userScripts = new UserScripts(this, wv);
+        t.userScripts.setCookieManager(() -> xyz.mio.app.containers.ContainerManager.get(this).cookieManager(t.containerId));
+        t.userScripts.install();
         installGenericScript(t);
 
         wv.setOnLongClickListener(v -> onLongPress(t));
@@ -868,6 +986,7 @@ public class BrowserActivity extends Activity {
                 Uri uri = request.getUrl();
                 String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
                 if (scheme.equals("http") || scheme.equals("https")) {
+                    if (request.isForMainFrame() && t.userScripts != null && t.userScripts.maybeOfferInstall(uri.toString())) return true;
                     if (request.isForMainFrame()) prepare(t, uri.toString());
                     return false;
                 }
@@ -893,6 +1012,10 @@ public class BrowserActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 t.topUrl = url;
+                if (t.userScripts != null) {
+                    t.userScripts.onPageStarted();
+                    if (t.userScripts.maybeOfferInstall(url)) view.stopLoading();
+                }
                 t.pageTools.onPageStarted(url);
                 prepare(t, url);
                 t.ytFocus.onPage(url);
@@ -992,11 +1115,15 @@ public class BrowserActivity extends Activity {
                 // 新窗口 = 新标签（继承容器 / 锁定，插在来源标签右边）；没有用户手势的弹窗不开
                 if (!isUserGesture) return false;
                 if (current != t) selectTab(t.id);
-                TabsCore.Tab rec = tabs.add("", TabsCore.Opts.make().activate(true).fromActive(true));
+                // 弹窗必须和打开者同一个 Profile（WebViewTransport），所以总是继承打开者的容器（锁定也继承）
+                TabsCore.Tab opener = tabs.get(t.id);
+                TabsCore.Tab rec = tabs.add("", TabsCore.Opts.make().activate(true).fromActive(true)
+                        .container(t.containerId).locked(opener != null && opener.locked));
                 if (rec == null) {
                     Toast.makeText(BrowserActivity.this, "最多同时打开 " + tabs.maxTabs + " 个标签", Toast.LENGTH_SHORT).show();
                     return false;
                 }
+                TabContainers.mirror(rec);
                 Tab nt = ensureLoaded(rec.id, false);
                 if (nt == null) return false;
                 WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
@@ -1363,6 +1490,12 @@ public class BrowserActivity extends Activity {
                 actions.add(() -> { BrowserPrefs.setAllowlisted(this, host, true); afterSettingChange(true); });
             }
         }
+        if (host != null && WebRtcGuard.enabled(this)) {
+            boolean rtcAllowed = WebRtcGuard.isAllowed(this, host);
+            items.add(rtcAllowed ? "此站点恢复屏蔽 WebRTC" : "此站点允许 WebRTC（网页通话）");
+            actions.add(() -> { WebRtcGuard.setAllowed(this, host, !rtcAllowed); reinstallRtc(); if (webView != null) webView.reload(); });
+        }
+        if (userScripts != null && webView != null) userScripts.addMenuItems(webView.getUrl(), items, actions);
         items.add("拦截设置…");
         actions.add(() -> showSettings(false));
         new AlertDialog.Builder(this)
@@ -1458,6 +1591,9 @@ public class BrowserActivity extends Activity {
         newTabBtn.setOnClickListener(v -> editNewTabUrl(newTabBtn));
         box.addView(newTabBtn);
 
+        if (current != null) current.rtc.addSettingsRows(this, box, host, webView);
+        if (userScripts != null) userScripts.addSettingsRow(box);
+
         TextView title = new TextView(this);
         title.setText("\n过滤规则（AdGuard 官方源，超过 24 小时自动检查更新）");
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1494,10 +1630,17 @@ public class BrowserActivity extends Activity {
         });
         box.addView(update);
 
+        Button translateSettings = new Button(this);
+        translateSettings.setText("翻译设置…（网页翻译 / 划词 / YouTube 双语字幕）");
+        translateSettings.setOnClickListener(v -> { if (translate != null) translate.showSettings(); });
+        box.addView(translateSettings);
+
         Button allow = new Button(this);
         allow.setText("白名单（" + BrowserPrefs.allowlist(this).size() + "）…");
         allow.setOnClickListener(v -> showAllowlist(allow));
         box.addView(allow);
+
+        xyz.mio.app.containers.ContainerUi.addSettingsButton(this, box);
 
         xyz.mio.app.update.UpdateUi.addSettingsSection(this, box);
         if (media != null) media.addSettings(box);
@@ -1513,6 +1656,7 @@ public class BrowserActivity extends Activity {
                 .setPositiveButton("完成", null)
                 .create();
         d.setOnDismissListener(x -> {
+            reinstallRtc();
             if (finishOnClose && curUrl() == null) finish();
         });
         d.show();

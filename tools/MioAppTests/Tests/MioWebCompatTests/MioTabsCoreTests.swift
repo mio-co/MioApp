@@ -170,6 +170,11 @@ final class MioTabsCoreTests: XCTestCase {
         XCTAssertEqual(r.active?.containerID, "acc2")
         XCTAssertEqual(r.active?.locked, true)
         XCTAssertEqual(r.tabs[2].containerID, "default")
+        // 已删除容器里锁定的标签：回到默认容器并解锁
+        let g = MioTabStore()
+        XCTAssertEqual(g.restore(Data(#"{"tabs":[{"url":"https://e.com/","container":"gone","locked":true}]}"#.utf8), knownContainers: ["acc2"]), 1)
+        XCTAssertEqual(g.tabs[0].containerID, "default")
+        XCTAssertEqual(g.tabs[0].locked, false)
         XCTAssertEqual(MioTabStore().restore(Data(#"{"tabs":[{"url":"javascript:alert(1)"}]}"#.utf8)), 0)
         XCTAssertEqual(MioTabStore().restore(nil), 0)
         // Windows 写的 v1 文件也能读

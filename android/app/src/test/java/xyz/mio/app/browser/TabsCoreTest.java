@@ -195,6 +195,11 @@ public class TabsCoreTest {
         assertEquals("acc2", r.active().containerId);
         assertTrue(r.active().locked);
         assertEquals("default", r.tabs().get(2).containerId);
+        // 已删除容器里锁定的标签：回到默认容器并解锁
+        TabsCore g = new TabsCore();
+        assertEquals(1, g.restore("{\"tabs\":[{\"url\":\"https://e.com/\",\"container\":\"gone\",\"locked\":true}]}", Collections.singletonList("acc2")));
+        assertEquals("default", g.tabs().get(0).containerId);
+        assertFalse(g.tabs().get(0).locked);
         assertEquals(0, new TabsCore().restore("{\"tabs\":[{\"url\":\"javascript:alert(1)\"}]}", null));
         assertEquals(0, new TabsCore().restore(null, null));
         assertEquals(0, new TabsCore().restore("{broken", null));

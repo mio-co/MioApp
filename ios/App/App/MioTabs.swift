@@ -12,7 +12,9 @@
 // - 标签上限 50；同时加载的 WebView 数 iPhone 4 / iPad 6 / Mac 12，超出时按最近使用卸载后台标签
 //   （保存 interactionState：切回时恢复前进后退历史和滚动位置）。
 // - 会话（URL + 标题 + 容器 + 锁定）存在 UserDefaults，App 重启后懒加载恢复。
-// - 容器（登录隔离）：feat/containers-core 通过 MioTabContainers 接入（数据存储 / 列表）；这里只放入口和字段。
+// - 容器（登录隔离，MioContainerStore.swift）：每个标签的 WKWebView 用它容器的 WKWebsiteDataStore（makeConfiguration(for:)）；
+//   新标签选容器 = 锁定的打开者 > 显式指定 > 站点默认容器 > 未锁定的打开者 > 默认容器；锁定的标签打开的子标签同容器并锁定；
+//   标签映射（key = "t<id>"）同步给容器模块；删除容器（.mioContainerWillRemove）先关掉它的标签。
 
 import UIKit
 import WebKit
@@ -56,6 +58,36 @@ enum MioTabContainers {
 
     static var all: [Info] { list?() ?? [] }
     static func info(_ id: String) -> Info? { all.first { $0.id == id } }
+
+    private static var connected = false
+
+    /// 接入容器模块（#15 MioContainerStore）：列表 + 数据存储。iOS 16 / macOS 13 及更早只有默认容器（菜单不显示）
+    static func connect() {
+        guard !connected else { return }
+        connected = true
+        list = { MioContainerStore.shared.containers.map { .init(id: $0.id, name: $0.name, color: MioContainerStore.color($0.color)) } }
+        dataStore = { MioContainerStore.shared.dataStore(for: $0) }
+    }
+
+    /// 新标签的容器：锁定的打开者 > 显式指定 > 站点默认容器 > 未锁定的打开者 > 默认容器
+    static func forNewTab(url: String?, opener: MioTab?, requested: String?) -> MioTabContainer {
+        MioContainerStore.shared.containerForNewTab(url: url.flatMap { URL(string: $0) },
+                                                    opener: opener.map { MioTabContainer(containerId: $0.containerID, locked: $0.locked) },
+                                                    requested: requested)
+    }
+
+    /// 容器模块里的标签 key
+    static func key(_ tabID: Int) -> String { "t\(tabID)" }
+
+    static func mirror(_ t: MioTab) {
+        guard connected else { return }
+        MioContainerStore.shared.setTab(key(t.id), containerId: t.containerID, locked: t.locked)
+    }
+
+    static func unmirror(_ tabID: Int) {
+        guard connected else { return }
+        MioContainerStore.shared.removeTab(key(tabID))
+    }
 }
 
 // MARK: - Container view controller
@@ -72,6 +104,7 @@ final class MioTabsViewController: UIViewController {
     private let contentView = UIView()
     private var saveWork: DispatchWorkItem?
     private var backgroundObserver: NSObjectProtocol?
+    private var containerObservers: [NSObjectProtocol] = []
 
     static var maxLoaded: Int {
         if MioWebKitCompat.isMac { return 12 }
@@ -80,9 +113,14 @@ final class MioTabsViewController: UIViewController {
 
     static func sharedOrRestore() -> MioTabsViewController {
         if let s = shared { return s }
+        MioTabContainers.connect()
         let t = MioTabsViewController()
-        let known = MioTabContainers.list == nil ? nil : MioTabContainers.all.map(\.id)
+        // 系统不支持多数据存储（iOS 16 / macOS 13）时不能新建 / 删除容器：保留会话里的容器 id
+        let known = MioTabContainers.list == nil || !MioContainerStore.isSupported ? nil : MioTabContainers.all.map(\.id)
         t.store.restore(UserDefaults.standard.data(forKey: MioTabsSettings.sessionKey), knownContainers: known)
+        // 容器模块的标签映射与恢复出来的标签对齐（容器 / 锁定以会话为准）
+        MioContainerStore.shared.retainTabs(t.store.tabs.map { MioTabContainers.key($0.id) })
+        t.store.tabs.forEach(MioTabContainers.mirror)
         shared = t
         return t
     }
@@ -109,12 +147,20 @@ final class MioTabsViewController: UIViewController {
         backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             self?.saveNow()
         }
+        // 删除容器：先关掉它的标签（释放 WKWebView，数据存储才删得掉）；改名 / 换色：刷新标签条
+        containerObservers.append(NotificationCenter.default.addObserver(forName: .mioContainerWillRemove, object: nil, queue: .main) { [weak self] n in
+            if let id = n.userInfo?["containerId"] as? String { self?.closeContainerTabs(id) }
+        })
+        containerObservers.append(NotificationCenter.default.addObserver(forName: .mioContainersDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshChrome()
+        })
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     deinit {
         if let o = backgroundObserver { NotificationCenter.default.removeObserver(o) }
+        containerObservers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
     override func viewDidLoad() {
@@ -156,10 +202,13 @@ final class MioTabsViewController: UIViewController {
     func openTab(_ url: String, activate: Bool, from: MioBrowserViewController? = nil, containerID: String? = nil) -> MioTab? {
         let target = MioTabStore.isHTTP(url) ? url : MioTabsSettings.newTabURL
         let fromActive = from != nil && from?.tabID == store.activeID
-        guard let tab = store.add(target, activate: activate, fromActive: fromActive, containerID: containerID) else {
+        let opener = from?.tabID.flatMap { store.tab($0) }
+        let c = MioTabContainers.forNewTab(url: MioTabStore.isHTTP(url) ? url : nil, opener: opener, requested: containerID)
+        guard let tab = store.add(target, activate: activate, fromActive: fromActive, containerID: c.containerId, locked: c.locked) else {
             toast("最多同时打开 \(store.maxTabs) 个标签")
             return nil
         }
+        MioTabContainers.mirror(tab)
         let proceed = { [weak self] in
             guard let self = self, self.store.tab(tab.id) != nil else { return }
             if activate || !self.isViewLoaded { self.showActive() } else { _ = self.ensureController(tab.id); self.refreshChrome() }
@@ -193,6 +242,7 @@ final class MioTabsViewController: UIViewController {
         snapshots[id] = nil
         interactionStates[id] = nil
         guard store.close(id) != nil else { return }
+        MioTabContainers.unmirror(id)
         scheduleSave()
         if store.isEmpty {
             saveNow()
@@ -209,9 +259,59 @@ final class MioTabsViewController: UIViewController {
 
     func reopenClosed() {
         guard let t = store.reopenClosed() else { return }
-        _ = t
+        MioTabContainers.mirror(t)
         showActive()
         scheduleSave()
+    }
+
+    /// 锁定 / 解锁标签的容器（锁定后它打开的标签 / 弹窗都在同一容器并锁定）
+    func setLocked(_ id: Int, _ locked: Bool) {
+        guard store.setLocked(id, locked), let t = store.tab(id) else { return }
+        MioTabContainers.mirror(t)
+        refreshChrome()
+        scheduleSave()
+    }
+
+    /// 删除容器：关掉它的所有标签（数据随后被清除，所以也从「最近关闭」里去掉）
+    @discardableResult
+    func closeContainerTabs(_ containerID: String) -> [Int] {
+        guard containerID != MioTabStore.defaultContainer else { return [] }
+        let ids = store.tabs.filter { $0.containerID == containerID }.map(\.id)
+        for id in ids { closeTab(id) }
+        _ = store.removeContainer(containerID)
+        return ids
+    }
+
+    /// 标签菜单里的容器项：在容器中重新打开、锁定在此容器（只有默认容器时为空）
+    func containerMenuItems(for id: Int) -> [UIMenuElement] {
+        let list = MioTabContainers.all
+        guard list.count > 1, let t = store.tab(id) else { return [] }
+        let reopen = list.map { c in
+            UIAction(title: c.name, image: UIImage(systemName: "circle.fill")?.withTintColor(c.color, renderingMode: .alwaysOriginal),
+                     state: c.id == t.containerID ? .on : .off) { [weak self] _ in
+                guard c.id != t.containerID else { return }
+                self?.openTab(t.url, activate: true, containerID: c.id)
+            }
+        }
+        var items: [UIMenuElement] = []
+        // 锁定的标签不能换容器
+        if !t.locked { items.append(UIMenu(title: "在容器中重新打开", image: UIImage(systemName: "person.2.square.stack"), children: reopen)) }
+        return items + [
+            UIAction(title: "锁定在此容器", image: UIImage(systemName: t.locked ? "lock.fill" : "lock.open"), state: t.locked ? .on : .off) { [weak self] _ in
+                self?.setLocked(id, !t.locked)
+            },
+        ]
+    }
+
+    /// 新建标签页（选择容器）菜单项
+    func newTabContainerItems() -> [UIMenuElement] {
+        let list = MioTabContainers.all
+        guard list.count > 1 else { return [] }
+        return list.map { c in
+            UIAction(title: c.name, image: UIImage(systemName: "circle.fill")?.withTintColor(c.color, renderingMode: .alwaysOriginal)) { [weak self] _ in
+                self?.newTab(containerID: c.id)
+            }
+        }
     }
 
     func closeOthers(_ id: Int) {
@@ -227,7 +327,7 @@ final class MioTabsViewController: UIViewController {
     }
 
     func dataStore(for containerID: String) -> WKWebsiteDataStore? {
-        if containerID != MioTabStore.defaultContainer, let s = MioTabContainers.dataStore?(containerID) { return s }
+        if let s = MioTabContainers.dataStore?(containerID) { return s }
         if #available(iOS 17.0, macCatalyst 17.0, *) { return WKWebsiteDataStore(forIdentifier: MioBrowserSettings.dataStoreID) }
         return .default()
     }
@@ -526,6 +626,15 @@ final class MioTabChrome {
                 b.tabsController?.closeTab(b)
             },
             UIAction(title: "收起浏览器（标签保留）", image: UIImage(systemName: "chevron.down")) { [weak self] _ in self?.browser?.tabsController?.hideBrowser() },
+            // 容器：新建容器标签页 / 在容器中重新打开 / 锁定（每次打开菜单时按当前容器列表生成）
+            UIDeferredMenuElement.uncached { [weak self] done in
+                guard let b = self?.browser, let tabs = b.tabsController, let id = b.tabID else { done([]); return }
+                let newItems = tabs.newTabContainerItems()
+                var items: [UIMenuElement] = []
+                if !newItems.isEmpty { items.append(UIMenu(title: "新建容器标签页", image: UIImage(systemName: "plus.square.dashed"), children: newItems)) }
+                items += tabs.containerMenuItems(for: id)
+                done(items.isEmpty ? [] : [UIMenu(options: .displayInline, children: items)])
+            },
         ])
     }
 
@@ -572,13 +681,10 @@ final class MioTabChrome {
         let newTab = UIBarButtonItem(image: UIImage(systemName: "plus"), style: .plain, target: nil, action: nil)
         newTab.primaryAction = UIAction(image: UIImage(systemName: "plus")) { [weak self] _ in self?.browser?.tabsController?.mioNewTab(nil) }
         newTab.accessibilityLabel = "新建标签页"
-        if MioTabContainers.all.count > 1 {
-            newTab.menu = UIMenu(title: "新建标签页（选择容器）", children: MioTabContainers.all.map { c in
-                UIAction(title: c.name, image: UIImage(systemName: "circle.fill")?.withTintColor(c.color, renderingMode: .alwaysOriginal)) { [weak self] _ in
-                    self?.browser?.tabsController?.newTab(containerID: c.id)
-                }
-            })
-        }
+        // 长按 / 右键「+」：在某个容器里新建标签页（按当前容器列表生成；只有默认容器时为空）
+        newTab.menu = UIMenu(title: "新建标签页（选择容器）", children: [
+            UIDeferredMenuElement.uncached { [weak self] done in done(self?.browser?.tabsController?.newTabContainerItems() ?? []) },
+        ])
         let flex = { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
         let right = buttons + [shieldItem, tabsItem, newTab]
         toolbar.items = [close] + nav + [flex(), addressItem, flex()] + right
@@ -808,6 +914,7 @@ final class MioTabStripCell: UIControl {
                 UIAction(title: "向右移动", image: UIImage(systemName: "arrow.right")) { _ in
                     if let i = tabs.store.index(of: id) { tabs.move(from: i, to: i + 1) }
                 },
+                UIMenu(options: .displayInline, children: tabs.containerMenuItems(for: id)),
                 UIAction(title: "关闭其他标签页", image: UIImage(systemName: "xmark.square")) { _ in tabs.closeOthers(id) },
                 UIAction(title: "关闭标签页", image: UIImage(systemName: "xmark"), attributes: .destructive) { _ in tabs.closeTab(id) },
             ])
@@ -1068,10 +1175,34 @@ enum MioTabsSmoke {
             r["afterReopen"] = tabs.store.count
             if let id = tabs.store.activeID, id != first { tabs.closeTab(id) }
             r["final"] = tabs.store.count
+            // 容器（iOS 17 / macOS 14+）：容器标签用该容器的数据存储、锁定继承、删除容器时关闭其标签
+            var containersOK = true
+            if MioContainerStore.isSupported, let c = try? MioContainerStore.shared.create(name: "smoke-tabs", color: "green") {
+                var cr: [String: Any] = [:]
+                let before = tabs.store.count
+                let t = tabs.openTab("https://example.com/?c", activate: true, containerID: c.id)
+                let vc = t.flatMap { tabs.controller(for: $0.id) }
+                let ds = vc?.webView?.configuration.websiteDataStore
+                cr["dataStore"] = ds != nil && ds === MioContainerStore.shared.dataStore(for: c.id) && ds !== MioContainerStore.shared.dataStore(for: MioContainerCore.defaultId)
+                cr["mapped"] = t.map { MioContainerStore.shared.tab(MioTabContainers.key($0.id)).containerId == c.id } ?? false
+                if let t = t { tabs.setLocked(t.id, true) }
+                let child = tabs.openTab("https://example.com/?child", activate: false, from: vc, containerID: MioContainerCore.defaultId)
+                cr["childInherits"] = child?.containerID == c.id && child?.locked == true
+                cr["listed"] = MioTabContainers.all.contains { $0.id == c.id }
+                try? MioContainerStore.shared.remove(c.id)
+                cr["closedOnRemove"] = tabs.store.count == before && !tabs.store.tabs.contains { $0.containerID == c.id }
+                containersOK = cr["dataStore"] as? Bool == true && cr["mapped"] as? Bool == true && cr["childInherits"] as? Bool == true
+                    && cr["listed"] as? Bool == true && cr["closedOnRemove"] as? Bool == true
+                cr["ok"] = containersOK
+                r["containers"] = cr
+            } else {
+                r["containers"] = "unsupported"
+            }
             let n0 = r["initialCount"] as? Int ?? 0
             let ok = (r["afterOpen"] as? Int) == n0 + 1 && (r["distinctWebViews"] as? Bool) == true && (r["switchedBack"] as? Bool) == true
                 && (r["afterClose"] as? Int) == n0 && (r["afterReopen"] as? Int) == n0 + 1 && (r["final"] as? Int) == n0
                 && (!MioWebKitCompat.isMac || (firstTop && (r["stripCells"] as? Int) == n0 + 1 && (r["webViewBelowChrome"] as? Bool) == true))
+                && containersOK
             r["ok"] = ok
             completion(r, ok)
         }

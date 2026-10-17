@@ -53,6 +53,16 @@ function cleanTitle(t) {
   return String(t == null ? '' : t).replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE);
 }
 
+/** 标签的稳定字符串 key（容器模块的标签映射用；随会话持久化，重启不变） */
+function makeTabKey() {
+  return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+function cleanKey(k) {
+  const s = String(k == null ? '' : k);
+  return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : null;
+}
+
 function cleanContainer(c) {
   const s = String(c == null ? '' : c).trim();
   return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : DEFAULT_CONTAINER;
@@ -112,7 +122,9 @@ class TabStore {
         containerId = opener.containerId;
       }
     }
-    const tab = { id: this.nextId++, url: String(url || ''), title: cleanTitle(opts.title), openerId, containerId, locked, lastActive: 0 };
+    let key = cleanKey(opts.key);
+    if (!key || this.tabs.some((t) => t.key === key)) key = makeTabKey();
+    const tab = { id: this.nextId++, key, url: String(url || ''), title: cleanTitle(opts.title), openerId, containerId, locked, lastActive: 0 };
     let index;
     if (Number.isInteger(opts.index)) {
       index = Math.max(0, Math.min(this.tabs.length, opts.index));
@@ -214,7 +226,7 @@ class TabStore {
     if (i < 0) return { closed: null, activeId: this.activeId };
     const [t] = this.tabs.splice(i, 1);
     if (isHttpUrl(t.url)) {
-      this.closed.push({ url: t.url, title: t.title, index: i, containerId: t.containerId, locked: t.locked });
+      this.closed.push({ url: t.url, title: t.title, index: i, containerId: t.containerId, locked: t.locked, key: t.key });
       while (this.closed.length > this.maxClosed) this.closed.shift();
     }
     for (const x of this.tabs) if (x.openerId === id) x.openerId = null;
@@ -234,7 +246,7 @@ class TabStore {
   reopenClosed() {
     if (!this.closed.length || !this.canAdd()) return null;
     const c = this.closed.pop();
-    return this.add(c.url, { title: c.title, index: c.index, activate: true, openerId: null, containerId: c.containerId, locked: c.locked });
+    return this.add(c.url, { title: c.title, index: c.index, activate: true, openerId: null, containerId: c.containerId, locked: c.locked, key: c.key });
   }
 
   /** 拖拽排序 */
@@ -259,7 +271,7 @@ class TabStore {
       .map((t) => t.id);
   }
 
-  /** 持久化：{ v: 2, active, tabs: [{ url, title, container?, locked? }] }，只存 http(s) */
+  /** 持久化：{ v: 2, active, tabs: [{ url, title, key, container?, locked? }] }，只存 http(s) */
   serialize() {
     const keep = this.tabs.filter((t) => isHttpUrl(t.url));
     const active = keep.findIndex((t) => t.id === this.activeId);
@@ -267,7 +279,7 @@ class TabStore {
       v: 2,
       active: active < 0 ? 0 : active,
       tabs: keep.map((t) => {
-        const o = { url: t.url, title: t.title };
+        const o = { url: t.url, title: t.title, key: t.key };
         if (t.containerId !== DEFAULT_CONTAINER) o.container = t.containerId;
         if (t.locked) o.locked = true;
         return o;
@@ -284,8 +296,12 @@ class TabStore {
     this.activeId = null;
     for (const x of items) {
       let c = cleanContainer(x.container);
-      if (knownContainers && c !== DEFAULT_CONTAINER && !knownContainers.includes(c)) c = DEFAULT_CONTAINER;
-      this.add(x.url, { title: x.title, activate: false, index: this.tabs.length, openerId: null, containerId: c, locked: !!x.locked });
+      let locked = !!x.locked;
+      if (knownContainers && c !== DEFAULT_CONTAINER && !knownContainers.includes(c)) {
+        c = DEFAULT_CONTAINER; // 容器已删除：回到默认容器，不再锁定
+        locked = false;
+      }
+      this.add(x.url, { title: x.title, activate: false, index: this.tabs.length, openerId: null, containerId: c, locked, key: x.key });
     }
     const a = Number.isInteger(data.active) ? Math.max(0, Math.min(items.length - 1, data.active)) : 0;
     this.selectIndex(a);
@@ -293,4 +309,4 @@ class TabStore {
   }
 }
 
-module.exports = { TabStore, MAX_TABS, MAX_CLOSED, DEFAULT_CONTAINER, DEFAULT_NEW_TAB_URL, displayHost, normalizeNewTabUrl, isHttpUrl, cleanTitle, cleanContainer };
+module.exports = { TabStore, MAX_TABS, MAX_CLOSED, DEFAULT_CONTAINER, DEFAULT_NEW_TAB_URL, displayHost, normalizeNewTabUrl, isHttpUrl, cleanTitle, cleanContainer, makeTabKey };

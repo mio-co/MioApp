@@ -161,6 +161,10 @@ test('serialize / restore round trip with containers + lock; unknown container �
   s.add('https://d.com/', { containerId: 'gone' });
   s.select(c.id);
   const data = JSON.parse(JSON.stringify(s.serialize()));
+  // 每个标签有稳定 key（容器模块的标签映射用），随会话保存，恢复后不变
+  const keys = data.tabs.map((t) => t.key);
+  assert.ok(keys.every((k) => /^[A-Za-z0-9_-]+$/.test(k)) && new Set(keys).size === 3);
+  for (const t of data.tabs) delete t.key;
   assert.deepEqual(data, {
     v: 2,
     active: 1,
@@ -170,12 +174,23 @@ test('serialize / restore round trip with containers + lock; unknown container �
       { url: 'https://d.com/', title: '', container: 'gone' },
     ],
   });
+  data.tabs.forEach((t, i) => (t.key = keys[i]));
   const r = new TabStore();
   assert.equal(r.restore(data, ['acc2']), 3);
+  assert.deepEqual(r.tabs.map((t) => t.key), keys);
   assert.equal(r.active.url, 'https://c.com/x?y=1');
   assert.equal(r.active.containerId, 'acc2');
   assert.equal(r.active.locked, true);
   assert.equal(r.tabs[2].containerId, 'default');
+  // 已删除容器里锁定的标签：回到默认容器并解锁
+  const g = new TabStore();
+  g.restore({ tabs: [{ url: 'https://e.com/', container: 'gone', locked: true }] }, ['acc2']);
+  assert.equal(g.tabs[0].containerId, 'default');
+  assert.equal(g.tabs[0].locked, false);
+  // 重新打开关闭的标签：key 也恢复
+  const k0 = r.tabs[0].key;
+  r.close(r.tabs[0].id);
+  assert.equal(r.reopenClosed().key, k0);
   assert.equal(new TabStore().restore({ tabs: [{ url: 'javascript:alert(1)' }] }), 0);
   assert.equal(new TabStore().restore(null), 0);
   // v1（只有 url / title）照样能读

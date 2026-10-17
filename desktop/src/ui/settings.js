@@ -127,3 +127,5 @@ $('wlForm').addEventListener('submit', async (e) => {
 
 api.onChange(render);
 api.get().then(render);
+
+if ($('openTranslate')) $('openTranslate').onclick = () => api.openTranslate && api.openTranslate();

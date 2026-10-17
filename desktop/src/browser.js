@@ -5,7 +5,8 @@
 // 带窗口尺寸参数的 window.open（OAuth 登录弹窗）仍是真正的弹窗；mailto: / tel: 等交给系统。
 // 关窗口（✕ / 收起）= 隐藏：标签都留在后台不销毁，主窗口右下角显示「N 个标签」角标（tabs-badge.js），点一下回来。
 // 标签管理的纯逻辑在 tabs-core.js；会话（URL + 标题 + 容器 + 锁定）存在 userData/browser-tabs.json，重启后恢复（懒加载）。
-// 容器（登录隔离）：sessionForContainer(containerId) 由容器模块提供（feat/containers-core），默认所有标签用同一个浏览器会话。
+// 容器（登录隔离，containers.js）：sessionForContainer(containerId) 给每个标签它容器的会话；containers.store 决定新标签的容器
+// （锁定的打开者 > 显式指定 > 站点默认容器 > 未锁定的打开者 > 默认），记录标签映射（tabKey），删除容器时先关掉它的标签。
 const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
@@ -30,8 +31,9 @@ class BrowserManager extends EventEmitter {
    * @param {object} o
    * @param {(containerId: string) => Electron.Session} [o.sessionForContainer] 容器模块接入点：返回该容器的会话（已配置拦截 / 脚本 / 权限）
    * @param {() => Array<{id: string, name: string, color: string}>} [o.listContainers] 容器列表（新建标签 / 在容器中打开的菜单）
+   * @param {import('./containers').ContainerSessions} [o.containers] 容器模块：新标签选容器、标签映射、删除容器时关闭其标签
    */
-  constructor({ adblock, settings, browserSession, openSettings, icon, pageTools, sessionForContainer, listContainers }) {
+  constructor({ adblock, settings, browserSession, openSettings, icon, pageTools, sessionForContainer, listContainers, containers }) {
     super();
     this.adblock = adblock;
     this.pageTools = pageTools || null;
@@ -39,6 +41,7 @@ class BrowserManager extends EventEmitter {
     this.session = browserSession;
     this.sessionForContainer = sessionForContainer || null;
     this.listContainers = listContainers || null;
+    this.containers = containers || null;
     this.openSettings = openSettings;
     this.icon = icon;
     this.win = null;
@@ -52,6 +55,12 @@ class BrowserManager extends EventEmitter {
     this.saveTimer = null;
     adblock.onChange(() => this.pushState());
     settings.on('change', () => this.pushState());
+    if (this.containers) {
+      // 删除容器：在清理数据之前发出 → 关掉该容器的所有标签（释放 webContents），最近关闭里它的条目也去掉
+      this.containers.store.on('removed', ({ container }) => this.closeContainerTabs(container && container.id));
+      // 改名 / 换色：刷新标签条
+      this.containers.store.on('change', () => this.pushState());
+    }
     app.on('before-quit', () => {
       this.quitting = true;
       this.saveNow();
@@ -134,6 +143,15 @@ class BrowserManager extends EventEmitter {
       } catch {
         // 第一次 / 文件损坏：没有可恢复的标签
       }
+      // 容器的标签映射与恢复出来的标签对齐（容器 / 锁定以会话文件为准）
+      if (this.containers) {
+        try {
+          this.containers.store.retainTabs(this.store.tabs.map((t) => t.key));
+          for (const t of this.store.tabs) this.mirrorTab(t);
+        } catch {
+          // ignore
+        }
+      }
     }
     if (!this.isOpen()) this.create();
   }
@@ -212,7 +230,24 @@ class BrowserManager extends EventEmitter {
   newTab(url, { activate = true, fromActive = false, containerId } = {}) {
     this.ensureWindow();
     const target = url && isHttpUrl(url) ? url : this.newTabUrl();
-    const tab = this.store.add(target, { activate, fromActive, containerId });
+    let locked = false;
+    if (this.containers) {
+      // 锁定的打开者 > 显式指定 > 站点默认容器规则 > 未锁定的打开者 > 默认容器
+      const opener = fromActive ? this.store.active : null;
+      try {
+        const r = this.containers.store.containerForNewTab({
+          url: url && isHttpUrl(url) ? url : null,
+          opener: opener ? { containerId: opener.containerId, locked: !!opener.locked } : null,
+          requested: containerId || null,
+        });
+        containerId = r.containerId;
+        locked = !!r.locked;
+      } catch {
+        // 容器模块异常：按 tabs-core 的继承规则
+      }
+    }
+    const tab = this.store.add(target, { activate, fromActive, containerId, locked });
+    if (tab) this.mirrorTab(tab);
     if (!tab) {
       this.notify(`最多同时打开 ${this.store.maxTabs} 个标签`);
       return null;
@@ -329,6 +364,7 @@ class BrowserManager extends EventEmitter {
     const view = this.views.get(id);
     const { closed } = this.store.close(id);
     if (!closed) return;
+    this.unmirrorTab(closed);
     if (view) this.destroyView(view);
     this.views.delete(id);
     this.scheduleSave();
@@ -345,10 +381,49 @@ class BrowserManager extends EventEmitter {
     this.ensureWindow();
     const tab = this.store.reopenClosed();
     if (!tab) return;
+    this.mirrorTab(tab);
     this.loadTab(tab, tab.url);
     this.showActive();
     this.scheduleSave();
     this.emitChange();
+  }
+
+  /** 标签 → 容器模块的标签映射（tabKey → { containerId, locked }） */
+  mirrorTab(tab) {
+    if (!this.containers || !tab || !tab.key) return;
+    try {
+      this.containers.store.setTab(tab.key, { containerId: tab.containerId, locked: !!tab.locked });
+    } catch {
+      // ignore
+    }
+  }
+
+  unmirrorTab(tab) {
+    if (!this.containers || !tab || !tab.key) return;
+    try {
+      this.containers.store.removeTab(tab.key);
+    } catch {
+      // ignore
+    }
+  }
+
+  /** 锁定 / 解锁标签的容器（锁定后从它打开的标签 / 弹窗都在同一容器并锁定） */
+  setTabLocked(id, locked) {
+    const t = this.store.get(id);
+    if (!t || !this.store.setLocked(id, locked)) return false;
+    this.mirrorTab(t);
+    this.pushState();
+    this.scheduleSave();
+    return true;
+  }
+
+  /** 删除容器：关掉它的标签（数据随后由容器模块清除，所以不进「最近关闭」） */
+  closeContainerTabs(containerId) {
+    if (!containerId || containerId === DEFAULT_CONTAINER) return [];
+    const ids = this.store.tabs.filter((t) => t.containerId === containerId).map((t) => t.id);
+    for (const id of ids) this.closeTab(id);
+    this.store.removeContainer(containerId); // 清掉最近关闭里该容器的条目
+    return ids;
   }
 
   unloadTab(id) {
@@ -728,6 +803,8 @@ class BrowserManager extends EventEmitter {
           items.push({ label: s.siteWhitelisted ? '在此网站启用拦截' : '在此网站停用拦截', click: () => this.command('toggleSite') });
         }
         if (!s.adblockEnabled) items.push({ label: '打开广告拦截', click: () => this.settings.set('adblockEnabled', true) });
+        if (this.webrtc) items.push(...this.webrtc.menuItems(s.host, () => wc.reload()));
+        if (this.userscripts) items.push(...this.userscripts.menuItems(wc, s.host));
         items.push({ label: '拦截设置…', click: () => this.command('settings') });
         const { width } = this.win.getContentBounds();
         Menu.buildFromTemplate(items).popup({ window: this.win, x: Math.max(0, width - 260), y: ROW_HEIGHT });
@@ -742,6 +819,9 @@ class BrowserManager extends EventEmitter {
         Menu.buildFromTemplate(this.pageTools.menuTemplate(wc, { reload: () => wc.reload() })).popup({ window: this.win, x: Math.max(0, width - 360), y: ROW_HEIGHT });
         break;
       }
+      case 'translateMenu':
+        if (this.translate) this.translate.menu(this.win, wc, TOOLBAR_HEIGHT);
+        break;
       case 'focusAddress':
         this.toolbar.webContents.focus();
         this.toolbar.webContents.send('mio-toolbar:focus-address');
@@ -780,6 +860,7 @@ class BrowserManager extends EventEmitter {
       { label: '刷新', enabled: !!view, click: () => view && view.webContents.reload() },
       { label: '复制链接', click: () => clipboard.writeText(t.url) },
       { label: '复制标签页', click: () => this.newTab(t.url, { activate: true, containerId: t.containerId }) },
+      ...this.tabContainerItems(t),
       { type: 'separator' },
       { label: '关闭标签页', click: () => this.closeTab(id) },
       { label: '关闭其他标签页', enabled: this.store.size > 1, click: () => this.closeOthers(id) },
@@ -787,6 +868,28 @@ class BrowserManager extends EventEmitter {
       { type: 'separator' },
       { label: '重新打开关闭的标签页', enabled: this.store.hasClosed(), click: () => this.reopenClosedTab() },
     ]).popup({ window: this.win });
+  }
+
+  /** 标签右键：在容器中重新打开、锁定容器 */
+  tabContainerItems(t) {
+    const list = this.listContainers ? this.listContainers() || [] : [];
+    if (!this.containers || list.length < 2) return [];
+    const items = [{ type: 'separator' }];
+    items.push({
+      label: '在容器中重新打开',
+      enabled: !t.locked,
+      submenu: list.map((c) => ({
+        label: c.name || c.id,
+        type: 'radio',
+        checked: c.id === t.containerId,
+        click: () => {
+          if (c.id === t.containerId) return;
+          this.newTab(t.url, { activate: true, containerId: c.id });
+        },
+      })),
+    });
+    items.push({ label: '锁定在此容器', type: 'checkbox', checked: !!t.locked, click: () => this.setTabLocked(t.id, !t.locked) });
+    return items;
   }
 
   closeOthers(id) {

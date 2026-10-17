@@ -26,6 +26,18 @@
   </div>
   <p class="note" id="newTabError"></p>
   <p class="note">快捷键：Ctrl+T 新建、Ctrl+W 关闭、Ctrl+Shift+T 重新打开关闭的标签页、Ctrl+Tab / Ctrl+Shift+Tab 切换、Ctrl+1…9 跳到第 n 个、Ctrl+L 地址栏、Ctrl+Shift+W 收起浏览器（macOS 用 ⌘）。中键点标签关闭，拖动标签排序，右键标签有更多操作。关闭浏览器窗口只是收起：标签留在后台，主窗口右下角的角标一点即回。</p>
+  <h2>容器（登录状态隔离）</h2>
+  <div class="card" id="ctrList"></div>
+  <div class="card" style="margin-top:10px">
+    <form class="row" id="ctrForm" autocomplete="off"><input class="text" id="ctrName" maxlength="32" placeholder="新容器名称，如 工作 / 小号 2"><select id="ctrColor"></select><button class="btn" type="submit">新建容器</button></form>
+  </div>
+  <p class="note">每个容器有独立的 Cookie、LocalStorage、IndexedDB 和缓存，同一网站可以在不同容器里登录不同账号。「默认」容器就是原来的浏览数据。删除容器会关闭它的标签并清除其中全部数据。</p>
+  <h2>站点默认容器</h2>
+  <div class="card">
+    <form class="row" id="ctrRuleForm" autocomplete="off"><input class="text" id="ctrRuleHost" placeholder="域名，如 github.com（含子域名）"><select id="ctrRuleContainer"></select><button class="btn" type="submit">添加</button></form>
+    <div id="ctrRules"></div>
+  </div>
+  <p class="note" id="ctrError"></p>
 
   <h2>YouTube 防沉迷</h2>
   <div class="card">
@@ -34,6 +46,10 @@
     <label class="row"><div class="label">屏蔽游戏大本营（Playables）<div class="sub">隐藏首页 / 推荐里的小游戏区块和导航入口，直接打开 /playables 不受影响</div></div><span class="switch"><input type="checkbox" id="youtubeFocusPlayables"><span></span></span></label>
   </div>
   <p class="note">对之后打开或刷新的 YouTube 页面生效。</p>
+  <h2>翻译</h2>
+  <div class="card">
+    <div class="row"><div class="label">网页翻译 · 划词翻译 · YouTube 双语字幕<div class="sub">目标语言、引擎（微软 / 谷歌 / 自定义 OpenAI 兼容 API）、自动翻译的网站</div></div><button class="btn" id="openTranslate">翻译设置…</button></div>
+  </div>
 
   <h2>广告拦截</h2>
   <div class="card">
@@ -68,5 +84,6 @@
 <script src="settings.js"></script>
 <script src="update-settings.js"></script>
 <script src="tabs-settings.js"></script>
+<script src="containers-settings.js"></script>
 </body>
 </html>

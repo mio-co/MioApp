@@ -276,9 +276,13 @@ final class MioTabStore {
         activeID = nil
         for x in items {
             var c = MioTabStore.cleanContainer(x["container"] as? String)
-            if let known = knownContainers, c != MioTabStore.defaultContainer, !known.contains(c) { c = MioTabStore.defaultContainer }
+            var locked = (x["locked"] as? Bool) ?? false
+            if let known = knownContainers, c != MioTabStore.defaultContainer, !known.contains(c) {
+                c = MioTabStore.defaultContainer // 容器已删除：回到默认容器，不再锁定
+                locked = false
+            }
             add(x["url"] as? String ?? "", title: x["title"] as? String, activate: false, index: tabs.count,
-                containerID: c, locked: (x["locked"] as? Bool) ?? false, openerID: .some(nil))
+                containerID: c, locked: locked, openerID: .some(nil))
         }
         let a = (obj["active"] as? Int).map { max(0, min(items.count - 1, $0)) } ?? 0
         select(index: a)

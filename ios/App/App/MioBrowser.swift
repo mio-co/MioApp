@@ -329,6 +329,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     private let initialURL: URL
     private(set) var webView: WKWebView!
     private var adblock: MioAdblockSession!
+    /// 用户脚本的 GM API 原生端（MioUserScripts.swift）
+    private var userScripts: MioUserScriptBridge!
     // 以下几个视图 MioTabs.swift 的顶部工具栏（Mac / iPad）会重新摆放，所以不是 private
     let topBar = UIView()
     let addressField = UITextField()
@@ -338,6 +340,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     private var backItem: UIBarButtonItem!
     private var forwardItem: UIBarButtonItem!
     private var reloadItem: UIBarButtonItem!
+    private var translateItem: UIBarButtonItem!
     private var observations: [NSKeyValueObservation] = []
     private var changeObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
@@ -356,13 +359,19 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     private var passkeyHintedHosts: Set<String> = []
     // 多标签页（MioTabs.swift）：标签 id、容器、顶部工具栏 / 标签按钮、卸载后恢复的历史与滚动位置
     var tabID: Int?
-    var containerID: String = MioTabStore.defaultContainer
+    /// 标签的容器（与容器模块的 containerId 是同一个值；ensureController 在 viewDidLoad 之前设置）
+    var containerID: String {
+        get { containerId }
+        set { containerId = newValue }
+    }
     var tabChrome: MioTabChrome?
     var restoreInteractionState: Any?
     /// 媒体（后台续播 / 锁屏控制兜底 / SponsorBlock 请求兜底），MioMedia.swift
     private var media: MioMediaController?
     /// 阅读模式 / 强制深色 / 存到 Mio（MioPageTools.swift）
     private var pageTools: MioPageTools!
+    /// 这个浏览器 WebView 用的容器（登录状态隔离，MioContainerStore.swift）。必须在 viewDidLoad 之前设置；默认 = 原来的浏览数据
+    var containerId: String = MioContainerCore.defaultId
 
     init(url: URL) {
         initialURL = url
@@ -377,8 +386,10 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         if let o = settingsObserver { NotificationCenter.default.removeObserver(o) }
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: Self.passkeyMessage)
         pageTools?.detach()
+        MioTranslate.uninstall(from: webView?.configuration.userContentController)
         adblock?.detach()
         media?.detach()
+        userScripts?.detach()
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .default }
@@ -387,12 +398,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
-        let config = WKWebViewConfiguration()
-        if #available(iOS 17.0, macCatalyst 17.0, *) {
-            config.websiteDataStore = WKWebsiteDataStore(forIdentifier: MioBrowserSettings.dataStoreID)
-        } else {
-            config.websiteDataStore = .default()
-        }
+        // 容器：默认容器 = 固定 UUID 的 WKWebsiteDataStore（iOS 17+），旧系统 .default()，与以前一致
+        let config = MioContainerStore.shared.makeConfiguration(for: containerId)
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsPictureInPictureMediaPlayback = true
@@ -412,6 +419,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             }
         }
         config.userContentController.add(MioWeakScriptHandler(self), name: Self.passkeyMessage)
+        MioTranslate.install(on: config.userContentController)   // 翻译：页面脚本 ↔ 原生桥（MioTranslate.swift）
+        if MioWebKitCompat.isMac { MioWebRTCGuard.enableNativeWebRTC(config.preferences) }
 
         webView = WKWebView(frame: .zero, configuration: config)
         if profile == .desktop {
@@ -427,8 +436,13 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         // 这里只实现无返回值的回调，不实现 viewForZooming / shouldScrollToTop 之类会影响 WebKit 决策的方法。
         webView.scrollView.delegate = self
         if #available(iOS 16.4, macCatalyst 16.4, *) { webView.isInspectable = true }
+        MioTranslate.register(webView)
 
         pageTools = MioPageTools(webView: webView, host: self)
+        userScripts = MioUserScriptBridge(controller: config.userContentController)
+        userScripts.webView = webView
+        userScripts.presenter = self
+
         adblock = MioAdblockSession(configuration: config)
         adblock.webView = webView
         adblock.extraScripts = Self.extraScripts()
@@ -534,8 +548,10 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         safari.accessibilityLabel = "用 Safari 打开"
         let settings = UIBarButtonItem(image: UIImage(systemName: "gearshape"), style: .plain, target: self, action: #selector(settingsTapped))
         settings.accessibilityLabel = "浏览器设置"
+        translateItem = UIBarButtonItem(image: UIImage(systemName: "character.bubble"), style: .plain, target: self, action: #selector(translateTapped))
+        translateItem.accessibilityLabel = "翻译"
         let flex = { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
-        toolbar.items = [backItem, flex(), forwardItem, flex(), reloadItem, flex(), share, flex(), safari, flex(), pageTools.barItem, flex(), settings]
+        toolbar.items = [backItem, flex(), forwardItem, flex(), reloadItem, flex(), share, flex(), translateItem, flex(), safari, flex(), pageTools.barItem, flex(), settings]
 
         topBarTop = topBar.topAnchor.constraint(equalTo: view.topAnchor)
         toolbarBottom = toolbar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
@@ -665,7 +681,10 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             // Mac：textarea / contenteditable 回车不换行的兜底（所有 frame，评论框常在 iframe 里）
             scripts.append(WKUserScript(source: MioWebCompat.returnKeyFixScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
-        return scripts + backgroundPlaybackScripts() + MioPageTools.userScripts()
+        // 翻译（网页双语 / 划词 / YouTube 双语字幕）：主框架 document-start，配置随设置重建
+        if let translate = MioTranslate.userScript() { scripts.append(translate) }
+        // WebRTC 控制排最前（所有 frame、页面世界）；用户脚本排最后（各自的 WKContentWorld / 页面世界，自己按 @match 判定）
+        return MioWebRTCGuard.webKitScripts() + scripts + backgroundPlaybackScripts() + MioPageTools.userScripts() + MioUserScriptManager.shared.webKitScripts()
     }
 
     /// 后台播放（可见性伪造，所有站点）+ YouTube 媒体脚本（续播 / 锁屏控制 / 画中画 / SponsorBlock）：MioMedia.swift
@@ -896,6 +915,11 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     }
     #endif
 
+    /// 翻译菜单：双语对照 / 仅译文 / 原文、总是翻译此网站、目标语言、翻译设置（MioTranslate.swift）
+    @objc private func translateTapped() {
+        MioTranslate.presentMenu(from: self, webView: webView, barItem: translateItem)
+    }
+
     @objc private func settingsTapped() {
         let nav = UINavigationController(rootViewController: MioBrowserSettingsViewController(currentHost: webView.url?.host, currentURL: webView.url))
         present(nav, animated: true)
@@ -924,6 +948,13 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
                     self?.webView.reload()
                 })
             }
+        }
+        if let host = host, MioWebRTCSettings.enabled {
+            let allowed = MioWebRTCSettings.isAllowed(host)
+            alert.addAction(UIAlertAction(title: allowed ? "此站点恢复屏蔽 WebRTC" : "此站点允许 WebRTC（网页通话）", style: .default) { [weak self] _ in
+                MioWebRTCSettings.setAllowed(host, !allowed)
+                self?.webView.reload()
+            })
         }
         alert.addAction(UIAlertAction(title: "拦截设置…", style: .default) { [weak self] _ in self?.settingsTapped() })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
@@ -987,7 +1018,15 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
             DispatchQueue.main.async { [weak self] in self?.webView.load(URLRequest(url: desktop)) }
             return
         }
+        if isMain, MioUserScriptFlow.shouldIntercept(url) {
+            // 打开 *.user.js：提示安装（可选「在浏览器中查看源码」）
+            decisionHandler(.cancel, preferences)
+            MioUserScriptFlow.installFromURL(url, from: self, viewSource: { [weak self] u in _ = self?.webView.load(URLRequest(url: u)) })
+            return
+        }
         if isMain, scheme == "http" || scheme == "https" {
+            // GM_setValue 改过值：重建用户脚本（注入代码里带值的快照）
+            if userScripts.willNavigateMainFrame() { adblock.extraScripts = Self.extraScripts() }
             adblock.prepareMainFrame(url)
             updateShield()
             pageTools.willNavigate(to: url)
@@ -1132,6 +1171,9 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case updateAuto, updateCheck // 软件更新（MioUpdater.swift）
         case closeAfterExternal
         case newTabPage // 多标签页：新标签页地址（MioTabs.swift）
+        case containers // 容器管理（MioContainerStore.swift）
+        case translate
+        case userScripts, webrtc
     }
 
     private let currentHost: String?
@@ -1195,12 +1237,15 @@ final class MioBrowserSettingsViewController: UITableViewController {
         browse.append(.hideToolbars)
         browse.append(.media)
         s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留），可选屏蔽首页的游戏大本营（Playables，直接打开 /playables 不受影响）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
+        s.append(("翻译", "网页双语对照 / 仅译文、划词翻译、YouTube 双语字幕；引擎可选微软、谷歌或自定义 OpenAI 兼容 API。", [.translate]))
+        s.append(("用户脚本与隐私", "用户脚本：安装 Tampermonkey / Greasemonkey 格式的 .user.js。WebRTC 控制：防止网页借 WebRTC 获取你的真实 IP。", [.userScripts, .webrtc]))
         s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的「用 Safari 打开」（\(Self.safariHint)）改用 Safari。", [.preferSafari, .backgroundPlayback]))
         s.append((nil, "开启后，「用 Safari 打开」成功跳转后自动关闭当前标签页（最后一个标签关闭时收起浏览器回到 Mio 主界面）；打开失败则保留。", [.closeAfterExternal]))
         s.append(("标签页", MioTabsSettingsUI.footer, [.newTabPage]))
         var login: [Row] = [.passkeyInfo]
         if let u = currentURL { login.append(.openInSafari(u)) }
         s.append(("通行密钥与钥匙串", Self.passkeyFooter, login))
+        s.append(("容器", "同一网站登录多个账号：每个容器的 Cookie、网站数据、缓存互相隔离。", [.containers]))
         s.append(("软件更新", MioUpdaterSettingsUI.footer, [.updateAuto, .updateCheck]))
         s.append((nil, nil, [.licenses, .version]))
         sections = s.map { (title: $0.0, footer: $0.1, rows: $0.2) }
@@ -1339,6 +1384,28 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.accessoryView = makeSwitch(MioUpdateSettings.autoCheck) { MioUpdateSettings.autoCheck = $0 }
         case .updateCheck:
             MioUpdaterSettingsUI.configureCheckCell(cell, formatter: fmt)
+        case .containers:
+            cell.textLabel?.text = "容器管理"
+            let n = MioContainerStore.shared.containers.count
+            cell.detailTextLabel?.text = MioContainerStore.isSupported ? "\(n) 个容器（含默认）" : "需要 iOS 17 / macOS 14"
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+        case .translate:
+            let engineName = MioTranslateCore.engines.first(where: { $0.id == MioTranslateSettings.engine })?.name ?? ""
+            cell.textLabel?.text = "翻译设置"
+            cell.detailTextLabel?.text = "译为 " + MioTranslateCore.languageName(MioTranslateSettings.target) + " · " + engineName
+        case .userScripts:
+            let all = MioUserScriptManager.shared.scripts
+            cell.textLabel?.text = "用户脚本"
+            cell.detailTextLabel?.text = all.isEmpty ? "未安装" : "已安装 \(all.count) 个，启用 \(all.filter { $0.enabled }.count) 个"
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+        case .webrtc:
+            cell.textLabel?.text = "WebRTC 控制"
+            let n = MioWebRTCSettings.allowlist.count
+            cell.detailTextLabel?.text = MioWebRTCSettings.enabled ? (n > 0 ? "已屏蔽 · 放行 \(n) 个网站" : "已屏蔽（防 IP 泄露）") : "未开启"
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
         }
         return cell
     }
@@ -1397,6 +1464,14 @@ final class MioBrowserSettingsViewController: UITableViewController {
             rebuild()
         case .media:
             navigationController?.pushViewController(MioMediaSettingsViewController(), animated: true)
+        case .containers:
+            navigationController?.pushViewController(MioContainersViewController(), animated: true)
+        case .translate:
+            navigationController?.pushViewController(MioTranslateSettingsViewController(currentHost: currentHost), animated: true)
+        case .userScripts:
+            navigationController?.pushViewController(MioUserScriptsViewController(), animated: true)
+        case .webrtc:
+            navigationController?.pushViewController(MioWebRTCSettingsViewController(currentHost: currentHost), animated: true)
         case .youtubeInterval:
             let current = MioBrowserSettings.youtubeFocusInterval
             let a = UIAlertController(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒", preferredStyle: .actionSheet)

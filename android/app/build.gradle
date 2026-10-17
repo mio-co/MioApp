@@ -74,6 +74,9 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
+// 内置浏览器翻译脚本：仓库 shared/translate/mio-translate.js → assets/translate/mio-translate.js（与 iOS / Windows 同一份）
+android.sourceSets.main.assets.srcDirs += ['../../shared']
+
 try {
     def servicesJSON = file('google-services.json')
     if (servicesJSON.text) {

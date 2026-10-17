@@ -366,8 +366,12 @@ public final class TabsCore {
             activeId = null;
             for (JSONObject o : items) {
                 String c = cleanContainer(o.optString("container", DEFAULT_CONTAINER));
-                if (known != null && !c.equals(DEFAULT_CONTAINER) && !known.contains(c)) c = DEFAULT_CONTAINER;
-                Opts op = Opts.make().title(o.optString("title", "")).activate(false).index(tabs.size()).container(c).locked(o.optBoolean("locked", false));
+                boolean locked = o.optBoolean("locked", false);
+                if (known != null && !c.equals(DEFAULT_CONTAINER) && !known.contains(c)) {
+                    c = DEFAULT_CONTAINER; // 容器已删除：回到默认容器，不再锁定
+                    locked = false;
+                }
+                Opts op = Opts.make().title(o.optString("title", "")).activate(false).index(tabs.size()).container(c).locked(locked);
                 op.noOpener = true;
                 add(o.optString("url"), op);
             }

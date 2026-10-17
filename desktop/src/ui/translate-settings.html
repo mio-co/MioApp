@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>翻译设置</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body class="settings">
+  <h1>翻译</h1>
+
+  <h2>网页翻译</h2>
+  <div class="card">
+    <div class="row"><div class="label">目标语言</div><select id="target" class="text"></select></div>
+    <div class="row"><div class="label">显示方式<div class="sub">双语对照：每段下方显示淡色译文；仅译文：隐藏原文</div></div>
+      <select id="display" class="text"><option value="bilingual">双语对照</option><option value="translation">仅译文</option></select></div>
+    <label class="row"><div class="label">划词翻译<div class="sub">选中文字后出现「译」按钮</div></div><span class="switch"><input type="checkbox" id="selection"><span></span></span></label>
+    <label class="row"><div class="label">YouTube 双语字幕<div class="sub">有字幕（含自动生成）的视频在播放器上叠加原文 + 译文；播放器里的「双语」按钮可临时开关</div></div><span class="switch"><input type="checkbox" id="youtube"><span></span></span></label>
+  </div>
+
+  <h2>自动翻译的网站</h2>
+  <div class="card">
+    <form class="row" id="siteForm" autocomplete="off"><input class="text" id="siteInput" placeholder="域名，如 example.com（含子域名）"><button class="btn" type="submit">添加</button></form>
+    <div id="siteList"></div>
+  </div>
+  <p class="note" id="siteError"></p>
+
+  <h2>翻译引擎</h2>
+  <div class="card">
+    <div class="row"><div class="label">引擎<div class="sub">失败或超时时自动改用免费引擎（微软 → 谷歌）</div></div><select id="engine" class="text"></select></div>
+  </div>
+  <div class="card" id="aiCard" style="margin-top:10px">
+    <div class="row"><div class="label">API 地址<div class="sub">OpenAI 兼容，如 https://api.openai.com/v1</div></div><input class="text" id="openaiBase" placeholder="https://…/v1"></div>
+    <div class="row"><div class="label">模型</div><input class="text" id="openaiModel" placeholder="gpt-4o-mini"></div>
+    <div class="row"><div class="label">API Key<div class="sub" id="keyState"></div></div><input class="text" id="openaiKey" type="password" placeholder="sk-…（保存后不再显示）"><button class="btn" id="saveKey">保存</button></div>
+    <div class="row"><div class="label">附加提示（可选）<div class="sub">例如：使用口语化表达；专有名词保留英文</div></div><input class="text" id="openaiPrompt"></div>
+    <div class="row"><div class="label">连接测试<div class="sub" id="testResult"></div></div><button class="btn" id="test">测试</button></div>
+  </div>
+
+  <h2>缓存</h2>
+  <div class="card">
+    <div class="row"><div class="label">翻译缓存<div class="sub" id="cacheSize"></div></div><button class="btn danger" id="clearCache">清除</button></div>
+  </div>
+  <p class="note">免费引擎使用微软（Bing 网页翻译）和谷歌的公开网页接口，可能限流或变动；要翻译的文字会发送给所选引擎。自定义 API 的 Key 用系统钥匙串（safeStorage）加密保存在本机。</p>
+<script src="translate-settings.js"></script>
+</body>
+</html>
