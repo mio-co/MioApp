@@ -1,5 +1,5 @@
 // MioMacWebKit.swift — 原生 macOS 的 WKWebView 配置：容器（每个容器一个 WKWebsiteDataStore(forIdentifier:)）、桌面 Safari UA、
-// 共享的注入脚本（YouTube 防沉迷、WebRTC 防泄露，开关读与 iOS 相同的 UserDefaults key）。
+// 注入脚本全部来自启用的 MioModule（MioModuleRegistry；YouTube 防沉迷、WebRTC 防泄露……开关读与 iOS 相同的 UserDefaults key）。
 //
 // 与 Catalyst 版的区别：
 //   - 不需要 MioMacMetrics 的 77% 换算：AppKit 窗口按 1:1 显示，pageZoom 直接等于 Safari 档位
@@ -14,9 +14,6 @@ enum MioMacWebKit {
     /// 默认容器 = 与 iOS / Catalyst 内置浏览器相同的固定 UUID（MioBrowserSettings.dataStoreID）
     static let defaultDataStoreID = UUID(uuidString: "6D696F00-6272-6F77-7365-720000000001")!
     static let containersStateKey = "mio.containers.state" // = MioContainerStore.stateKey
-    static let youtubeFocusKey = "mio.browser.youtubeFocus"
-    static let youtubeFocusIntervalKey = "mio.browser.youtubeFocusInterval"
-    static let youtubePlayablesKey = "mio.browser.youtubeFocusPlayables"
 
     private static var stores: [String: WKWebsiteDataStore] = [:]
 
@@ -51,19 +48,25 @@ enum MioMacWebKit {
         c.preferences.isElementFullscreenEnabled = true
         c.preferences.javaScriptCanOpenWindowsAutomatically = false
         c.allowsAirPlayForMediaPlayback = true
-        let ucc = c.userContentController
-        let d = UserDefaults.standard
-        if (d.object(forKey: youtubeFocusKey) as? Bool) ?? true {
-            let interval = d.integer(forKey: youtubeFocusIntervalKey)
-            let seconds = MioWebCompat.youtubeFocusIntervalChoices.contains(interval) ? interval : MioWebCompat.youtubeFocusDefaultInterval
-            let playables = (d.object(forKey: youtubePlayablesKey) as? Bool) ?? true
-            ucc.addUserScript(WKUserScript(source: MioWebCompat.youtubeFocusScript(intervalSeconds: seconds, hidePlayables: playables),
-                                           injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        }
-        if let rtc = MioWebRTCSettings.script() {
-            ucc.addUserScript(WKUserScript(source: rtc, injectionTime: .atDocumentStart, forMainFrameOnly: false))
-        }
+        installScripts(c.userContentController)
         return c
+    }
+
+    /// 内置模块注册表（iOS 以后用同一份 MioBuiltinModules.all()）
+    static let modules = MioModuleRegistry(prefs: UserDefaults.standard, modules: MioBuiltinModules.all())
+
+    /// 把启用模块的脚本装进 WebView（设置改了以后对已有 WebView 再调一次 + 重新载入即可生效）
+    static func installScripts(_ ucc: WKUserContentController) {
+        ucc.removeAllUserScripts()
+        for (_, s) in modules.scripts() {
+            let world: WKContentWorld
+            switch s.world {
+            case .page: world = .page
+            case .isolated(let name): world = .world(name: name)
+            }
+            ucc.addUserScript(WKUserScript(source: s.source, injectionTime: s.injection == .documentStart ? .atDocumentStart : .atDocumentEnd,
+                                           forMainFrameOnly: s.mainFrameOnly, in: world))
+        }
     }
 
     static func colorFor(container: MioContainer?) -> NSColor? {

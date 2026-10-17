@@ -1,11 +1,14 @@
 // MioMacApp.swift — 应用委托 + 主菜单（Safari 同款快捷键：⌘T / ⌘W / ⌘L / ⇧⌘T / ⌘R / ⌘+ ⌘- ⌘0 / ⌘[ ⌘] / ⌘1…9 / ⇧⌘[ ⇧⌘]）
 
 import AppKit
+import SwiftUI
 
 @MainActor
 final class MioMacAppDelegate: NSObject, NSApplicationDelegate {
     private(set) var controllers: [MioMacBrowserWindowController] = []
     private var smoke: MioMacSmoke?
+    private(set) var settingsWindow: NSWindow?
+    private lazy var settingsModel: MioSettingsModel = makeSettingsModel()
 
     static let smokeOut = ProcessInfo.processInfo.environment["MIO_SMOKE_OUT"]
 
@@ -44,6 +47,7 @@ final class MioMacAppDelegate: NSObject, NSApplicationDelegate {
     func makeWindow() -> MioMacBrowserWindowController {
         let c = MioMacBrowserWindowController()
         c.onClose = { [weak self] closed in self?.controllers.removeAll { $0 === closed } }
+        c.onOpenSettings = { [weak self] section in self?.openSettings(section: section) }
         controllers.append(c)
         return c
     }
@@ -53,6 +57,49 @@ final class MioMacAppDelegate: NSObject, NSApplicationDelegate {
             ?? (NSApp.mainWindow?.windowController as? MioMacBrowserWindowController)
             ?? controllers.last
     }
+
+    // MARK: - 设置（SwiftUI，Safari 分区 + Mio 分区；与 iOS 共用 MioSettingsView）
+
+    private func makeSettingsModel() -> MioSettingsModel {
+        let m = MioSettingsModel(registry: MioMacWebKit.modules)
+        m.platformName = "macOS"
+        m.userAgent = MioMacWebKit.desktopUserAgent
+        m.containers = { MioMacWebKit.containerState().containers }
+        m.createContainer = { name in
+            var st = MioMacWebKit.containerState()
+            if (try? st.create(name: name)) != nil {
+                UserDefaults.standard.set(st.jsonData(), forKey: MioMacWebKit.containersStateKey)
+            }
+        }
+        m.zoomSites = {
+            let t = MioZoomCore.SiteTable(json: UserDefaults.standard.string(forKey: MioMacBrowserWindowController.zoomSitesKey))
+            return t.sites.keys.sorted().map { (site: $0, level: t.sites[$0] ?? 1.0) }
+        }
+        m.clearZoomSites = { UserDefaults.standard.removeObject(forKey: MioMacBrowserWindowController.zoomSitesKey) }
+        m.onChange = { [weak self] in
+            MainActor.assumeIsolated {
+                for c in self?.controllers ?? [] { c.reinstallModuleScripts(); c.refreshTabs() }
+            }
+        }
+        return m
+    }
+
+    func openSettings(section: MioSettingsSection? = nil) {
+        if let s = section { settingsModel.selection = s }
+        if settingsWindow == nil {
+            let host = NSHostingController(rootView: MioSettingsView(model: settingsModel))
+            let w = NSWindow(contentViewController: host)
+            w.title = "设置"
+            w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            w.setContentSize(NSSize(width: 780, height: 540))
+            w.isReleasedWhenClosed = false
+            w.center()
+            settingsWindow = w
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc func showSettings(_ sender: Any?) { openSettings() }
 
     // MARK: - 菜单动作（转给当前窗口）
 
@@ -111,6 +158,8 @@ enum MioMacMenu {
         submenu("Mio", [
             item("关于 Mio", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), useTarget: false),
             .separator(),
+            item("设置…", #selector(MioMacAppDelegate.showSettings(_:)), ","),
+            .separator(),
             item("隐藏 Mio", #selector(NSApplication.hide(_:)), "h", useTarget: false),
             item("隐藏其他", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option], useTarget: false),
             item("全部显示", #selector(NSApplication.unhideAllApplications(_:)), useTarget: false),
@@ -147,6 +196,7 @@ enum MioMacMenu {
             zoomInAlt,
             item("缩小", #selector(MioMacAppDelegate.zoomOut(_:)), "-"),
             .separator(),
+            item("显示 / 隐藏边栏", #selector(NSSplitViewController.toggleSidebar(_:)), "s", [.command, .control], useTarget: false),
             item("进入全屏幕", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control], useTarget: false),
         ])
         submenu("历史记录", [

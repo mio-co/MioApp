@@ -83,6 +83,8 @@ final class MioMacSmoke {
             await waitLoad(t0, timeout: 40)
             report["exampleError"] = orNull(controller.lastError[t0])
             let mse = await eval(wv0, Self.mseProbeJS)
+            let rtc = await eval(wv0, MioWebRTCGuard.probeScript)
+            report["webrtcProbe"] = orNull(rtc)
             report["mse"] = orNull(mse)
             mseOK = (mse?["mediaSource"] as? String) == "function"
 
@@ -125,26 +127,48 @@ final class MioMacSmoke {
             report["youtubeError"] = orNull(controller.lastError[yt.id])
             let ytProbe = await eval(yt.webView, Self.youtubeProbeJS)
             report["youtube"] = orNull(ytProbe)
+            report["youtubeModuleMenu"] = MioMacWebKit.modules.menuItems(page: controller.currentPage).map { $0.id }
         }
 
         // 5. 截图 + 界面结构
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         let shotsDir = ProcessInfo.processInfo.environment["MIO_SMOKE_SHOTS"] ?? (outPath as NSString).deletingLastPathComponent
-        report["screenshots"] = await screenshot(dir: shotsDir)
+        var shots: [String: Any] = [:]
+        shots["main"] = await screenshot(window: controller.window, webView: controller.activeWebView, dir: shotsDir, name: "mac-native-window", chrome: true)
+        // 侧边栏展开（Safari macOS 布局）
+        controller.setSidebar(visible: true)
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        shots["sidebar"] = await screenshot(window: controller.window, webView: controller.activeWebView, dir: shotsDir, name: "mac-native-sidebar", chrome: false)
+        report["sidebarTabs"] = controller.sidebarModel.tabs.count
+        shots["screenSidebar"] = screencapture(dir: shotsDir, name: "screen-sidebar")
+        // 设置窗口（Safari 分区 + Mio 分区），选中「模块」
+        if let d = delegate {
+            d.openSettings(section: .modules)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            shots["settings"] = await screenshot(window: d.settingsWindow, webView: nil, dir: shotsDir, name: "mac-native-settings", chrome: false)
+            shots["screenSettings"] = screencapture(dir: shotsDir, name: "screen-settings")
+            report["settingsWindow"] = d.settingsWindow?.isVisible ?? false
+        }
+        report["screenshots"] = shots
+        report["settingsSections"] = MioSettingsSection.allCases.map { $0.title }
+        report["modules"] = MioMacWebKit.modules.modules.map { ["id": $0.id, "section": $0.section.rawValue, "enabled": $0.isEnabled(MioMacWebKit.modules.prefs)] as [String: Any] }
+        report["moduleScripts"] = MioMacWebKit.modules.scripts().map { $0.moduleID }
         let toolbarIDs = controller.window?.toolbar?.items.map { $0.itemIdentifier.rawValue } ?? []
         report["toolbarItems"] = toolbarIDs
         report["tabs"] = controller.store.tabs.map { ["id": $0.id, "url": $0.url, "title": $0.title, "container": $0.containerID] as [String: Any] }
         report["tabStripItems"] = controller.tabStrip.items.count
         let keys = MioMacMenu.keyEquivalents(NSApp.mainMenu)
         report["menuKeyEquivalents"] = keys
-        let requiredKeys = ["⌘t", "⌘w", "⌘l", "⌘+", "⌘-", "⌘0", "⌘=", "⇧⌘t", "⌘r", "⌘[", "⌘]"]
+        let requiredKeys = ["⌘,", "⌘t", "⌘w", "⌘l", "⌘+", "⌘-", "⌘0", "⌘=", "⇧⌘t", "⌘r", "⌘[", "⌘]"]
         let keysOK = requiredKeys.allSatisfy { keys.contains($0) }
         let chromeOK = ["mio.back", "mio.forward", "mio.address", "mio.newTab", "mio.menu"].allSatisfy { toolbarIDs.contains($0) } && controller.store.tabs.count >= 3
         report["keysOK"] = keysOK
         report["chromeOK"] = chromeOK
         report["mseOK"] = mseOK
         let zoomOK = (report["zoomOK"] as? Bool) ?? false
-        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK
+        let modulesOK = MioMacWebKit.modules.scripts().count >= 2 && ((report["youtubeModuleMenu"] as? [String]) ?? []).contains("youtubeFocus.settings")
+        report["modulesOK"] = modulesOK
+        let pass = mseOK && zoomOK && containerOK && keysOK && chromeOK && modulesOK
         report["pass"] = pass
         report["seconds"] = Int(Date().timeIntervalSince(started))
         write()
@@ -177,14 +201,14 @@ final class MioMacSmoke {
     }
 
     /// 窗口截图：标题栏 / 工具栏 / 标签条来自窗口框架视图的 cacheDisplay，网页区域来自 WKWebView.takeSnapshot（网页在独立进程里渲染，cacheDisplay 拍不到）
-    private func screenshot(dir: String) async -> [String: Any] {
-        guard let win = controller.window, let frameView = win.contentView?.superview, let content = win.contentView else { return ["error": "no window"] }
+    private func screenshot(window: NSWindow?, webView: WKWebView?, dir: String, name: String, chrome: Bool) async -> [String: Any] {
+        guard let win = window, let frameView = win.contentView?.superview else { return ["error": "no window"] }
         let bounds = frameView.bounds
         guard let rep = frameView.bitmapImageRepForCachingDisplay(in: bounds) else { return ["error": "no bitmap"] }
         frameView.cacheDisplay(in: bounds, to: rep)
         var snap: NSImage?
         var webRect = NSRect.zero
-        if let wv = controller.activeWebView {
+        if let wv = webView {
             snap = await withCheckedContinuation { cont in
                 wv.takeSnapshot(with: nil) { image, _ in cont.resume(returning: image) }
             }
@@ -205,11 +229,12 @@ final class MioMacSmoke {
 
         var result: [String: Any] = ["windowPoints": [bounds.width, bounds.height], "pixels": [out.pixelsWide, out.pixelsHigh], "webSnapshot": snap != nil]
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        let full = (dir as NSString).appendingPathComponent("mac-native-window.png")
+        let full = (dir as NSString).appendingPathComponent("\(name).png")
         if let png = out.representation(using: .png, properties: [:]), (try? png.write(to: URL(fileURLWithPath: full))) != nil { result["window"] = full }
 
+        guard chrome else { return result }
         // 只要顶部：标题栏 + 工具栏 + 标签条
-        let chromeHeight = bounds.height - content.frame.height + MioMacTabStrip.height + 4
+        let chromeHeight = bounds.height - win.contentLayoutRect.height + MioMacTabStrip.height + 4
         let scale = CGFloat(out.pixelsHigh) / bounds.height
         let cropPx = CGRect(x: 0, y: 0, width: CGFloat(out.pixelsWide), height: min(CGFloat(out.pixelsHigh), (chromeHeight * scale).rounded()))
         if let cg = out.cgImage, let cropped = cg.cropping(to: cropPx) { // CGImage 原点在左上
@@ -219,6 +244,16 @@ final class MioMacSmoke {
         }
         result["chromeHeightPoints"] = chromeHeight
         return result
+    }
+
+    /// 整屏截图（/usr/sbin/screencapture；没有屏幕录制权限时可能只有桌面，冒烟不以它为准）
+    private func screencapture(dir: String, name: String) -> String? {
+        let path = (dir as NSString).appendingPathComponent("\(name).png")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-x", path]
+        do { try p.run(); p.waitUntilExit() } catch { return nil }
+        return FileManager.default.fileExists(atPath: path) ? path : nil
     }
 
     private func write() {

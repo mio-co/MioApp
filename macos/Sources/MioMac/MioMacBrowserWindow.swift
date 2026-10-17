@@ -1,7 +1,9 @@
-// MioMacBrowserWindow.swift — 原生 macOS 浏览器窗口：Safari 风格统一工具栏（后退 / 前进 / 地址栏 / 新标签 / 菜单）、
-// 工具栏下的标签条、多标签（MioTabStore，与 iOS / Windows 同一套规则）、容器、按站点缩放（MioZoomCore）。
+// MioMacBrowserWindow.swift — 原生 macOS 浏览器窗口（浏览器是 App 本体，MioCore 是主页 / 新标签页模块）：
+// Safari macOS 风格统一工具栏（侧边栏 / 后退 / 前进 / 居中地址栏 / 新标签 / …菜单）、SwiftUI 侧边栏（标签页 / 容器 / MioCore）、
+// 工具栏下的标签条、多标签（MioTabStore，与 iOS 同一套规则）、容器、按站点缩放（MioZoomCore）、模块菜单项（MioModuleRegistry）。
 
 import AppKit
+import SwiftUI
 import WebKit
 
 extension NSToolbarItem.Identifier {
@@ -27,6 +29,11 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
 
     let tabStrip = MioMacTabStrip()
     let webContainer = NSView()
+    let mainView = NSView()
+    let sidebarModel = MioSidebarModel()
+    private(set) var sidebarItem: NSSplitViewItem?
+    /// 模块动作「打开设置」交给 App（设置窗口是全局的）
+    var onOpenSettings: ((MioSettingsSection) -> Void)?
     let addressField = NSTextField()
     private var backItem: NSToolbarItem?
     private var forwardItem: NSToolbarItem?
@@ -42,13 +49,12 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         return v > 0 ? MioZoomCore.nearest(v) : 1.0
     }
 
-    static var newTabURL: String {
-        MioTabStore.normalizeNewTabURL(UserDefaults.standard.string(forKey: newTabKey)) ?? MioTabStore.defaultNewTabURL
-    }
+    /// 新标签页 = MioCore 模块的主页
+    static var newTabURL: String { MioCoreModule.homeURL(UserDefaults.standard) }
 
     init(size: NSSize = NSSize(width: 1280, height: 820)) {
         let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                         styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                         styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                          backing: .buffered, defer: false)
         w.title = "Mio"
         w.titleVisibility = .hidden
@@ -60,6 +66,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         w.delegate = self
         buildContent()
         buildToolbar()
+        w.setContentSize(size)
         w.center()
     }
 
@@ -69,13 +76,32 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
     // MARK: - UI
 
     private func buildContent() {
-        guard let content = window?.contentView else { return }
+        // 左：SwiftUI 侧边栏（Safari macOS 的侧边栏位置，默认收起，⌃⌘S / 工具栏按钮切换）；右：标签条 + 网页
+        let split = NSSplitViewController()
+        let sidebarVC = NSHostingController(rootView: MioSidebarView(model: sidebarModel))
+        let side = NSSplitViewItem(sidebarWithViewController: sidebarVC)
+        side.canCollapse = true
+        side.minimumThickness = 200
+        side.maximumThickness = 340
+        side.isCollapsed = !UserDefaults.standard.bool(forKey: "mio.mac.sidebarVisible")
+        sidebarItem = side
+        let mainVC = NSViewController()
+        mainVC.view = mainView
+        split.addSplitViewItem(side)
+        split.addSplitViewItem(NSSplitViewItem(viewController: mainVC))
+        window?.contentViewController = split
+        sidebarModel.onSelectTab = { [weak self] id in self?.select(id) }
+        sidebarModel.onCloseTab = { [weak self] id in self?.closeTab(id) }
+        sidebarModel.onNewTab = { [weak self] cid in self?.newTab(containerID: cid); self?.focusAddressBar() }
+        sidebarModel.onHome = { [weak self] in self?.newTab(url: Self.newTabURL) }
+
+        let content = mainView
         tabStrip.translatesAutoresizingMaskIntoConstraints = false
         webContainer.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(tabStrip)
         content.addSubview(webContainer)
         NSLayoutConstraint.activate([
-            tabStrip.topAnchor.constraint(equalTo: content.topAnchor),
+            tabStrip.topAnchor.constraint(equalTo: content.safeAreaLayoutGuide.topAnchor), // fullSizeContentView：让开工具栏
             tabStrip.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             tabStrip.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             tabStrip.heightAnchor.constraint(equalToConstant: MioMacTabStrip.height),
@@ -99,7 +125,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.mioBack, .mioForward, .flexibleSpace, .mioAddress, .flexibleSpace, .mioNewTab, .mioMenu]
+        [.toggleSidebar, .sidebarTrackingSeparator, .mioBack, .mioForward, .flexibleSpace, .mioAddress, .flexibleSpace, .mioNewTab, .mioMenu]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -188,9 +214,59 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
         containers.submenu = sub
         m.addItem(containers)
         m.addItem(.separator())
+        // 模块菜单项（按当前页面过滤，例如 YouTube 上才有「防沉迷设置」）
+        let page = currentPage
+        let moduleItems = MioMacWebKit.modules.menuItems(page: page)
+        if !moduleItems.isEmpty {
+            for mi in moduleItems {
+                let it = NSMenuItem(title: mi.title, action: #selector(moduleMenuItem(_:)), keyEquivalent: "")
+                it.target = self
+                it.representedObject = mi.id
+                if let sym = mi.symbol { it.image = NSImage(systemSymbolName: sym, accessibilityDescription: nil) }
+                m.addItem(it)
+            }
+            m.addItem(.separator())
+        }
         m.addItem(withTitle: "重新载入", action: #selector(reload(_:)), keyEquivalent: "").target = self
         m.addItem(withTitle: "用 Safari 打开", action: #selector(openInSafari(_:)), keyEquivalent: "").target = self
         return m
+    }
+
+    // MARK: - Modules
+
+    var currentPage: MioPageContext {
+        MioPageContext(url: activeWebView?.url, title: activeWebView?.title ?? "")
+    }
+
+    @objc func moduleMenuItem(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String,
+              let item = MioMacWebKit.modules.menuItems(page: currentPage).first(where: { $0.id == key }) else { return }
+        performModuleAction(MioMacWebKit.modules.perform(item, page: currentPage))
+    }
+
+    func performModuleAction(_ action: MioModuleAction) {
+        switch action {
+        case .none: break
+        case .openURL(let u, let inNewTab):
+            if inNewTab || activeWebView == nil { newTab(url: u.absoluteString) } else { activeWebView?.load(URLRequest(url: u)) }
+        case .evaluateJavaScript(let js):
+            activeWebView?.evaluateJavaScript(js, completionHandler: nil)
+        case .openSettings(let section):
+            onOpenSettings?(section)
+        case .reload:
+            reinstallModuleScripts()
+            activeWebView?.reload()
+        }
+    }
+
+    /// 模块开关 / 设置变了：所有标签重装注入脚本（下次载入生效）
+    func reinstallModuleScripts() {
+        for (_, wv) in webViews { MioMacWebKit.installScripts(wv.configuration.userContentController) }
+        refreshChrome()
+    }
+
+    func setSidebar(visible: Bool) {
+        sidebarItem?.isCollapsed = !visible
     }
 
     // MARK: - Tabs
@@ -325,6 +401,13 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
             let title = t.title.isEmpty ? (MioTabStore.displayHost(t.url).isEmpty ? "新标签页" : MioTabStore.displayHost(t.url)) : t.title
             return MioMacTabStrip.Item(id: t.id, title: title, color: t.containerID == MioContainerCore.defaultId ? nil : MioMacWebKit.colorFor(container: state.get(t.containerID)))
         }, activeID: store.activeID)
+        let tabs = store.tabs.map { t in
+            MioSidebarModel.Tab(id: t.id, title: t.title.isEmpty ? "新标签页" : t.title, host: MioTabStore.displayHost(t.url),
+                                containerName: t.containerID == MioContainerCore.defaultId ? nil : state.get(t.containerID)?.name)
+        }
+        if sidebarModel.tabs != tabs { sidebarModel.tabs = tabs }
+        if sidebarModel.activeID != store.activeID { sidebarModel.activeID = store.activeID }
+        if sidebarModel.containers != state.containers { sidebarModel.containers = state.containers }
     }
 
     func refreshChrome() {
@@ -411,6 +494,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
     // MARK: - NSWindowDelegate
 
     func windowWillClose(_ notification: Notification) {
+        if let side = sidebarItem { UserDefaults.standard.set(!side.isCollapsed, forKey: "mio.mac.sidebarVisible") }
         if !store.tabs.isEmpty { saveSession() }
         for (_, wv) in webViews { wv.stopLoading() }
         onClose?(self)
