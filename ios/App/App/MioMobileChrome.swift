@@ -328,6 +328,22 @@ final class MioMobileChrome: NSObject, UIGestureRecognizerDelegate {
             field.trailingAnchor.constraint(equalTo: address.trailingAnchor, constant: -4),
             field.centerYAnchor.constraint(equalTo: address.centerYAnchor),
         ]
+        if let c = MioContainerUX.badge(for: b.containerID) {
+            // 容器标签：地址栏左侧色点 + 容器名
+            let badge = UILabel()
+            let text = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: c.color, .font: UIFont.systemFont(ofSize: 11)])
+            text.append(NSAttributedString(string: c.name, attributes: [.foregroundColor: c.color, .font: UIFont.systemFont(ofSize: 12, weight: .semibold)]))
+            badge.attributedText = text
+            badge.lineBreakMode = .byTruncatingTail
+            badge.accessibilityLabel = "容器：\(c.name)"
+            badge.translatesAutoresizingMaskIntoConstraints = false
+            badge.setContentCompressionResistancePriority(.required, for: .horizontal)
+            address.leading.addArrangedSubview(badge)
+            cs += [badge.widthAnchor.constraint(lessThanOrEqualToConstant: 90)]
+            address.leading.spacing = 4
+            address.leading.isLayoutMarginsRelativeArrangement = true
+            address.leading.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 0)
+        }
         if let reader = b.pageTools?.readerButton {
             reader.removeFromSuperview()
             reader.translatesAutoresizingMaskIntoConstraints = false
@@ -788,13 +804,8 @@ final class MioMobileChrome: NSObject, UIGestureRecognizerDelegate {
     private func tabsMenu() -> UIMenu {
         UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in
             guard let b = self?.browser, let tabs = b.tabsController else { done([]); return }
-            var items: [UIMenuElement] = [
-                UIAction(title: "新建标签页", image: UIImage(systemName: "plus.square.on.square")) { _ in tabs.mioNewTab(nil) },
-            ]
-            let newContainer = tabs.newTabContainerItems()
-            if !newContainer.isEmpty {
-                items.append(UIMenu(title: "新建容器标签页", image: UIImage(systemName: "plus.square.dashed"), children: newContainer))
-            }
+            // 新建标签页 / 新建无痕标签页 / 在容器中新建 ▸ / 新建容器…（MioContainerUX.swift）
+            var items: [UIMenuElement] = MioContainerUX.newTabMenuElements(tabs, from: b)
             if tabs.store.hasClosed {
                 items.append(UIAction(title: "重新打开关闭的标签页", image: UIImage(systemName: "arrow.uturn.backward")) { _ in tabs.reopenClosed() })
             }
@@ -887,7 +898,8 @@ final class MioMobileChrome: NSObject, UIGestureRecognizerDelegate {
         if #available(iOS 16.0, macCatalyst 16.0, *) { findOK = true }
         let ctx = MioMobileChromeCore.MenuContext(isWebPage: isWeb, host: host, translateAvailable: translateState != nil, translateMode: mode,
                                                   adblockEnabled: MioAdblockSettings.enabled, webrtcGuardEnabled: MioWebRTCSettings.enabled,
-                                                  findSupported: findOK, desktopSupported: true)
+                                                  findSupported: findOK, desktopSupported: true,
+                                                  containersSupported: MioContainerStore.isSupported && b.containerID != MioTabStore.privateContainer)
         var out: [(String, [MenuRow])] = []
         for section in MioMobileChromeCore.menuSections(ctx) {
             var rows = section.items.compactMap { row($0, host: host, mode: mode) }
@@ -1035,6 +1047,18 @@ final class MioMobileChrome: NSObject, UIGestureRecognizerDelegate {
             }
         case .backToMio:
             return MenuRow(title: title, icon: "house") { [weak b] in b?.closeTapped() }
+        case .openInContainer:
+            return MenuRow(title: title, subtitle: MioContainerUX.badge(for: b.containerID).map { "当前：\($0.name)" } ?? "当前：默认", icon: "person.2.square.stack", disclosure: true) { [weak self, weak b] in
+                guard let b = b else { return }
+                MioContainerUX.openPageInContainer(b, sourceView: self?.menuButton)
+            }
+        case .siteContainer:
+            let rule = host.flatMap { h in MioContainerStore.shared.state.siteRules.first { h == $0.host || h.hasSuffix("." + $0.host) } }
+            let name = rule.flatMap { MioContainerStore.shared.container($0.containerId)?.name }
+            return MenuRow(title: title, subtitle: name.map { "已设为：\($0)" } ?? "未设置", icon: "pin", disclosure: true) { [weak self, weak b] in
+                guard let b = b else { return }
+                MioContainerUX.setSiteContainer(b, sourceView: self?.menuButton)
+            }
         }
     }
 
@@ -1073,6 +1097,7 @@ final class MioMobileChrome: NSObject, UIGestureRecognizerDelegate {
             "topIntruders": topIntruders,
             "frames": frames.mapValues { $0.isNull ? "null" : NSCoder.string(for: $0) },
             "host": address.hostLabel.text ?? "",
+            "containerBadge": address.leading.arrangedSubviews.compactMap { ($0 as? UILabel)?.text }.joined(),
         ]
     }
 }
@@ -1271,7 +1296,48 @@ enum MioMobileChromeSmoke {
         wait(seconds: 2) {
             check("overview shown", tabs.presentedViewController is MioTabOverviewViewController)
             snap(4, "compact-tab-overview") {
-                tabs.dismiss(animated: false) { finish() }
+                tabs.dismiss(animated: false) { step5() }
+            }
+        }
+    }
+
+    /// 容器易用性：新建容器 → 一次性引导 → 容器标签的地址栏色点 + 名称 → 概览容器切换器 → 无痕标签不落盘
+    private static func step5() {
+        guard MioContainerStore.isSupported, let tabs = MioTabsViewController.shared else { finish(); return }
+        UserDefaults.standard.removeObject(forKey: "mio.containers.tipShown")
+        guard let c = try? MioContainerStore.shared.create(name: "冒烟") else { check("create container", false); finish(); return }
+        check("auto color is blue first", c.color == "blue")
+        wait(seconds: 2) {
+            let tip = MioBrowserViewController.topPresenter(nil) as? UIAlertController
+            check("container tip shown once", tip?.title?.contains("容器") ?? false)
+            snap(5, "container-tip") {
+                let go = {
+                    tabs.newTab(containerID: c.id)
+                    wait(seconds: 4) {
+                        let r = browser?.mobileChrome?.smokeReport() ?? [:]
+                        check("address badge shows container", (r["containerBadge"] as? String)?.contains("冒烟") ?? false)
+                        snap(6, "container-tab-badge") {
+                            tabs.showOverview()
+                            wait(seconds: 2) {
+                                let ov = tabs.presentedViewController as? MioTabOverviewViewController
+                                ov?.setFilterForSmoke(c.id)
+                                check("overview filter shows only container tabs", ov?.visibleCountForSmoke == 1)
+                                snap(7, "overview-container-filter") {
+                                    tabs.dismiss(animated: false) {
+                                        tabs.openPrivateTab()
+                                        wait(seconds: 2) {
+                                            let saved = String(decoding: tabs.store.serialize(), as: UTF8.self)
+                                            check("private tab active", tabs.store.tabs.first { $0.id == tabs.store.activeID }?.containerID == MioTabStore.privateContainer)
+                                            check("private tab not persisted", !saved.contains("\"private\""))
+                                            snap(8, "private-tab") { finish() }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let tip = tip { tip.dismiss(animated: false) { go() } } else { go() }
             }
         }
     }

@@ -31,6 +31,7 @@
 		7AB50000000000000000A001 /* MioTabsCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB50000000000000000F001 /* MioTabsCore.swift */; };
 		7AB60000000000000000A001 /* MioMobileChromeCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB60000000000000000F001 /* MioMobileChromeCore.swift */; };
 		7AB60000000000000000A002 /* MioMobileChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB60000000000000000F002 /* MioMobileChrome.swift */; };
+		7AB60000000000000000A003 /* MioContainerUX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB60000000000000000F003 /* MioContainerUX.swift */; };
 		B2ED1A00000000000000A001 /* MioMediaScripts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2ED1A00000000000000F001 /* MioMediaScripts.swift */; };
 		B2ED1A00000000000000A002 /* MioMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2ED1A00000000000000F002 /* MioMedia.swift */; };
 		B7EAD000000000000000A001 /* MioReaderCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7EAD000000000000000F001 /* MioReaderCore.swift */; };
@@ -73,6 +74,7 @@
 		7AB50000000000000000F001 /* MioTabsCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioTabsCore.swift; sourceTree = "<group>"; };
 		7AB60000000000000000F001 /* MioMobileChromeCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioMobileChromeCore.swift; sourceTree = "<group>"; };
 		7AB60000000000000000F002 /* MioMobileChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioMobileChrome.swift; sourceTree = "<group>"; };
+		7AB60000000000000000F003 /* MioContainerUX.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioContainerUX.swift; sourceTree = "<group>"; };
 		B2ED1A00000000000000F001 /* MioMediaScripts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioMediaScripts.swift; sourceTree = "<group>"; };
 		B2ED1A00000000000000F002 /* MioMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioMedia.swift; sourceTree = "<group>"; };
 		B7EAD000000000000000F001 /* MioReaderCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MioReaderCore.swift; sourceTree = "<group>"; };
@@ -142,6 +144,7 @@
 				7AB50000000000000000F001 /* MioTabsCore.swift */,
 				7AB60000000000000000F001 /* MioMobileChromeCore.swift */,
 				7AB60000000000000000F002 /* MioMobileChrome.swift */,
+				7AB60000000000000000F003 /* MioContainerUX.swift */,
 				B2ED1A00000000000000F001 /* MioMediaScripts.swift */,
 				B2ED1A00000000000000F002 /* MioMedia.swift */,
 				B7EAD000000000000000F001 /* MioReaderCore.swift */,
@@ -270,6 +273,7 @@
 				7AB50000000000000000A001 /* MioTabsCore.swift in Sources */,
 				7AB60000000000000000A001 /* MioMobileChromeCore.swift in Sources */,
 				7AB60000000000000000A002 /* MioMobileChrome.swift in Sources */,
+				7AB60000000000000000A003 /* MioContainerUX.swift in Sources */,
 				B2ED1A00000000000000A001 /* MioMediaScripts.swift in Sources */,
 				B2ED1A00000000000000A002 /* MioMedia.swift in Sources */,
 				B7EAD000000000000000A001 /* MioReaderCore.swift in Sources */,

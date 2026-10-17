@@ -163,6 +163,8 @@ enum MioMobileChromeCore {
         case saveBookmark, saveNote, saveClip
         // 拦截与隐私
         case adblock, adblockSite, webrtcSite, userScripts, youtubeFocus, adblockSettings
+        // 容器
+        case openInContainer, siteContainer
         // Mio
         case settings, backToMio
     }
@@ -183,9 +185,13 @@ enum MioMobileChromeCore {
         var webrtcGuardEnabled: Bool = true
         var findSupported: Bool = true
         var desktopSupported: Bool = true
+        /// 系统支持容器（iOS 17+ / Android MULTI_PROFILE）
+        var containersSupported: Bool = true
 
         init(isWebPage: Bool = true, host: String? = nil, translateAvailable: Bool = true, translateMode: String = "off",
-             adblockEnabled: Bool = true, webrtcGuardEnabled: Bool = true, findSupported: Bool = true, desktopSupported: Bool = true) {
+             adblockEnabled: Bool = true, webrtcGuardEnabled: Bool = true, findSupported: Bool = true, desktopSupported: Bool = true,
+             containersSupported: Bool = true) {
+            self.containersSupported = containersSupported
             self.isWebPage = isWebPage
             self.host = host
             self.translateAvailable = translateAvailable
@@ -226,6 +232,9 @@ enum MioMobileChromeCore {
         var out: [MenuSection] = [MenuSection(title: "页面", items: page), MenuSection(title: "翻译", items: translate),
                                   MenuSection(title: "阅读与外观", items: look)]
         if c.isWebPage { out.append(MenuSection(title: "存到 Mio", items: [.saveBookmark, .saveNote, .saveClip])) }
+        if c.isWebPage && hasHost && c.containersSupported {
+            out.append(MenuSection(title: "容器", items: [.openInContainer, .siteContainer]))
+        }
         out.append(MenuSection(title: "拦截与隐私", items: privacy))
         out.append(MenuSection(title: "Mio", items: [.settings, .backToMio]))
         return out
@@ -258,6 +267,8 @@ enum MioMobileChromeCore {
         case .userScripts: return "用户脚本…"
         case .youtubeFocus: return "YouTube 防沉迷"
         case .adblockSettings: return "拦截设置…"
+        case .openInContainer: return "在容器中打开此页…"
+        case .siteContainer: return "此网站始终用某容器打开…"
         case .settings: return "浏览器设置…"
         case .backToMio: return "回到 Mio 导航"
         }

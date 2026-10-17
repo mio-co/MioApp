@@ -5,6 +5,22 @@ import XCTest
 final class MioTabsCoreTests: XCTestCase {
     private func hosts(_ s: MioTabStore) -> [String] { s.tabs.map { MioTabStore.displayHost($0.url) } }
 
+    /// 无痕标签：不保存进会话、不进「最近关闭」，恢复时丢弃
+    func testPrivateTabsAreNeverPersisted() {
+        let s = MioTabStore()
+        s.add("https://a.com/")
+        let p = s.add("https://secret.com/", containerID: MioTabStore.privateContainer, locked: true)!
+        XCTAssertEqual(p.containerID, "private")
+        let data = s.serialize()
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("secret.com"))
+        s.close(p.id)
+        XCTAssertNil(s.reopenClosed(), "无痕标签不进最近关闭")
+        let r = MioTabStore()
+        let forged = #"{"v":2,"active":0,"tabs":[{"url":"https://x.com/","container":"private"},{"url":"https://a.com/"}]}"#
+        r.restore(Data(forged.utf8))
+        XCTAssertEqual(r.tabs.map { MioTabStore.displayHost($0.url) }, ["a.com"])
+    }
+
     func testNewTabGoesRightOfActiveAndActivates() {
         let s = MioTabStore()
         let a = s.add("https://a.com/")!
