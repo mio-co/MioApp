@@ -1175,36 +1175,48 @@ enum MioTabsSmoke {
             r["afterReopen"] = tabs.store.count
             if let id = tabs.store.activeID, id != first { tabs.closeTab(id) }
             r["final"] = tabs.store.count
-            // 容器（iOS 17 / macOS 14+）：容器标签用该容器的数据存储、锁定继承、删除容器时关闭其标签
-            var containersOK = true
-            if MioContainerStore.isSupported, let c = try? MioContainerStore.shared.create(name: "smoke-tabs", color: "green") {
-                var cr: [String: Any] = [:]
-                let before = tabs.store.count
-                let t = tabs.openTab("https://example.com/?c", activate: true, containerID: c.id)
-                let vc = t.flatMap { tabs.controller(for: $0.id) }
-                let ds = vc?.webView?.configuration.websiteDataStore
-                cr["dataStore"] = ds != nil && ds === MioContainerStore.shared.dataStore(for: c.id) && ds !== MioContainerStore.shared.dataStore(for: MioContainerCore.defaultId)
-                cr["mapped"] = t.map { MioContainerStore.shared.tab(MioTabContainers.key($0.id)).containerId == c.id } ?? false
-                if let t = t { tabs.setLocked(t.id, true) }
-                let child = tabs.openTab("https://example.com/?child", activate: false, from: vc, containerID: MioContainerCore.defaultId)
-                cr["childInherits"] = child?.containerID == c.id && child?.locked == true
-                cr["listed"] = MioTabContainers.all.contains { $0.id == c.id }
-                try? MioContainerStore.shared.remove(c.id)
-                cr["closedOnRemove"] = tabs.store.count == before && !tabs.store.tabs.contains { $0.containerID == c.id }
-                containersOK = cr["dataStore"] as? Bool == true && cr["mapped"] as? Bool == true && cr["childInherits"] as? Bool == true
-                    && cr["listed"] as? Bool == true && cr["closedOnRemove"] as? Bool == true
-                cr["ok"] = containersOK
-                r["containers"] = cr
-            } else {
-                r["containers"] = "unsupported"
-            }
             let n0 = r["initialCount"] as? Int ?? 0
-            let ok = (r["afterOpen"] as? Int) == n0 + 1 && (r["distinctWebViews"] as? Bool) == true && (r["switchedBack"] as? Bool) == true
+            let baseOK = (r["afterOpen"] as? Int) == n0 + 1 && (r["distinctWebViews"] as? Bool) == true && (r["switchedBack"] as? Bool) == true
                 && (r["afterClose"] as? Int) == n0 && (r["afterReopen"] as? Int) == n0 + 1 && (r["final"] as? Int) == n0
                 && (!MioWebKitCompat.isMac || (firstTop && (r["stripCells"] as? Int) == n0 + 1 && (r["webViewBelowChrome"] as? Bool) == true))
-                && containersOK
-            r["ok"] = ok
-            completion(r, ok)
+            containerCheck(tabs) { cr, containersOK in
+                r["containers"] = cr
+                let ok = baseOK && containersOK
+                r["ok"] = ok
+                completion(r, ok)
+            }
+        }
+    }
+
+    /// 容器（iOS 17 / macOS 14+）：容器标签用该容器的数据存储、标签映射、锁定继承、删除容器时关闭其标签
+    private static func containerCheck(_ tabs: MioTabsViewController, completion: @escaping (Any, Bool) -> Void) {
+        guard MioContainerStore.isSupported else { completion("unsupported", true); return }
+        guard let c = try? MioContainerStore.shared.create(name: "smoke-tabs", color: "green") else { completion("create failed", false); return }
+        var cr: [String: Any] = [:]
+        let before = tabs.store.count
+        let t = tabs.openTab("https://example.com/?c", activate: true, containerID: c.id)
+        let vc = t.flatMap { tabs.controller(for: $0.id) }
+        cr["tabContainer"] = t?.containerID ?? "nil"
+        cr["vcContainer"] = vc?.containerId ?? "nil"
+        var storeOK = vc?.containerId == c.id
+        if #available(iOS 17.0, macCatalyst 17.0, *) {
+            let ident = vc?.webView?.configuration.websiteDataStore.identifier?.uuidString.lowercased()
+            cr["dataStoreIdentifier"] = ident ?? "nil"
+            storeOK = storeOK && ident == c.id.lowercased()
+        }
+        cr["dataStore"] = storeOK
+        cr["mapped"] = t.map { MioContainerStore.shared.tab(MioTabContainers.key($0.id)).containerId == c.id } ?? false
+        if let t = t { tabs.setLocked(t.id, true) }
+        let child = tabs.openTab("https://example.com/?child", activate: false, from: vc, containerID: MioContainerCore.defaultId)
+        cr["childInherits"] = child?.containerID == c.id && child?.locked == true
+        cr["listed"] = MioTabContainers.all.contains { $0.id == c.id }
+        try? MioContainerStore.shared.remove(c.id)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            cr["closedOnRemove"] = tabs.store.count == before && !tabs.store.tabs.contains { $0.containerID == c.id }
+            let ok = cr["dataStore"] as? Bool == true && cr["mapped"] as? Bool == true && cr["childInherits"] as? Bool == true
+                && cr["listed"] as? Bool == true && cr["closedOnRemove"] as? Bool == true
+            cr["ok"] = ok
+            completion(cr, ok)
         }
     }
 }
