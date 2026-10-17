@@ -237,6 +237,7 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             }
             let started = Date()
             var ytFocus: [String: Any]?
+            var media: [String: Any]?
             func finish() {
                 let presented = MioBrowserViewController.topPresenter(self) is MioBrowserViewController
                 report["browserPresented"] = presented
@@ -272,8 +273,12 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                     report["youtubeFocus"] = "not checked (no YouTube page)"
                 }
                 report["youtubeFocusOK"] = ytFocusOK
+                // 媒体（MioMedia.swift）：YouTube 页面里媒体脚本已注入、SponsorBlock 纯逻辑可用；EME（YouTube / Spotify）只记录
+                report["media"] = media ?? "not checked"
+                let mediaOK = (media?["ok"] as? Bool) == true
+                report["mediaOK"] = mediaOK
                 let page = report["page"] as? [String: Any]
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
@@ -288,7 +293,10 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                         } else if let e = error {
                             NSLog("⚡️ Mio smoke: youtube focus check failed: %@", "\(e)")
                         }
-                        finish()
+                        MioMediaSmoke.run { m in
+                            media = m
+                            finish()
+                        }
                     }
                 } else {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { waitProbe(deadline) }

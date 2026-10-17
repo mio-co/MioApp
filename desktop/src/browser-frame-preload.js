@@ -19,6 +19,7 @@ if (result && result.background) {
   }catch(e){}})();`);
 }
 if (result && result.scripts) parts.push(result.scripts);
+if (result && result.media) parts.push(result.media);
 if (parts.length) {
   // webFrame.executeJavaScript 在主世界执行，不受页面 CSP 限制；preload 阶段调用早于页面自己的脚本
   webFrame.executeJavaScript(parts.join('\n;\n')).catch(() => undefined);

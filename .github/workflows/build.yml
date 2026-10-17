@@ -500,8 +500,8 @@ jobs:
           OUT="$PWD/smoke-diag/smoke-mac.json"
           MIO_SMOKE_OUT="$OUT" dmgroot/Mio.app/Contents/MacOS/App > smoke-diag/mac-smoke.log 2>&1 &
           PID=$!
-          for i in $(seq 1 150); do kill -0 $PID 2>/dev/null || break; sleep 1; done
-          if kill -0 $PID 2>/dev/null; then echo "still running after 150s"; kill $PID; fi
+          for i in $(seq 1 210); do kill -0 $PID 2>/dev/null || break; sleep 1; done
+          if kill -0 $PID 2>/dev/null; then echo "still running after 210s"; kill $PID; fi
           wait $PID
           CODE=$?
           echo "--- mac-smoke.log (Mio lines) ---"

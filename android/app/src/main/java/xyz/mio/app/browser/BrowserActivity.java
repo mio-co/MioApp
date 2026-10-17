@@ -102,6 +102,7 @@ public class BrowserActivity extends Activity {
     private final LinkedHashMap<String, ScriptHandler> hostScripts = new LinkedHashMap<>();
     private long hostScriptsBuiltAt;
     private YouTubeFocus ytFocus;
+    private MioMedia media;
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -155,6 +156,7 @@ public class BrowserActivity extends Activity {
     @Override
     protected void onDestroy() {
         worker.shutdownNow();
+        if (media != null) media.destroy();
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();
@@ -330,6 +332,9 @@ public class BrowserActivity extends Activity {
         // YouTube 防沉迷：先于通用脚本注册（通用脚本之后每次都会重新注册到最后）
         ytFocus = new YouTubeFocus(this, webView);
         ytFocus.install();
+        // 媒体：YouTube 脚本（SponsorBlock / MediaSession）、后台播放通知、Widevine 权限（MioMedia.java）
+        media = new MioMedia(this, webView);
+        media.install();
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -426,6 +431,12 @@ public class BrowserActivity extends Activity {
             @Override
             public void onHideCustomView() {
                 hideCustomView();
+            }
+
+            @Override
+            public void onPermissionRequest(android.webkit.PermissionRequest request) {
+                // 只放行 RESOURCE_PROTECTED_MEDIA_ID（Widevine，Spotify 等 DRM）；其它资源照旧拒绝
+                MioMedia.onPermissionRequest(request);
             }
         });
     }
@@ -781,6 +792,7 @@ public class BrowserActivity extends Activity {
         box.addView(allow);
 
         xyz.mio.app.update.UpdateUi.addSettingsSection(this, box);
+        if (media != null) media.addSettings(box);
 
         TextView lic = new TextView(this);
         lic.setText("\n开源组件：Brave adblock-rust（MPL-2.0）、AdGuard Scriptlets / ExtendedCss（GPL-3.0）；过滤列表：AdGuard（GPL-3.0）、EasyList / EasyPrivacy（GPL-3.0 / CC BY-SA 3.0）。详见仓库 NOTICE。");
