@@ -2,47 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>AttributionCopyEndpoint</key>
-	<string>https://adjust-skadnetwork.com</string>
-	<key>NSAdvertisingAttributionReportEndpoint</key>
-	<string>https://adjust-skadnetwork.com</string>
-	<key>LiteLLMAPIKey</key>
-	<string>$(LITE_LLM_API_KEY)</string>
-	<key>LiteLLMAPIEndpoint</key>
-	<string>$(LITE_LLM_API_ENDPOINT)</string>
-	<key>LiteLLMAPIModel</key>
-	<string>$(LITE_LLM_API_MODEL)</string>
-	<key>SKAdNetworkItems</key>
-	<array>
-		<dict>
-			<key>SKAdNetworkIdentifier</key>
-			<string>5v9n6f5x93.skadnetwork</string>
-		</dict>
-		<dict>
-			<key>SKAdNetworkIdentifier</key>
-			<string>su67r6k2v3.skadnetwork</string>
-		</dict>
-		<dict>
-			<key>SKAdNetworkIdentifier</key>
-			<string>4fzdc2evr5.skadnetwork</string>
-		</dict>
-		<dict>
-			<key>SKAdNetworkIdentifier</key>
-			<string>v9wttpbfk9.skadnetwork</string>
-		</dict>
-		<dict>
-			<key>SKAdNetworkIdentifier</key>
-			<string>n38lu8286q.skadnetwork</string>
-		</dict>
-		<dict>
-			<key>SKAdNetworkIdentifier</key>
-			<string>cstr6suwn9.skadnetwork</string>
-		</dict>
-		<dict>
-			<key>SKAdNetworkIdentifier</key>
-			<string>9yg77x724h.skadnetwork</string>
-		</dict>
-	</array>
 	<key>AppIdentifierPrefix</key>
 	<string>$(APP_IDENTIFIER_PREFIX)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
@@ -85,7 +44,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>10</string>
 	<key>CHANNEL</key>
 	<string>$(CHANNEL)</string>
 	<key>INIntentsSupported</key>
@@ -120,8 +79,6 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
-	<key>MozDevelopmentTeam</key>
-	<string>$(DEVELOPMENT_TEAM)</string>
 	<key>MozInternalURLScheme</key>
 	<string>$(MOZ_INTERNAL_URL_SCHEME)</string>
 	<key>MozPublicURLScheme</key>
@@ -134,15 +91,15 @@
 		<true/>
 	</dict>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>This lets Firefox transcribe your audio.</string>
+	<string>This lets Mio transcribe your audio.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Firefox can use your camera to scan QR codes or take photos and video.</string>
+	<string>Mio can use your camera to scan QR codes or take photos and video.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Firefox requires Face ID to access your saved passwords and payment methods.</string>
+	<string>Mio requires Face ID to access your saved passwords and payment methods.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Websites you visit may request your location.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Firefox uses your microphone to record and upload audio.</string>
+	<string>Mio uses your microphone to record and upload audio.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>This lets you save photos.</string>
 	<key>NSSupportsLiveActivities</key>
@@ -153,11 +110,11 @@
 		<string>org.mozilla.ios.firefox.browsing</string>
 	</array>
 	<key>NimbusURL</key>
-	<string>$(NIMBUS_URL)</string>
+	<string></string>
 	<key>PocketEnvironmentAPIKey</key>
-	<string>$(POCKET_API_KEY)</string>
+	<string></string>
 	<key>SentryCloudDSN</key>
-	<string>$(SENTRY_CLOUD_DSN)</string>
+	<string></string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>NewYorkMedium-Bold.otf</string>
@@ -185,7 +142,7 @@
 		</dict>
 	</dict>
 	<key>UIApplicationShortcutItems</key>
-	<array>		
+	<array>
 		<dict>
 			<key>UIApplicationShortcutItemIconFile</key>
 			<string>plusLarge</string>

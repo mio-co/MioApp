@@ -186,29 +186,7 @@ struct MainMenuConfigurationUtility: Equatable, FeatureFlaggable {
         return MenuSection(
             isHomepage: tabInfo.isHomepage,
             options: [
-                MenuElement(
-                    title: tabInfo.accountData.title,
-                    description: tabInfo.accountData.subtitle,
-                    iconName: Icons.avatarCircle,
-                    iconImage: profileImage,
-                    needsReAuth: tabInfo.accountData.needsReAuth,
-                    isEnabled: true,
-                    isActive: false,
-                    a11yLabel: "\(tabInfo.accountData.title) \(tabInfo.accountData.subtitle ?? "")",
-                    a11yHint: "",
-                    a11yId: AccessibilityIdentifiers.MainMenu.signIn,
-                    action: {
-                        store.dispatch(
-                            MainMenuAction(
-                                windowUUID: uuid,
-                                actionType: MainMenuActionType.tapNavigateToDestination,
-                                navigationDestination: MenuNavigationDestination(.syncSignIn),
-                                currentTabInfo: tabInfo,
-                                telemetryInfo: TelemetryInfo(isHomepage: tabInfo.isHomepage)
-                            )
-                        )
-                    }
-                ),
+                // Mio: Mozilla account sign-in row removed (no accounts / Sync)
                 MenuElement(
                     title: .MainMenu.OtherToolsSection.Settings,
                     iconName: Icons.settings,

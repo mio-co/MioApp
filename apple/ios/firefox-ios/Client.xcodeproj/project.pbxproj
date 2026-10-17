@@ -12624,6 +12624,7 @@
 		BCBE04E22E3A52D4004B6039 /* Summarize */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Summarize; sourceTree = "<group>"; };
 		ED85DD2C2DE669FF00487807 /* probes */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = probes; sourceTree = "<group>"; };
 		FC16179A00000000000000A1 /* WebCompat */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WebCompat; sourceTree = "<group>"; };
+		A13100000000000000000A01 /* Mio */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Mio; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -16930,6 +16931,7 @@
 				2140E4622E71FC240054173A /* RecordVisitObservationManager.swift */,
 				034784BA2E2690F600D04A84 /* TermsOfUse */,
 				FC16179A00000000000000A1 /* WebCompat */,
+				A13100000000000000000A01 /* Mio */,
 				81A3F6EE2C2DAED500BDD86B /* MainMenu */,
 				1D7B78952ADF324E0011E9F2 /* Event Queue */,
 				8A1E3BE428CBBF1E003388C4 /* SearchEngines */,
@@ -18660,6 +18662,7 @@
 				BCBE04E22E3A52D4004B6039 /* Summarize */,
 				ED85DD2C2DE669FF00487807 /* probes */,
 				FC16179A00000000000000A1 /* WebCompat */,
+				A13100000000000000000A01 /* Mio */,
 			);
 			name = Client;
 			packageProductDependencies = (

@@ -325,11 +325,11 @@ class AppSettingsTableViewController: SettingsTableViewController,
     override func generateSettings() -> [SettingSection] {
         setupDataSettings()
         var settings = [SettingSection]()
-        settings += getDefaultBrowserSetting()
-        settings += getAccountSetting()
+        // Mio: "Mio 扩展" first; no default-browser card (needs Apple's browser entitlement),
+        // no Mozilla account / Sync section, no Mozilla support / feedback / telemetry toggles.
+        settings += [SettingSection(children: [MioExtensionsSetting()])]
         settings += getGeneralSettings()
         settings += getPrivacySettings()
-        settings += getSupportSettings()
         settings += getAboutSettings()
 
         if showDebugSettings {
@@ -450,14 +450,8 @@ class AppSettingsTableViewController: SettingsTableViewController,
 
         privacySettings.append(ContentBlockerSetting(settings: self, settingsDelegate: parentCoordinator))
 
-        if let profile {
-            privacySettings.append(NotificationsSetting(theme: currentTheme(),
-                                                        profile: profile,
-                                                        settingsDelegate: parentCoordinator))
-        }
 
-        privacySettings.append(PrivacyPolicySetting(theme: currentTheme(),
-                                                    settingsDelegate: parentCoordinator))
+        // Mio: Mozilla privacy notice / notifications (Sync, Mozilla tips) removed
 
         return [SettingSection(title: NSAttributedString(string: .AppSettingsPrivacyTitle),
                                children: privacySettings)]
@@ -508,11 +502,10 @@ class AppSettingsTableViewController: SettingsTableViewController,
     }
 
     private func getAboutSettings() -> [SettingSection] {
-        let aboutSettings = [
-            AppStoreReviewSetting(settingsDelegate: parentCoordinator),
+        // Mio: keep version + licenses (MPL-2.0 notices); App Store review / Mozilla "your rights" removed
+        let aboutSettings: [Setting] = [
             VersionSetting(settingsDelegate: self),
-            LicenseAndAcknowledgementsSetting(settingsDelegate: parentCoordinator),
-            YourRightsSetting(settingsDelegate: parentCoordinator)
+            LicenseAndAcknowledgementsSetting(settingsDelegate: parentCoordinator)
         ]
 
         return [SettingSection(title: NSAttributedString(string: .AppSettingsAbout),

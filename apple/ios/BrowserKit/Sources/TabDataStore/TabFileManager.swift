@@ -76,8 +76,14 @@ public struct DefaultTabFileManager: TabFileManager {
     public func tabSessionDataDirectory() -> URL? {
         guard let containerID = BrowserKitInformation.shared.sharedContainerIdentifier else { return nil }
         var containerURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: containerID)
+            ?? mioFallbackContainerURL()
         containerURL = containerURL?.appendingPathComponent(PathInfo.rootDirectory)
         return containerURL?.appendingPathComponent(PathInfo.tabSessionData)
+    }
+
+    /// Mio: Application Support fallback when the app group container is unavailable.
+    private func mioFallbackContainerURL() -> URL? {
+        return fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
     }
 
     public func windowDataDirectory(isBackup: Bool) -> URL? {
@@ -90,7 +96,9 @@ public struct DefaultTabFileManager: TabFileManager {
             return nil
         }
         let pathInfo = isBackup ? PathInfo.backup : PathInfo.primary
-        guard let containerURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: containerID) else {
+        // Mio: sideloaded builds (SideStore / free Apple ID) may have no app group; keep tabs in the app sandbox
+        guard let containerURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: containerID)
+                ?? mioFallbackContainerURL() else {
             logger.log("Failed to get the window data container URL", level: .warning, category: .tabs)
             return nil
         }

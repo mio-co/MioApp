@@ -61,6 +61,8 @@ final class RemoteSettingsServiceSyncCoordinator: @unchecked Sendable, Notifiabl
     }
 
     private func didBecomeActive() {
+        // Mio: no periodic Mozilla Remote Settings sync; bundled RemoteSettingsData dumps are used instead.
+        guard MioBuild.remoteSettingsSyncEnabled else { return }
         // Don't perform sync immediately upon becoming active, give the app
         // some time to allow any other work or threads to take priority
         syncTimer?.invalidate()

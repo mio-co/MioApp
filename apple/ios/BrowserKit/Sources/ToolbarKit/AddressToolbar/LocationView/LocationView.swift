@@ -576,7 +576,12 @@ final class LocationView: UIView,
         paragraphStyle.lineBreakMode = .byTruncatingHead
 
         let urlString = urlAbsolutePath ?? ""
-        let (subdomain, normalizedHost) = URL.getSubdomainAndHost(from: urlString)
+        var (subdomain, normalizedHost) = URL.getSubdomainAndHost(from: urlString)
+        // Mio: internal mio:// pages (mio://home) show the product name instead of a host
+        if urlString.lowercased().hasPrefix("mio://") {
+            subdomain = nil
+            normalizedHost = "Mio"
+        }
 
         let (primaryColor, secondaryColor) = getPrimaryAndSecondaryColors()
         let attributedString = NSMutableAttributedString(

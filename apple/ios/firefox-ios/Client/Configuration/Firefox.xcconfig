@@ -6,9 +6,11 @@
 #include "Release.xcconfig"
 #include "version.xcconfig"
 
-MOZ_BUNDLE_DISPLAY_NAME = Firefox
-MOZ_BUNDLE_ID = org.mozilla.ios.Firefox
+// Mio: product name / bundle id (MPL-2.0 fork of firefox-ios)
+MOZ_BUNDLE_DISPLAY_NAME = Mio
+MOZ_BUNDLE_ID = xyz.mio.app
+MOZ_PRODUCT_NAME = Mio
 CODE_SIGN_ENTITLEMENTS = Client/Entitlements/FirefoxApplication.entitlements
 CHANNEL = release
 OTHER_SWIFT_FLAGS = $(OTHER_SWIFT_FLAGS_common) -DMOZ_CHANNEL_$(CHANNEL)
-MOZ_INTERNAL_URL_SCHEME = firefox-internal
+MOZ_INTERNAL_URL_SCHEME = mio-internal

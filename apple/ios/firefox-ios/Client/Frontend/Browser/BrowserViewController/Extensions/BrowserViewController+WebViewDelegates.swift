@@ -577,6 +577,13 @@ extension BrowserViewController: WKNavigationDelegate {
             return
         }
 
+        // Mio: mio://home (typed, linked or restored) loads the MioCore page behind it
+        if MioBuild.isMioScheme(url) {
+            decisionHandler(.cancel)
+            webView.load(URLRequest(url: MioBuild.resolve(url)))
+            return
+        }
+
         // Bugzilla #1979499
         if (url.scheme ?? "").lowercased() == "fido" {
             decisionHandler(.cancel)

@@ -28,6 +28,9 @@ final class AppLaunchUtil: FeatureFlaggable, Sendable {
 
     @MainActor
     func setUpPreLaunchDependencies() {
+        // Mio: force telemetry / crash reports / studies off and apply mio://home + first-run defaults
+        MioBuild.applyDefaults(prefs: profile.prefs)
+
         // If the 'Save logs to Files app on next launch' toggle
         // is turned on in the Settings app, copy over old logs.
         if DebugSettingsBundleOptions.saveLogsToDocuments {
@@ -47,9 +50,13 @@ final class AppLaunchUtil: FeatureFlaggable, Sendable {
         }
 
         // Need to get "settings.sendCrashReports" this way so that Sentry can be initialized before getting the Profile.
-        let sendCrashReports = NSUserDefaultsPrefs(prefix: "profile").boolForKey(AppConstants.prefSendCrashReports) ?? true
+        let sendCrashReports = MioBuild.crashReportingEnabled &&
+            (NSUserDefaultsPrefs(prefix: "profile").boolForKey(AppConstants.prefSendCrashReports) ?? true)
 
-        if termsOfServiceManager.isFeatureEnabled {
+        if !MioBuild.telemetryEnabled {
+            // Mio: Sentry off, Glean never initialized (no upload, no contextual id for sponsored tiles)
+            logger.setup(sendCrashReports: false)
+        } else if termsOfServiceManager.isFeatureEnabled {
             // Two cases:
             // 1. when ToS screen has been presented and user accepted it
             // 2. or when ToS screen is not presented because is not fresh install
@@ -76,10 +83,13 @@ final class AppLaunchUtil: FeatureFlaggable, Sendable {
         setMenuItems()
 
         // Logs conversion activity and records any conversion events
-        let conversionActivityLogger = ConversionActivityLogger()
-        conversionActivityLogger.recordFirstDayAfterInstallTimestampIfNeeded()
-        conversionActivityLogger.recordActiveToday()
-        ConversionEventTracker().recordActivityEvents()
+        // Mio: no ad attribution (SKAdNetwork / AdAttributionKit conversion values)
+        if MioBuild.telemetryEnabled {
+            let conversionActivityLogger = ConversionActivityLogger()
+            conversionActivityLogger.recordFirstDayAfterInstallTimestampIfNeeded()
+            conversionActivityLogger.recordActiveToday()
+            ConversionEventTracker().recordActivityEvents()
+        }
 
         // Initialize app services ( including NSS ). Must be called before any other calls to rust components.
         MozillaAppServices.initialize()
@@ -126,6 +136,11 @@ final class AppLaunchUtil: FeatureFlaggable, Sendable {
             }
         }
 
+        // Mio: no Mozilla accounts / Sync. The account manager is never created, so every
+        // RustFirefoxAccounts query behaves as "no account"; just release the startup dependency.
+        if !MioBuild.mozillaAccountsEnabled {
+            AppEventQueue.signal(event: .accountManagerInitialized)
+        } else {
         RustFirefoxAccounts.startup(prefs: profile.prefs) { manager in
             self.logger.log("RustFirefoxAccounts started", level: .info, category: .sync)
             AppEventQueue.signal(event: .accountManagerInitialized)
@@ -133,6 +148,7 @@ final class AppLaunchUtil: FeatureFlaggable, Sendable {
             if let accountUid = manager.accountProfile()?.uid {
                 UserTelemetry().setFirefoxAccountID(uid: accountUid)
             }
+        }
         }
 
         // Add swizzle on UIViewControllers to automatically log when there's a new view appearing or disappearing

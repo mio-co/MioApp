@@ -19,13 +19,15 @@ class NewTabHomePageAccessors {
     }
 
     static func getDefaultHomePageString(_ prefs: Prefs) -> String? {
-        return prefs.stringForKey(PrefsKeys.KeyDefaultHomePageURL)
+        // Mio: fall back to mio://home content
+        return prefs.stringForKey(PrefsKeys.KeyDefaultHomePageURL) ?? MioBuild.homeContentURL.absoluteString
     }
 }
 
 class HomeButtonHomePageAccessors {
     static func getHomePage(_ prefs: Prefs) -> URL? {
-        let string = prefs.stringForKey(PrefsKeys.HomeButtonHomePageURL)
+        // Mio: fall back to mio://home content
+        let string = prefs.stringForKey(PrefsKeys.HomeButtonHomePageURL) ?? MioBuild.homeContentURL.absoluteString
         guard let urlString = string else { return nil }
         return URL(string: urlString)
     }

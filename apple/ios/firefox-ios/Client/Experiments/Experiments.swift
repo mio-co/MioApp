@@ -166,6 +166,9 @@ enum Experiments {
                                      description: err.localizedDescription)
         }
 
+        // Mio: no Nimbus experiments / rollouts. NimbusDisabled serves the feature manifest defaults.
+        guard MioBuild.experimentsEnabled else { return NimbusDisabled.shared }
+
         let initialExperiments = Bundle.main.url(forResource: "initial_experiments", withExtension: "json")
 
         guard let dbPath = Experiments.dbPath else {

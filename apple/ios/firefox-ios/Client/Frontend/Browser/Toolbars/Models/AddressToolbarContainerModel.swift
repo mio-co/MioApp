@@ -71,7 +71,7 @@ final class AddressToolbarContainerModel: Equatable {
             lockIconImageName: lockIconImageName,
             lockIconNeedsTheming: lockIconNeedsTheming,
             safeListedURLImageName: safeListedURLImageName,
-            url: isEmptySearch ? nil : url,
+            url: isEmptySearch ? nil : MioBuild.displayURL(for: url), // Mio: mio://home shows as "Mio"
             droppableUrl: droppableUrl,
             searchTerm: isEmptySearch ? nil : term,
             isEditing: isEditing,

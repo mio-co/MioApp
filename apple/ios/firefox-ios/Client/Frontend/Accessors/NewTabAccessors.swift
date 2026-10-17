@@ -9,7 +9,8 @@ import Shared
 struct NewTabAccessors {
     static let NewTabPrefKey = PrefsKeys.KeyNewTab
     static let HomePrefKey = PrefsKeys.HomePageTab
-    static let Default = NewTabPage.topSites
+    // Mio: default new tab / home = mio://home (custom URL page, see MioBuild)
+    static let Default = NewTabPage.homePage
 
     static func getNewTabPage(_ prefs: Prefs) -> NewTabPage {
         guard let raw = prefs.stringForKey(NewTabPrefKey) else { return Default }
@@ -18,7 +19,7 @@ struct NewTabAccessors {
         // Check if the user has chosen to open a homepage, but no homepage is set,
         // then use the default.
         if option == .homePage && NewTabHomePageAccessors.getHomePage(prefs) == nil {
-            return Default
+            return .topSites
         }
         return option
     }
@@ -37,7 +38,7 @@ struct NewTabAccessors {
         // Check if the user has chosen to open a homepage, but no homepage is set,
         // then use the default.
         if option == .homePage && HomeButtonHomePageAccessors.getHomePage(prefs) == nil {
-            return Default
+            return .topSites
         }
         return option
     }

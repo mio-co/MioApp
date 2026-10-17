@@ -134,11 +134,14 @@ class AppDelegate: UIResponder,
         backgroundWorkUtility?.registerUtility(BackgroundSyncUtility(profile: profile, application: application))
         backgroundWorkUtility?.registerUtility(BackgroundNotificationSurfaceUtility())
 
-        if let firefoxSuggest = profile.firefoxSuggest {
-            suggestBackgroundUtility = BackgroundFirefoxSuggestIngestUtility(firefoxSuggest: firefoxSuggest)
-        }
+        // Mio: no Firefox Suggest ingestion (Mozilla Remote Settings / Merino), no MetricKit → Glean upload
+        if MioBuild.telemetryEnabled {
+            if let firefoxSuggest = profile.firefoxSuggest {
+                suggestBackgroundUtility = BackgroundFirefoxSuggestIngestUtility(firefoxSuggest: firefoxSuggest)
+            }
 
-        metricKitWrapper.beginObservingMXPayloads()
+            metricKitWrapper.beginObservingMXPayloads()
+        }
 
         let topSitesProvider = TopSitesProviderImplementation(
             placesFetcher: profile.places,

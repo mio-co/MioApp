@@ -137,6 +137,8 @@ enum Route {
     enum AppAction: String, CaseIterable, Equatable {
         case closePrivateTabs = "close-private-tabs"
         case showIntroOnboarding = "show-intro-onboarding"
+        /// Mio: opens the tab overview (used by the CI simulator smoke test)
+        case showTabTray = "show-tab-tray"
     }
 
     /// An enumeration representing different sections of the default browser settings.

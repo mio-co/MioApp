@@ -46,6 +46,11 @@ final class RouteBuilder {
             break
         }
 
+        // Mio: mio://home opened from outside the app (the public URL scheme is "mio")
+        if MioBuild.isMioScheme(url), url.host?.lowercased() == "home" {
+            return .search(url: MioBuild.homeContentURL, isPrivate: isPrivate)
+        }
+
         guard let urlScanner = URLScanner(url: url) else { return nil }
 
         if let host = parseURLHost(url) {
