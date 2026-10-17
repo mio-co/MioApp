@@ -261,6 +261,16 @@ final class MioPageTools: NSObject, WKScriptMessageHandler {
 
     @objc private func readerTapped() { openReader(force: false) }
 
+    // MARK: 手机端页面菜单（MioMobileChrome.swift）
+
+    var isSiteDark: Bool { store.isDarkEnabled(host: webView?.url?.host) }
+    var isGlobalDark: Bool { store.darkGlobal }
+    func toggleSiteDark() { setSiteDark(!isSiteDark) }
+    func toggleGlobalDark() {
+        store.darkGlobal = !store.darkGlobal
+        afterDarkChange()
+    }
+
     // MARK: 阅读模式
 
     func openReader(force: Bool) {

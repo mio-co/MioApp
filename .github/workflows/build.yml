@@ -167,6 +167,9 @@ jobs:
           SMOKE_WAIT: '20'
         run: bash scripts/sim-launch-smoke.sh build-sim/Build/Products/Release-iphonesimulator/App.app sim-smoke ios-sim
 
+      - name: iPhone Safari-style browser layout (compact / bottom / top screenshots)
+        run: bash scripts/sim-layout-smoke.sh build-sim/Build/Products/Release-iphonesimulator/App.app sim-smoke/layout
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

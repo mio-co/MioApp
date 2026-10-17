@@ -371,7 +371,9 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     /// 媒体（后台续播 / 锁屏控制兜底 / SponsorBlock 请求兜底），MioMedia.swift
     private var media: MioMediaController?
     /// 阅读模式 / 强制深色 / 存到 Mio（MioPageTools.swift）
-    private var pageTools: MioPageTools!
+    var pageTools: MioPageTools!
+    /// iPhone：Safari 式布局（MioMobileChrome.swift）；iPad / Mac 为 nil
+    var mobileChrome: MioMobileChrome?
     /// 这个浏览器 WebView 用的容器（登录状态隔离，MioContainerStore.swift）。必须在 viewDidLoad 之前设置；默认 = 原来的浏览数据
     var containerId: String = MioContainerCore.defaultId
 
@@ -779,6 +781,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
     /// 顶 / 底栏让出的位置：显示时 = 地址栏高度（不含状态栏）/ 工具栏高度；隐藏时 = 域名条 / 0
     private func desiredInsets() -> UIEdgeInsets {
         // 顶部工具栏（Mac / iPad）：网页从标签条下面开始，不用 inset 让位
+        if let m = mobileChrome { return m.insets(hidden: chromeHidden) }
         if tabChrome?.isTop == true { return chromeHidden ? UIEdgeInsets(top: Self.miniBarHeight, left: 0, bottom: 0, right: 0) : .zero }
         if chromeHidden { return UIEdgeInsets(top: Self.miniBarHeight, left: 0, bottom: 0, right: 0) }
         let top = max(0, topBar.frame.maxY - view.safeAreaInsets.top)
@@ -807,7 +810,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     private func metrics(_ sv: UIScrollView) -> MioToolbarAutoHide.Metrics {
         MioToolbarAutoHide.Metrics(offsetY: Double(sv.contentOffset.y), contentHeight: Double(sv.contentSize.height),
-                                   viewportHeight: Double(sv.bounds.height), hiddenTopInset: Double(Self.miniBarHeight),
+                                   viewportHeight: Double(sv.bounds.height), hiddenTopInset: Double(mobileChrome?.hiddenTopInset ?? Self.miniBarHeight),
                                    bottomInset: Double(sv.contentInset.bottom))
     }
 
@@ -826,7 +829,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
     @objc private func miniBarTapped() { showChrome(animated: true) }
 
-    private func setChromeHidden(_ hide: Bool, animated: Bool) {
+    func setChromeHidden(_ hide: Bool, animated: Bool) {
         guard isViewLoaded, hide != chromeHidden else { return }
         view.layoutIfNeeded()
         let sv = webView.scrollView
@@ -834,7 +837,9 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         let maxY = sv.contentSize.height - sv.bounds.height + sv.contentInset.bottom
         let atBottom = !hide && sv.contentOffset.y >= maxY - 2 && sv.contentSize.height > sv.bounds.height
         chromeHidden = hide
-        if let tc = tabChrome, tc.isTop, let top = tc.top {
+        if let m = mobileChrome {
+            m.prepareCollapse(hide)
+        } else if let tc = tabChrome, tc.isTop, let top = tc.top {
             top.constant = hide ? -(toolbar.bounds.height + tc.stripHeight) : 0
         } else {
             topBarTop.constant = hide ? -topBar.bounds.height : 0
@@ -844,6 +849,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         animatingChrome = true
         let changes = {
             self.view.layoutIfNeeded()
+            self.mobileChrome?.applyCollapse(hide)
             self.miniBar.alpha = hide ? 1 : 0
             self.topBar.alpha = hide ? 0 : 1
             self.toolbar.alpha = hide ? 0 : 1
@@ -1175,6 +1181,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case translate
         case userScripts, webrtc
         case desktopParity // Mac：页面缩放 / YouTube（MioDesktopParity.swift）
+        case browserLayout // iPhone Safari 式布局（MioMobileChrome.swift）
     }
 
     private let currentHost: String?
@@ -1235,6 +1242,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
 
         var browse: [Row] = [.youtubeFocus]
         if MioBrowserSettings.youtubeFocus { browse.append(contentsOf: [.youtubeInterval, .youtubePlayables]) }
+        if MioMobileLayoutSettingsUI.applies { browse.append(.browserLayout) }
         browse.append(.hideToolbars)
         browse.append(.media)
         s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留），可选屏蔽首页的游戏大本营（Playables，直接打开 /playables 不受影响）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
@@ -1352,6 +1360,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.textLabel?.text = "屏蔽游戏大本营（Playables）"
             cell.detailTextLabel?.text = "隐藏首页 / 推荐里的小游戏区块和入口"
             cell.accessoryView = makeSwitch(MioBrowserSettings.youtubeHidePlayables) { MioBrowserSettings.youtubeHidePlayables = $0 }
+        case .browserLayout:
+            MioMobileLayoutSettingsUI.configure(cell)
         case .hideToolbars:
             cell.textLabel?.text = "滚动时隐藏工具栏"
             cell.detailTextLabel?.text = MioWebKitCompat.isMac ? "Mac 默认关闭" : "向上滚动或点顶部域名条恢复"
@@ -1469,6 +1479,8 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case .updateCheck:
             MioUpdater.shared.check(manual: true, from: self) { [weak self] in self?.rebuild() }
             rebuild()
+        case .browserLayout:
+            MioMobileLayoutSettingsUI.choose(from: self, sourceView: tableView.cellForRow(at: indexPath)) { [weak self] in self?.rebuild() }
         case .media:
             navigationController?.pushViewController(MioMediaSettingsViewController(), animated: true)
         case .containers:

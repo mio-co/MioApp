@@ -15,6 +15,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // 内置浏览器广告拦截：后台刷新任务必须在启动结束前注册；规则加载 / 首次编译在后台队列
         MioAdblockBackground.register()
         MioAdblock.shared.start()
+        MioMobileChromeSmoke.runIfRequested()   // 仅 CI 模拟器带 -mioLayoutSmoke YES 启动时
         return true
     }
 

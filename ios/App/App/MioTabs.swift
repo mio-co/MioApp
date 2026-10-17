@@ -547,10 +547,8 @@ extension MioBrowserViewController {
         let chrome = MioTabChrome(browser: self)
         tabChrome = chrome
         guard Self.usesTopChrome else {
-            var items = toolbar.items ?? []
-            items.append(UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil))
-            items.append(chrome.tabsItem)
-            toolbar.items = items
+            // iPhone：Safari（iOS 27）式布局，原来的顶栏 / 底部工具栏隐藏（MioMobileChrome.swift）
+            MioMobileChrome.install(on: self)
             return
         }
         chrome.installTop()
@@ -643,6 +641,7 @@ final class MioTabChrome {
         if !isTop {
             let img = (1...50).contains(count) ? UIImage(systemName: "\(count).square") : nil
             tabsItem.image = img ?? UIImage(systemName: "square.on.square")
+            browser?.mobileChrome?.tabCountChanged(count)
         }
         strip?.reload()
     }
