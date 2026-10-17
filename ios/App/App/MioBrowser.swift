@@ -34,6 +34,7 @@ enum MioBrowserSettings {
 
     private static let youtubeFocusKey = "mio.browser.youtubeFocus"
     private static let youtubeFocusIntervalKey = "mio.browser.youtubeFocusInterval"
+    private static let youtubePlayablesKey = "mio.browser.youtubeFocusPlayables"
     private static let hideToolbarsOnScrollKey = "mio.browser.hideToolbarsOnScroll"
 
     /// YouTube 防沉迷（隐藏 Shorts 推荐 / 入口、App 推广；看 Shorts 时定时提醒）。默认开
@@ -49,6 +50,12 @@ enum MioBrowserSettings {
             return v >= 5 ? v : MioWebCompat.youtubeFocusDefaultInterval
         }
         set { UserDefaults.standard.set(newValue, forKey: youtubeFocusIntervalKey); changed() }
+    }
+
+    /// YouTube 防沉迷的子开关：屏蔽首页 / 推荐里的游戏大本营（Playables）和导航入口。默认开
+    static var youtubeHidePlayables: Bool {
+        get { UserDefaults.standard.object(forKey: youtubePlayablesKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: youtubePlayablesKey); changed() }
     }
 
     /// 滚动时自动隐藏地址栏和工具栏。iPhone / iPad 默认开，Mac 默认关（桌面窗口不需要）
@@ -626,7 +633,8 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         if MioBrowserSettings.youtubeFocus {
             // YouTube 防沉迷：所有页面都注入，脚本自己只在 *.youtube.com 主框架生效（WKUserScript 不能按域名过滤）。
             // 排在后台播放脚本之前；可见性用 window 捕获阶段 + Document.prototype 的真实 getter，不受它伪造 hidden 的影响
-            scripts.append(WKUserScript(source: MioWebCompat.youtubeFocusScript(intervalSeconds: MioBrowserSettings.youtubeFocusInterval),
+            scripts.append(WKUserScript(source: MioWebCompat.youtubeFocusScript(intervalSeconds: MioBrowserSettings.youtubeFocusInterval,
+                                                                                  hidePlayables: MioBrowserSettings.youtubeHidePlayables),
                                         injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
         if MioWebKitCompat.isMac {
@@ -1065,7 +1073,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 
 final class MioBrowserSettingsViewController: UITableViewController {
     private enum Row {
-        case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, youtubeFocus, youtubeInterval, hideToolbars, passkeyInfo, openInSafari(URL), licenses, version
+        case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, youtubeFocus, youtubeInterval, youtubePlayables, hideToolbars, passkeyInfo, openInSafari(URL), licenses, version
         case updateAuto, updateCheck // 软件更新（MioUpdater.swift）
     }
 
@@ -1126,9 +1134,9 @@ final class MioBrowserSettingsViewController: UITableViewController {
         s.append(("白名单（不拦截的网站）", "包含其所有子域名。左滑删除。", allow))
 
         var browse: [Row] = [.youtubeFocus]
-        if MioBrowserSettings.youtubeFocus { browse.append(.youtubeInterval) }
+        if MioBrowserSettings.youtubeFocus { browse.append(contentsOf: [.youtubeInterval, .youtubePlayables]) }
         browse.append(.hideToolbars)
-        s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
+        s.append(("浏览体验", "YouTube 防沉迷：隐藏首页 / 推荐 / 搜索里的 Shorts 和导航栏的 Shorts 入口、「打开 App」推广（频道页的 Shorts 保留），可选屏蔽首页的游戏大本营（Playables，直接打开 /playables 不受影响）；看 Shorts 时立即提醒一次，之后按间隔提醒（只计页面在前台的时间，离开 Shorts 即重新计时）。对之后打开的页面生效。\n滚动时隐藏工具栏：向下滚动隐藏地址栏和底部工具栏，向上滚动、滚到顶部 / 底部或点顶部域名条恢复。", browse))
         s.append(("外链", "MioCore 里点外部链接默认在内置浏览器打开；打开后也可点工具栏的「用 Safari 打开」（\(Self.safariHint)）改用 Safari。", [.preferSafari, .backgroundPlayback]))
         var login: [Row] = [.passkeyInfo]
         if let u = currentURL { login.append(.openInSafari(u)) }
@@ -1233,6 +1241,10 @@ final class MioBrowserSettingsViewController: UITableViewController {
             cell.detailTextLabel?.text = Self.intervalText(MioBrowserSettings.youtubeFocusInterval)
             cell.accessoryType = .disclosureIndicator
             cell.selectionStyle = .default
+        case .youtubePlayables:
+            cell.textLabel?.text = "屏蔽游戏大本营（Playables）"
+            cell.detailTextLabel?.text = "隐藏首页 / 推荐里的小游戏区块和入口"
+            cell.accessoryView = makeSwitch(MioBrowserSettings.youtubeHidePlayables) { MioBrowserSettings.youtubeHidePlayables = $0 }
         case .hideToolbars:
             cell.textLabel?.text = "滚动时隐藏工具栏"
             cell.detailTextLabel?.text = MioWebKitCompat.isMac ? "Mac 默认关闭" : "向上滚动或点顶部域名条恢复"

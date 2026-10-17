@@ -29,6 +29,12 @@ android {
             }
         }
     }
+    // 三端共用的注入脚本（shared/scripts/*.js）直接作为 assets 打包：APK 里是 assets/scripts/<name>.js，不复制、不会漂移
+    sourceSets {
+        main {
+            assets.srcDirs += ["${rootDir}/../shared"]
+        }
+    }
     lint {
         abortOnError false
         checkReleaseBuilds false

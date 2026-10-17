@@ -20,6 +20,11 @@ function render(s) {
   $('preferSystemBrowser').checked = !!st.preferSystemBrowser;
   $('backgroundPlayback').checked = !!st.backgroundPlayback;
   $('adblockEnabled').checked = !!st.adblockEnabled;
+  $('youtubeFocus').checked = !!st.youtubeFocus;
+  $('youtubeFocusPlayables').checked = !!st.youtubeFocusPlayables;
+  $('youtubeFocusPlayables').disabled = !st.youtubeFocus;
+  $('youtubeFocusInterval').value = String(st.youtubeFocusInterval);
+  $('youtubeFocusInterval').disabled = !st.youtubeFocus;
 
   const host = s.currentHost;
   $('siteRow').hidden = !host;
@@ -65,7 +70,8 @@ function render(s) {
   $('about').textContent = `Mio ${s.appVersion} · ${s.platform}`;
 }
 
-for (const key of ['preferSystemBrowser', 'backgroundPlayback', 'adblockEnabled']) {
+$('youtubeFocusInterval').addEventListener('change', (e) => api.set('youtubeFocusInterval', Number(e.target.value)).then(render));
+for (const key of ['preferSystemBrowser', 'backgroundPlayback', 'adblockEnabled', 'youtubeFocus', 'youtubeFocusPlayables']) {
   $(key).addEventListener('change', (e) => api.set(key, e.target.checked).then(render));
 }
 $('siteEnabled').addEventListener('change', (e) => snap && snap.currentHost && api.setSite(snap.currentHost, e.target.checked).then(render));

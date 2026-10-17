@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 只在 debug 包：内置浏览器可被 adb 直接打开（模拟器冒烟：am start -n xyz.mio.app/.browser.BrowserActivity -e url …）。release 包仍然 exported=false -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <activity
+            android:name=".browser.BrowserActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+    </application>
+</manifest>

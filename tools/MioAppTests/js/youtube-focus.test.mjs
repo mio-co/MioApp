@@ -6,7 +6,7 @@ import { JSDOM } from 'jsdom';
 import { extractScript } from './harness.mjs';
 
 const TEMPLATE = extractScript('youtubeFocus');
-const script = (ms = 60000) => TEMPLATE.replace('__MIO_YT_INTERVAL_MS__', String(ms));
+const script = (ms = 60000) => TEMPLATE.replace('__MIO_YT_INTERVAL_MS__', String(ms)).replace('__MIO_YT_PLAYABLES__', '1');
 
 const PAGE = `<!doctype html><html><head><meta name="apple-itunes-app" content="app-id=544007664"></head><body>
 <ytd-app>

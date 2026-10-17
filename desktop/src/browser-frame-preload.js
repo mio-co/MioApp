@@ -23,3 +23,5 @@ if (parts.length) {
   // webFrame.executeJavaScript 在主世界执行，不受页面 CSP 限制；preload 阶段调用早于页面自己的脚本
   webFrame.executeJavaScript(parts.join('\n;\n')).catch(() => undefined);
 }
+// YouTube 防沉迷（共享脚本，只在 *.youtube.com 顶层 frame 有内容）：单独执行，不受前面 scriptlets 运行时异常影响
+if (result && result.ytFocus) webFrame.executeJavaScript(result.ytFocus).catch(() => undefined);

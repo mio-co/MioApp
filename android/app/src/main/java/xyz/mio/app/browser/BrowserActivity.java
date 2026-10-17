@@ -101,6 +101,7 @@ public class BrowserActivity extends Activity {
     private ScriptHandler genericHandler;
     private final LinkedHashMap<String, ScriptHandler> hostScripts = new LinkedHashMap<>();
     private long hostScriptsBuiltAt;
+    private YouTubeFocus ytFocus;
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -326,6 +327,9 @@ public class BrowserActivity extends Activity {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
         docStartSupported = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT);
         webView.addJavascriptInterface(new Bridge(), "MioAdblockBridge");
+        // YouTube 防沉迷：先于通用脚本注册（通用脚本之后每次都会重新注册到最后）
+        ytFocus = new YouTubeFocus(this, webView);
+        ytFocus.install();
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -359,13 +363,21 @@ public class BrowserActivity extends Activity {
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 topUrl = url;
                 prepare(url);
+                ytFocus.onPage(url);
                 updateAddress();
                 updateShield();
                 updateButtons();
             }
 
             @Override
+            public void onPageCommitVisible(WebView view, String url) {
+                ytFocus.onPage(url);
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
+                ytFocus.onPage(url);
+                ytFocus.reportState(url);
                 updateAddress();
                 updateButtons();
             }
@@ -737,6 +749,12 @@ public class BrowserActivity extends Activity {
         status.setText(statusText());
         status.setTextIsSelectable(true);
         box.addView(status);
+
+        YouTubeFocus.addSettings(this, box, () -> {
+            ytFocus.install();
+            String u = webView.getUrl();
+            if (YouTubeFocus.isYouTubeUrl(u)) webView.reload();
+        });
 
         Button update = new Button(this);
         update.setText("立即更新规则");

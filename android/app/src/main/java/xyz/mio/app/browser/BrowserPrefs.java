@@ -53,6 +53,12 @@ public final class BrowserPrefs {
     public static boolean preferSystemBrowser(Context c) { return read(c).optBoolean("preferSystem", false); }
     public static void setPreferSystemBrowser(Context c, boolean v) { JSONObject o = read(c); try { o.put("preferSystem", v); } catch (Exception ignored) {} write(c, o); }
 
+    // 通用键值（YouTube 防沉迷等独立功能用自己的键）
+    public static boolean getBoolean(Context c, String key, boolean def) { return read(c).optBoolean(key, def); }
+    public static void putBoolean(Context c, String key, boolean v) { JSONObject o = read(c); try { o.put(key, v); } catch (Exception ignored) {} write(c, o); }
+    public static int getInt(Context c, String key, int def) { return read(c).optInt(key, def); }
+    public static void putInt(Context c, String key, int v) { JSONObject o = read(c); try { o.put(key, v); } catch (Exception ignored) {} write(c, o); }
+
     public static List<String> allowlist(Context c) {
         List<String> out = new ArrayList<>();
         JSONArray a = read(c).optJSONArray("allowlist");

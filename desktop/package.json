@@ -49,6 +49,11 @@
       {
         "from": "assets/adblock",
         "to": "adblock"
+      },
+      {
+        "from": "../shared/scripts",
+        "to": "mio-scripts",
+        "filter": ["*.js"]
       }
     ],
     "win": {
