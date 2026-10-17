@@ -98,6 +98,12 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // 浏览器收起 / App 重启后有上次的标签：右下角显示标签数角标
+        MioTabsBadge.attachIfNeeded(to: self)
+    }
+
     deinit {
         updateTimer?.invalidate()
         webView?.configuration.userContentController.removeAllScriptMessageHandlers()
@@ -237,12 +243,14 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
             }
             let started = Date()
             var ytFocus: [String: Any]?
+            var tabsOK = false
             var media: [String: Any]?
             var translate: [String: Any]?
             // 用户脚本 + WebRTC 控制（MioUserScripts.swift 的 MioUserScriptSmoke）
             var extrasOK = false
             func finish() {
-                let presented = MioBrowserViewController.topPresenter(self) is MioBrowserViewController
+                let top = MioBrowserViewController.topPresenter(self)
+                let presented = top is MioBrowserViewController || top is MioTabsViewController
                 report["browserPresented"] = presented
                 report["adblockReady"] = MioAdblock.shared.snapshot.ready
                 report["ruleLists"] = MioAdblock.shared.snapshot.ruleListCount
@@ -284,7 +292,8 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                 let translateOK = (translate?["installed"] as? Bool) == true && (translate?["bridge"] as? Bool) == true
                 report["translateOK"] = translateOK
                 let page = report["page"] as? [String: Any]
-                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK
+                report["tabsOK"] = tabsOK
+                let ok = presented && MioAdblock.shared.snapshot.ready && (page?["open"] as? String) == "function" && desktopOK && ytFocusOK && mediaOK && translateOK && extrasOK && tabsOK
                 report["ok"] = ok
                 if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
                     try? data.write(to: URL(fileURLWithPath: out))
@@ -307,7 +316,13 @@ final class MioDesktopViewController: UIViewController, WKNavigationDelegate, WK
                                     report["userscriptsWebRTC"] = r
                                     extrasOK = ok
                                     NSLog("⚡️ Mio smoke: userscripts/WebRTC %@ %@", ok ? "OK" : "FAILED", "\(r)")
-                                    finish()
+                                    // 多标签页（MioTabs.swift）：第二个标签、切换、关闭、恢复；顶部工具栏 + 标签条；网页在工具栏下面；容器标签
+                                    MioTabsSmoke.run { r, ok in
+                                        report["tabs"] = r
+                                        tabsOK = ok
+                                        NSLog("⚡️ Mio smoke: tabs %@ %@", ok ? "OK" : "FAILED", "\(r)")
+                                        finish()
+                                    }
                                 }
                             }
                         }

@@ -340,6 +340,7 @@ jobs:
             bash scripts/android-emulator-smoke.sh "$(ls apk/*-android-debug.apk | head -1)" android-smoke
             bash scripts/android-ytfocus-smoke.sh android-smoke/ytfocus
             bash scripts/android-containers-smoke.sh android-smoke/containers
+            bash scripts/android-tabs-smoke.sh android-smoke/tabs
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -401,6 +402,16 @@ jobs:
           cat "$OUT" || true
           echo "exit $CODE"
           test "$CODE" = 0
+
+      - name: Upload smoke result (JSON + toolbar / page screenshots)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke
+          path: |
+            ${{ runner.temp }}/smoke-win.json
+            ${{ runner.temp }}/smoke-*.png
+          retention-days: 14
 
       - name: List artifacts (+ Authenticode status, expected NotSigned)
         run: |

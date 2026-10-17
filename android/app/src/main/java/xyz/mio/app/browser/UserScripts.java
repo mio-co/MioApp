@@ -77,6 +77,8 @@ public final class UserScripts implements WebViewCompat.WebMessageListener {
     static final String ASSET = "mio-userscript-runtime.js";
     static final String BRIDGE = "mioUserScriptNative";
     public static final int REQUEST_IMPORT = 0x5553;
+    /** 多标签：每个标签的 WebView 一个实例；脚本列表 / GM 值变了要通知其他标签的实例重新注册 */
+    private static final java.util.List<UserScripts> LIVE = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     private final Activity act;
     private final WebView webView;
@@ -179,6 +181,24 @@ public final class UserScripts implements WebViewCompat.WebMessageListener {
             } catch (Exception ignored) {}
         }
         writeAtomic(file(), a.toString());
+        for (UserScripts o : LIVE) if (o != this) o.main.post(o::reloadFromDisk);
+    }
+
+    /** 别的标签改了脚本列表（安装 / 删除 / 启用）：重新读取并注册（对之后加载的页面生效） */
+    private void reloadFromDisk() {
+        load();
+        values.clear();
+        reinstall();
+    }
+
+    /** 别的标签写了某个脚本的 GM 值：丢掉缓存，重新注册（注入代码带值快照） */
+    private void valuesChanged(String id) {
+        values.remove(id);
+        if (get(id) != null) markDirty(id);
+    }
+
+    private void broadcastValues(String id) {
+        for (UserScripts o : LIVE) if (o != this) o.main.post(() -> o.valuesChanged(id));
     }
 
     private static void writeAtomic(File f, String s) {
@@ -216,6 +236,7 @@ public final class UserScripts implements WebViewCompat.WebMessageListener {
         if (size > UserScriptCore.MAX_VALUE_BYTES) return false;
         values.put(id, v);
         writeAtomic(valueFile(id), new JSONObject(v).toString());
+        broadcastValues(id);
         return true;
     }
 
@@ -224,6 +245,7 @@ public final class UserScripts implements WebViewCompat.WebMessageListener {
         if (v.remove(key) == null) return;
         values.put(id, v);
         writeAtomic(valueFile(id), new JSONObject(v).toString());
+        broadcastValues(id);
     }
 
     private Entry install(Pkg p) {
@@ -289,6 +311,7 @@ public final class UserScripts implements WebViewCompat.WebMessageListener {
             supported = false;
             return;
         }
+        LIVE.add(this);
         reinstall();
     }
 
@@ -341,6 +364,7 @@ public final class UserScripts implements WebViewCompat.WebMessageListener {
     }
 
     public void shutdown() {
+        LIVE.remove(this);
         net.shutdownNow();
     }
 

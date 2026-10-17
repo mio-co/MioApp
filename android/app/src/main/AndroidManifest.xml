@@ -24,10 +24,12 @@
 
         </activity>
 
-        <!-- App 内置浏览器：独立进程 = 独立的 WebView 数据目录（Cookie / 存储与 MioCore 主界面分开） -->
+        <!-- App 内置浏览器：独立进程 = 独立的 WebView 数据目录（Cookie / 存储与 MioCore 主界面分开）；独立任务 = 可收起到后台（标签保留），主界面角标点回来 -->
         <activity
             android:name=".browser.BrowserActivity"
             android:process=":browser"
+            android:taskAffinity="${applicationId}.browser"
+            android:label="Mio 浏览器"
             android:theme="@style/BrowserTheme"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|uiMode|density"
             android:launchMode="singleTop"

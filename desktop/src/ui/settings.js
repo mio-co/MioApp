@@ -19,6 +19,7 @@ function render(s) {
   const ab = s.adblock;
   $('preferSystemBrowser').checked = !!st.preferSystemBrowser;
   $('backgroundPlayback').checked = !!st.backgroundPlayback;
+  $('closeTabAfterExternal').checked = !!st.closeTabAfterExternal;
   renderSponsorBlock(st);
   $('adblockEnabled').checked = !!st.adblockEnabled;
   $('youtubeFocus').checked = !!st.youtubeFocus;
@@ -96,7 +97,7 @@ function renderSponsorBlock(st) {
   }
 }
 
-for (const key of ['preferSystemBrowser', 'backgroundPlayback', 'adblockEnabled', 'youtubeFocus', 'youtubeFocusPlayables', 'sponsorBlock']) {
+for (const key of ['preferSystemBrowser', 'backgroundPlayback', 'closeTabAfterExternal', 'adblockEnabled', 'youtubeFocus', 'youtubeFocusPlayables', 'sponsorBlock']) {
   $(key).addEventListener('change', (e) => api.set(key, e.target.checked).then(render));
 }
 $('siteEnabled').addEventListener('change', (e) => snap && snap.currentHost && api.setSite(snap.currentHost, e.target.checked).then(render));

@@ -13,11 +13,19 @@
   <div class="card">
     <label class="row"><div class="label">外链默认用系统浏览器打开<div class="sub">打开后 MioCore 里的站外链接直接交给系统默认浏览器</div></div><span class="switch"><input type="checkbox" id="preferSystemBrowser"><span></span></span></label>
     <label class="row"><div class="label">后台播放<div class="sub">窗口在后台 / 最小化时网页仍视为可见（视频、音乐不自动暂停）</div></div><span class="switch"><input type="checkbox" id="backgroundPlayback"><span></span></span></label>
+    <label class="row"><div class="label">跳转系统浏览器后自动关闭标签页<div class="sub">点「用系统浏览器打开」成功交给默认浏览器后，关闭内置浏览器的当前页面</div></div><span class="switch"><input type="checkbox" id="closeTabAfterExternal"><span></span></span></label>
     <label class="row"><div class="label">YouTube：跳过赞助等片段（SponsorBlock）<div class="sub">跳过时底部提示，可点「撤销」；手动拖回片段里不再跳。只发送视频 ID 的 SHA-256 前 4 位。数据来自 sponsor.ajay.app（CC BY-NC-SA 4.0）</div></div><span class="switch"><input type="checkbox" id="sponsorBlock"><span></span></span></label>
     <div class="row" id="sbCats"><div class="label">跳过的片段<div class="sub" id="sbCatList"></div></div></div>
     <div class="row"><div class="label">浏览数据<div class="sub">内置浏览器有独立的 Cookie / 登录状态，与 MioCore 主窗口互不影响</div></div><button class="btn danger" id="clearData">清除浏览数据</button></div>
   </div>
 
+  <h2>标签页</h2>
+  <div class="card">
+    <div class="row"><div class="label">新标签页地址<div class="sub">留空 = MioCore 导航（https://mio.300031.xyz/mio/nav，沿用主窗口的登录状态）</div></div></div>
+    <form class="row" id="newTabForm" autocomplete="off"><input class="text" id="newTabUrl" placeholder="https://mio.300031.xyz/mio/nav"><button class="btn" type="submit">保存</button><button class="btn" type="button" id="newTabReset">恢复默认</button></form>
+  </div>
+  <p class="note" id="newTabError"></p>
+  <p class="note">快捷键：Ctrl+T 新建、Ctrl+W 关闭、Ctrl+Shift+T 重新打开关闭的标签页、Ctrl+Tab / Ctrl+Shift+Tab 切换、Ctrl+1…9 跳到第 n 个、Ctrl+L 地址栏、Ctrl+Shift+W 收起浏览器（macOS 用 ⌘）。中键点标签关闭，拖动标签排序，右键标签有更多操作。关闭浏览器窗口只是收起：标签留在后台，主窗口右下角的角标一点即回。</p>
   <h2>容器（登录状态隔离）</h2>
   <div class="card" id="ctrList"></div>
   <div class="card" style="margin-top:10px">
@@ -75,6 +83,7 @@
   <p class="note" id="about"></p>
 <script src="settings.js"></script>
 <script src="update-settings.js"></script>
+<script src="tabs-settings.js"></script>
 <script src="containers-settings.js"></script>
 </body>
 </html>
