@@ -1066,6 +1066,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
 final class MioBrowserSettingsViewController: UITableViewController {
     private enum Row {
         case toggleAdblock, toggleSite(String), list(MioFilterList), scriptlets, lastCheck, updateNow, allowlistEntry(String), allowlistAdd, preferSafari, backgroundPlayback, youtubeFocus, youtubeInterval, hideToolbars, passkeyInfo, openInSafari(URL), licenses, version
+        case updateAuto, updateCheck // 软件更新（MioUpdater.swift）
     }
 
     private let currentHost: String?
@@ -1132,6 +1133,7 @@ final class MioBrowserSettingsViewController: UITableViewController {
         var login: [Row] = [.passkeyInfo]
         if let u = currentURL { login.append(.openInSafari(u)) }
         s.append(("通行密钥与钥匙串", Self.passkeyFooter, login))
+        s.append(("软件更新", MioUpdaterSettingsUI.footer, [.updateAuto, .updateCheck]))
         s.append((nil, nil, [.licenses, .version]))
         sections = s.map { (title: $0.0, footer: $0.1, rows: $0.2) }
         tableView.reloadData()
@@ -1249,6 +1251,12 @@ final class MioBrowserSettingsViewController: UITableViewController {
         case .version:
             cell.textLabel?.text = "Mio"
             cell.detailTextLabel?.text = MioBrowserSettings.appVersion
+        case .updateAuto:
+            cell.textLabel?.text = "自动检查更新"
+            cell.detailTextLabel?.text = "每 24 小时查一次 GitHub Releases"
+            cell.accessoryView = makeSwitch(MioUpdateSettings.autoCheck) { MioUpdateSettings.autoCheck = $0 }
+        case .updateCheck:
+            MioUpdaterSettingsUI.configureCheckCell(cell, formatter: fmt)
         }
         return cell
     }
@@ -1295,6 +1303,9 @@ final class MioBrowserSettingsViewController: UITableViewController {
             present(a, animated: true)
         case .openInSafari(let url):
             UIApplication.shared.open(url)
+        case .updateCheck:
+            MioUpdater.shared.check(manual: true, from: self) { [weak self] in self?.rebuild() }
+            rebuild()
         case .youtubeInterval:
             let current = MioBrowserSettings.youtubeFocusInterval
             let a = UIAlertController(title: "Shorts 提醒间隔", message: "进入 Shorts 时立即提醒一次，之后每隔多久再提醒", preferredStyle: .actionSheet)

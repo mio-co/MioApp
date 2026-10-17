@@ -9,5 +9,8 @@ let package = Package(
     targets: [
         .target(name: "MioWebCompat", path: "Sources/MioWebCompat"),
         .testTarget(name: "MioWebCompatTests", dependencies: ["MioWebCompat"], path: "Tests/MioWebCompatTests"),
+        // 软件内更新纯逻辑：Sources/MioUpdateCore/MioUpdateCore.swift → ios/App/App/MioUpdateCore.swift（符号链接）
+        .target(name: "MioUpdateCore", path: "Sources/MioUpdateCore"),
+        .testTarget(name: "MioUpdateCoreTests", dependencies: ["MioUpdateCore"], path: "Tests/MioUpdateCoreTests"),
     ]
 )

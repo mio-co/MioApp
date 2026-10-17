@@ -38,7 +38,15 @@
   </div>
   <p class="note" id="wlError"></p>
 
+  <h2>软件更新</h2>
+  <div class="card">
+    <label class="row"><div class="label">自动检查更新<div class="sub">每 24 小时查一次 GitHub Releases</div></div><span class="switch"><input type="checkbox" id="updAuto"><span></span></span></label>
+    <div class="row"><div class="label">当前版本 <b id="updVersion"></b><div class="sub" id="updStatus"></div></div><button class="btn" id="updCheck">立即检查</button></div>
+  </div>
+  <p class="note" id="updNote"></p>
+
   <p class="note" id="about"></p>
 <script src="settings.js"></script>
+<script src="update-settings.js"></script>
 </body>
 </html>

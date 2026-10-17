@@ -7,6 +7,7 @@ const { hostOf, isHttpUrl, hostInList } = require('./util');
 const { SettingsStore } = require('./settings-store');
 const { Adblock } = require('./adblock');
 const { BrowserManager, SettingsWindow } = require('./browser');
+const { Updater } = require('./updater');
 
 app.setAppUserModelId('xyz.mio.desktop');
 
@@ -214,6 +215,9 @@ if (!app.requestSingleInstanceLock()) {
 
     if (process.env.MIO_SMOKE_OUT) {
       require('./smoke').runSmoke({ out: process.env.MIO_SMOKE_OUT, adblock, browser, getMainWindow: () => mainWindow });
+    } else {
+      // 软件内更新（GitHub Releases）：冒烟测试时不启动
+      new Updater({ getWindow: () => mainWindow, icon }).start();
     }
 
     app.on('activate', () => {

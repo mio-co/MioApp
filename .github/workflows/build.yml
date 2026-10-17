@@ -35,6 +35,18 @@ jobs:
       - name: Injected JS tests
         run: node --test tools/MioAppTests/js/*.test.mjs
 
+      - name: Release manifests dry run (SHA256SUMS.txt + altstore-source.json, same script as the release job)
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/dist-dry"; rm -rf "$D"; mkdir -p "$D"
+          V=$(node -p "require('./package.json').version")
+          head -c 4096 /dev/urandom > "$D/Mio.ipa"
+          head -c 1024 /dev/urandom > "$D/Mio-$V-mac.zip"
+          printf 'version: %s\n' "$V" > "$D/latest.yml"
+          node scripts/release-manifests.mjs --dist "$D" --tag "v$V"
+          (cd "$D" && sha256sum -c SHA256SUMS.txt)
+          node -e "const s=require(process.argv[1]);const v=s.apps[0].versions[0];if(s.apps[0].bundleIdentifier!=='xyz.mio.app'||!v.downloadURL.endsWith('/Mio.ipa')||v.size!==4096)process.exit(1);console.log(JSON.stringify(v))" "$D/altstore-source.json"
+
       - name: Swift tests
         run: |
           swift --version
@@ -351,6 +363,17 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --win --x64 --publish never
 
+      - name: In-app update metadata (latest.yml + blockmap for electron-updater, app-update.yml, electron-updater in app.asar)
+        run: |
+          set -euo pipefail
+          cat dist/latest.yml
+          grep -q 'Mio-Setup-.*-x64.exe' dist/latest.yml
+          grep -q 'sha512:' dist/latest.yml
+          ls -la dist/*.blockmap
+          cat dist/win-unpacked/resources/app-update.yml
+          grep -q 'provider: github' dist/win-unpacked/resources/app-update.yml
+          node -e "const a=require('@electron/asar');const f=a.listPackage('dist/win-unpacked/resources/app.asar');if(!f.some(x=>/[\\\\/]node_modules[\\\\/]electron-updater[\\\\/]/.test(x)))process.exit(1);console.log('electron-updater packaged')"
+
       - name: Smoke test packaged app (engine, MioDesktop bridge, YouTube blocking, whitelist)
         run: |
           OUT="$RUNNER_TEMP/smoke-win.json"
@@ -372,6 +395,8 @@ jobs:
           name: Mio-windows
           path: |
             desktop/dist/*.exe
+            desktop/dist/latest.yml
+            desktop/dist/*.blockmap
           retention-days: 14
 
   mac:
@@ -430,6 +455,37 @@ jobs:
           hdiutil create -volname "Mio $V" -srcfolder dmgroot -ov -format UDZO "out/Mio-$V-mac.dmg"
           ls -lh out
 
+      - name: In-app updater (helper script replaces a copy of Mio.app from the release zip; wrong bundle id keeps the old app)
+        run: |
+          set -euo pipefail
+          V=$(node -p "require('./package.json').version")
+          T="$RUNNER_TEMP/upd"; rm -rf "$T"; mkdir -p "$T"
+          node tools/MioAppTests/js/mac-install-script.mjs > "$T/install.sh"
+          ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dmgroot/Mio.app/Contents/Info.plist)
+          run() { # $1 = case name, $2 = bundle id passed to the script
+            rm -rf "$T/$1"; mkdir -p "$T/$1/apps" "$T/$1/work"
+            ditto dmgroot/Mio.app "$T/$1/apps/Mio.app"
+            echo old > "$T/$1/apps/Mio.app/Contents/old-marker"
+            cp "out/Mio-$V-mac.zip" "$T/$1/work/update.zip"
+            sleep 1 & local pid=$!
+            set +e
+            MIO_UPDATE_NO_RELAUNCH=1 /bin/sh "$T/install.sh" "$pid" "$T/$1/work/update.zip" "$T/$1/apps/Mio.app" "$T/$1/work" "$T/$1/update.log" "$2"
+            local code=$?
+            set -e
+            echo "--- $1 (exit $code)"; cat "$T/$1/update.log"
+            return $code
+          }
+          run ok "$ID"
+          grep -q '^installed$' "$T/ok/update.log"
+          test ! -e "$T/ok/apps/Mio.app/Contents/old-marker"
+          test -f "$T/ok/apps/Mio.app/Contents/Info.plist"
+          test ! -e "$T/ok/work/update.zip"
+          test ! -e "$T/ok/work/old.app"
+          codesign --verify --deep --strict "$T/ok/apps/Mio.app"
+          if run wrongid "xyz.example.other"; then echo "expected failure for wrong bundle id"; exit 1; fi
+          grep -q 'unexpected bundle id' "$T/wrongid/update.log"
+          test -e "$T/wrongid/apps/Mio.app/Contents/old-marker"
+
       - name: Smoke test (public site page → window.MioDesktop.browser.open → in-app browser + adblock ready)
         run: |
           # 不用 -e：App 非 0 退出时 wait 会直接终止脚本，日志和 JSON 就看不到了
@@ -471,11 +527,21 @@ jobs:
     needs: [unit, ios, ios-sim-smoke, android, android-emulator, windows, mac]
     runs-on: ubuntu-24.04
     steps:
+      # 软件内更新用的清单：scripts/release-manifests.mjs 读 pbxproj（buildVersion / minOSVersion）和 Info.plist（隐私说明）
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: Mio-*
           path: dist
           merge-multiple: true
+
+      # SHA256SUMS.txt（Mac 更新器校验 zip）+ altstore-source.json（SideStore / AltStore 源，
+      # 稳定地址 https://github.com/mio-co/MioApp/releases/latest/download/altstore-source.json）。
+      # Windows 的 latest.yml + *.blockmap 由 electron-builder 生成，随 Mio-windows 产物一起上传。
+      # Mio.apk / Mio.apk.sha256 发布后由本地签名脚本上传（keystore 不进 CI）。
+      - name: In-app update manifests
+        run: node scripts/release-manifests.mjs --dist dist --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
 
       - run: ls -la dist
 
