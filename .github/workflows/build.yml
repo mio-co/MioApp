@@ -229,7 +229,9 @@ jobs:
           swift --version
 
       - name: swift test (macOS + WebKit)
-        run: swift test 2>&1 | tee "$RUNNER_TEMP/miokit-test.log"
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/miokit-test.log"
 
       - name: Test summary
         if: always()

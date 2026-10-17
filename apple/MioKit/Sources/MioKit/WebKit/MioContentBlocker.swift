@@ -19,7 +19,7 @@ public extension Notification.Name {
 @MainActor
 public final class MioWKRuleListStore: MioRuleListCompiling {
     public let store: WKContentRuleListStore
-    public init(store: WKContentRuleListStore = .default()) { self.store = store }
+    public init(store: WKContentRuleListStore? = nil) { self.store = store ?? .default() }
     /// 自定义目录（单测 / 与 v0.3.x 的规则分开）
     public convenience init(directory: URL) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -82,7 +82,7 @@ public final class MioContentBlocker {
     private func load(_ ids: [String]) async {
         var out: [String: WKContentRuleList] = [:]
         for id in ids {
-            if let l = ruleLists[id] ?? (await store.lookUp(id)) { out[id] = l }
+            if let cached = ruleLists[id] { out[id] = cached } else if let l = await store.lookUp(id) { out[id] = l }
         }
         let changed = Set(out.keys) != Set(ruleLists.keys)
         ruleLists = out
