@@ -325,6 +325,9 @@ class BrowserManager {
         Menu.buildFromTemplate(this.pageTools.menuTemplate(wc, { reload: () => wc.reload() })).popup({ window: this.win, x: Math.max(0, width - 360), y: TOOLBAR_HEIGHT });
         break;
       }
+      case 'translateMenu':
+        if (this.translate) this.translate.menu(this.win, wc, TOOLBAR_HEIGHT);
+        break;
       case 'focusAddress':
         this.toolbar.webContents.focus();
         this.toolbar.webContents.send('mio-toolbar:focus-address');

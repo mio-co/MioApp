@@ -108,6 +108,7 @@ public class BrowserActivity extends Activity {
     private Button readerBtn;
     /** 这个 WebView 用的容器（登录状态隔离，xyz.mio.app.containers.ContainerManager）；默认 = 原来的浏览数据 */
     private String containerId = xyz.mio.app.containers.ContainerState.DEFAULT_ID;
+    private TranslateBridge translate;
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -162,6 +163,7 @@ public class BrowserActivity extends Activity {
     protected void onDestroy() {
         worker.shutdownNow();
         if (media != null) media.destroy();
+        if (translate != null) translate.shutdown();
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();
@@ -259,7 +261,8 @@ public class BrowserActivity extends Activity {
         Button external = glyph("↗", "用系统浏览器打开", v -> openExternal(webView.getUrl()));
         Button settings = glyph("⚙", "浏览器设置", v -> showSettings(false));
         Button mio = glyph("📥", "存到 Mio / 阅读模式 / 深色", v -> { if (pageTools != null) pageTools.showMenu(); });
-        for (Button b : new Button[]{backBtn, fwdBtn, reloadBtn, share, external, mio, settings}) {
+        Button translateBtn = glyph("译", "翻译", v -> { if (translate != null) translate.showMenu(); });
+        for (Button b : new Button[]{backBtn, fwdBtn, reloadBtn, share, translateBtn, external, mio, settings}) {
             bottom.addView(b, new LinearLayout.LayoutParams(0, dp(48), 1));
         }
         col.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -347,6 +350,9 @@ public class BrowserActivity extends Activity {
         media.install();
         pageTools = new PageTools(this, webView);
         pageTools.setReaderButton(readerBtn);
+        // 翻译（网页双语 / 划词 / YouTube 双语字幕）：document-start 脚本 + WebMessageListener 原生桥（TranslateBridge）
+        translate = new TranslateBridge(this, webView);
+        translate.install();
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -800,6 +806,11 @@ public class BrowserActivity extends Activity {
             });
         });
         box.addView(update);
+
+        Button translateSettings = new Button(this);
+        translateSettings.setText("翻译设置…（网页翻译 / 划词 / YouTube 双语字幕）");
+        translateSettings.setOnClickListener(v -> { if (translate != null) translate.showSettings(); });
+        box.addView(translateSettings);
 
         Button allow = new Button(this);
         allow.setText("白名单（" + BrowserPrefs.allowlist(this).size() + "）…");
