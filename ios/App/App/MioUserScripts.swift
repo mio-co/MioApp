@@ -1092,7 +1092,8 @@ enum MioUserScriptSmoke {
         MioBrowserViewController.smokeEvaluate(MioWebRTCGuard.probeScript) { result, error in
             let blocked = parse(result)
             report["webrtcBlockedPage"] = blocked.map { $0 as Any } ?? "error: \(String(describing: error))"
-            let blockedOK = !MioWebRTCSettings.enabled || (blocked?["pc"] as? String) == "undefined"
+            // 屏蔽：脚本已处理（guard = true）且 RTCPeerConnection 不存在
+            let blockedOK = !MioWebRTCSettings.enabled || ((blocked?["pc"] as? String) == "undefined" && (blocked?["guard"] as? Bool) == true)
             let allowBefore = MioWebRTCSettings.allowlist
             let iso: MioUserScript
             let page: MioUserScript
@@ -1128,7 +1129,12 @@ enum MioUserScriptSmoke {
                         report["webrtcAllowedPage"] = rtc.map { $0 as Any } ?? "none"
                         let stored = MioUserScriptManager.shared.store.values.get(iso.id, "n")
                         report["gmValueStored"] = stored ?? "nil"
-                        let allowedOK = (rtc?["pc"] as? String) == "function"
+                        // 放行：脚本明确跳过（guard = false），页面拿到的是 WKWebView 原生的接口。
+                        // CI 的 macOS VM 上 WKWebView 原生没有 RTCPeerConnection，所以「原生是否可用」只记录不作门槛；
+                        // 真正的可用性由 Windows 冒烟（Chromium）和真机确认
+                        let allowedOK = (rtc?["guard"] as? Bool) == false
+                        report["nativeWebRTCOnAllowedPage"] = (rtc?["pc"] as? String) == "function"
+                        report["nativeWebRTCPrefs"] = MioWebRTCGuard.nativePrefs
                         let scriptOK = (obj?["smoke"] as? String) == "isolated:object:function:undefined" && (obj?["page"] as? String) == "number" && stored == "1"
                         report["webrtcOK"] = blockedOK && allowedOK
                         report["userscriptsOK"] = scriptOK

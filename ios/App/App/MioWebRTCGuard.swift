@@ -105,7 +105,7 @@ enum MioWebRTCGuard {
     }
 
     /// 冒烟测试：当前页面 WebRTC 是否可用
-    static let probeScript = "JSON.stringify({host: location.hostname, pc: typeof RTCPeerConnection, wpc: typeof webkitRTCPeerConnection, dc: typeof RTCDataChannel, track: typeof MediaStreamTrack, gum: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), guard: !!window.__mioRTCGuard})"
+    static let probeScript = "JSON.stringify({host: location.hostname, pc: typeof RTCPeerConnection, wpc: typeof webkitRTCPeerConnection, dc: typeof RTCDataChannel, track: typeof MediaStreamTrack, gum: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), guard: (window.__mioRTCGuard === undefined ? null : window.__mioRTCGuard)})"
 
     // MIO_JS_BEGIN webrtcGuard
     static let template = #"""
@@ -296,6 +296,25 @@ import UIKit
 import WebKit
 
 extension MioWebRTCGuard {
+    /// Mac：WKWebView 默认可能没开 WebRTC / 媒体设备（CI 上 RTCPeerConnection、MediaStreamTrack 都不存在）。
+    /// 放行站点要能用网页通话，这里用 WKPreferences 的私有开关尽力打开（先 responds(to:)，ObjC 异常也接住；只在 Mac 上设置）。
+    /// 屏蔽仍由注入脚本负责，与这些开关无关。
+    @discardableResult
+    static func enableNativeWebRTC(_ prefs: WKPreferences) -> [String: Bool] {
+        var applied: [String: Bool] = [:]
+        for (key, setter) in [("peerConnectionEnabled", "_setPeerConnectionEnabled:"), ("mediaDevicesEnabled", "_setMediaDevicesEnabled:"), ("mediaStreamEnabled", "_setMediaStreamEnabled:")] {
+            guard prefs.responds(to: NSSelectorFromString(setter)) else { applied[key] = false; continue }
+            let exc = MioObjCSafe.catching { prefs.setValue(true, forKey: key) }
+            applied[key] = exc == nil
+        }
+        nativePrefs = applied
+        NSLog("⚡️ Mio browser WebRTC prefs: %@", "\(applied)")
+        return applied
+    }
+
+    /// 最近一次 enableNativeWebRTC 的结果（冒烟报告）
+    static var nativePrefs: [String: Bool] = [:]
+
     /// 内置浏览器用：页面世界、所有 frame、document-start（总开关关掉时空）
     static func webKitScripts() -> [WKUserScript] {
         guard let js = MioWebRTCSettings.script() else { return [] }

@@ -417,6 +417,7 @@ final class MioBrowserViewController: UIViewController, WKNavigationDelegate, WK
         }
         config.userContentController.add(MioWeakScriptHandler(self), name: Self.passkeyMessage)
         MioTranslate.install(on: config.userContentController)   // 翻译：页面脚本 ↔ 原生桥（MioTranslate.swift）
+        if MioWebKitCompat.isMac { MioWebRTCGuard.enableNativeWebRTC(config.preferences) }
 
         webView = WKWebView(frame: .zero, configuration: config)
         if profile == .desktop {
