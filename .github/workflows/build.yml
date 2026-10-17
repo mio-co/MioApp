@@ -1,7 +1,11 @@
 name: Build
 
-# 只出 Apple 平台：iOS / iPadOS（未签名 ipa）、macOS（Mac Catalyst，ad-hoc 签名）。Android / Windows 已停止开发（v0.3.4 为最后一版，tag 存档）
-# 打 v* 标签时所有 job 都成功后把产物挂到 Release
+# v0.4.0 起只出 Apple 平台，全部 WebKit：
+#   - iOS / iPadOS：apple/ios（firefox-ios fork，MPL-2.0）→ 未签名 Mio.ipa（SideStore / AltStore 源）
+#   - macOS：macos/（原生 AppKit + WKWebView）→ ad-hoc 签名 Mio.app（bundle id xyz.mio.app）→ Mio-<版本>-mac.zip + .dmg
+#   - 共享逻辑：apple/MioKit
+# 打 v* 标签时所有 job 都成功后把产物挂到 Release。v0.3.x 的 Capacitor iOS / Mac Catalyst 工程源码保留（legacy-* job，只在手动运行时构建）。
+# Android / Windows 已停止开发（v0.3.4 为最后一版，tag 存档）
 on:
   push:
     branches: [main]
@@ -12,7 +16,12 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+
   unit:
     # 纯逻辑单测（不需要 Xcode）：tools/MioAppTests —— UA / 桌面版改写 / 拦截规则清晰度体检（Swift，ios/App/App/MioWebCompat.swift），
     # 以及注入页面的回车键兜底、通行密钥提示脚本（node --test，从同一个 Swift 文件里抽出 JS）
@@ -45,9 +54,11 @@ jobs:
           V=$(node -p "require('./package.json').version")
           head -c 4096 /dev/urandom > "$D/Mio.ipa"
           head -c 1024 /dev/urandom > "$D/Mio-$V-mac.zip"
+          head -c 2048 /dev/urandom > "$D/Mio-$V-mac.dmg"
           node scripts/release-manifests.mjs --dist "$D" --tag "v$V"
           (cd "$D" && sha256sum -c SHA256SUMS.txt)
-          node -e "const s=require(process.argv[1]);const v=s.apps[0].versions[0];if(s.apps[0].bundleIdentifier!=='xyz.mio.app'||!v.downloadURL.endsWith('/Mio.ipa')||v.size!==4096)process.exit(1);console.log(JSON.stringify(v))" "$D/altstore-source.json"
+          # SideStore 源：bundle id 不变（xyz.mio.app）、指向 Mio.ipa、版本 / 构建号来自 apple/ios fork（0.4.0 / 10）
+          node -e "const s=require(process.argv[1]);const v=s.apps[0].versions[0];if(s.apps[0].bundleIdentifier!=='xyz.mio.app'||!v.downloadURL.endsWith('/Mio.ipa')||v.size!==4096||v.version!==process.argv[2]||v.buildVersion!=='10')process.exit(1);console.log(JSON.stringify(v))" "$D/altstore-source.json" "$V"
 
       # 翻译：真实免费接口（微软 Bing / 谷歌）是否还能用。只记录，不阻塞（单测里全部是 mock）
       - name: Translate engines live probe (non-blocking)
@@ -61,6 +72,302 @@ jobs:
           swift test --package-path tools/MioAppTests
 
   ios:
+    # iOS / iPadOS：apple/ios（firefox-ios fork）真机构建（不签名）→ Mio.ipa（未签名，SideStore / AltStore 侧载时重签；不带 App 扩展）
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: bash apple/ios/mio/ci/select-xcode.sh
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: ff-spm-dev-${{ hashFiles('apple/ios/firefox-ios/Client.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'apple/ios/MozillaRustComponents/Package.swift') }}
+          restore-keys: ff-spm-dev-
+
+      - name: Bootstrap (nimbus-fml)
+        run: bash apple/ios/mio/ci/bootstrap.sh
+
+      - name: Build (unsigned, iphoneos)
+        run: bash apple/ios/mio/ci/build.sh device build build-dev.log
+
+      - name: Package IPA (Mio.ipa, version check)
+        run: |
+          set -euo pipefail
+          bash apple/ios/mio/ci/package-ipa.sh build/Build/Products/Firefox-iphoneos/Client.app Mio.ipa
+          V=$(node -p "require('./package.json').version")
+          P=Payload/Mio.app/Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$P")" = xyz.mio.app
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$P")" = "$V"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$P")" = 10
+          test ! -e Payload/Mio.app/PlugIns
+          mkdir -p out && mv Mio.ipa out/
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mio-ios
+          path: out/Mio.ipa
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ios-device-build-log
+          path: build-dev.log
+          retention-days: 7
+
+  ios-sim-smoke:
+    # iOS 模拟器构建（Firefox 配置 = release 渠道）+ App 内 MioKit 冒烟：mio://home（MioCore 在 Cloudflare Access 后面、CI 没登录时
+    # homeOK = "access-login"，截图，不算失败）、本机桥来源校验、广告拦截、Mio 扩展设置页、标签页概览
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode (firefox-ios v158 wants Xcode 26.5)
+        run: bash apple/ios/mio/ci/select-xcode.sh
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            build-sim/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: ff-spm-sim-${{ hashFiles('apple/ios/firefox-ios/Client.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'apple/ios/MozillaRustComponents/Package.swift') }}
+          restore-keys: ff-spm-sim-
+
+      - name: Bootstrap (nimbus-fml)
+        run: bash apple/ios/mio/ci/bootstrap.sh
+
+      - name: Build (iOS Simulator)
+        run: bash apple/ios/mio/ci/build.sh sim build-sim build-sim.log
+
+      - name: Simulator smoke
+        run: bash apple/ios/mio/ci/sim-smoke.sh build-sim/Build/Products/Firefox-iphonesimulator/Client.app sim-smoke
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-sim-smoke
+          path: |
+            sim-smoke
+            build-sim.log
+          retention-days: 14
+
+  miokit:
+    # v0.4.0 线路 C：apple/MioKit 共享 Swift package（iOS fork 与 Mac 原生壳共用）。
+    # swift test 在 macOS 上跑全部单测，包括真实 WebKit 的：WKContentRuleList 编译（内置列表 / 超 15 万条拆分）、
+    # WKWebView 里 MioCore 桥对其他来源 / iframe 的拒绝、mio:// 方案处理；再做 iOS 模拟器编译检查。不进 release。
+    runs-on: macos-26
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apple/MioKit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: swift test (macOS + WebKit)
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/miokit-test.log"
+
+      - name: Test summary
+        if: always()
+        run: grep -E "Executed [0-9]+ tests|error:|failed|skipped" "$RUNNER_TEMP/miokit-test.log" | tail -60 || true
+
+      - name: iOS Simulator build check
+        run: |
+          xcodebuild -list
+          set -o pipefail
+          xcodebuild build -scheme MioKit -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath "$RUNNER_TEMP/miokit-dd" | tail -40
+
+  miokit-linux:
+    # 同一个包的纯逻辑部分在 Linux 上也要能编、能测（WebKit / SafariConverterLib 部分自动排除）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test (Linux, Foundation only)
+        run: |
+          swift --version
+          swift test --package-path apple/MioKit
+
+  mac-native:
+    # 原生 macOS（AppKit，SwiftPM：macos/，依赖 apple/MioKit）→ Mio.app（bundle id xyz.mio.app，与 v0.3.x Catalyst 版相同，旧版更新器可替换），
+    # 通用二进制（arm64 + x86_64），ad-hoc 签名 → Mio-<版本>-mac.zip + .dmg（进 Release）。冒烟：
+    # MSE 门槛（Catalyst 的 WKWebView 没有 MediaSource）、YouTube 桌面 UA 的可用格式（只记录）、标签 / 容器 / 缩放 / 菜单快捷键、工具栏截图；
+    # MioKit 接通：测试页广告请求被内容规则拦下、Mio 扩展开关切换生效、MioCore 桥只对 MioCore / mio:// 开放
+    runs-on: macos-26
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build + bundle (xcodebuild macos/ + apple/MioKit → Mio.app, universal, ad-hoc)
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          MIO_MAC_RELEASE=1 MIO_MAC_BUILD_NUMBER=10 MIO_MAC_XCODE_ARGS="ONLY_ACTIVE_ARCH=NO" \
+            bash macos/scripts/bundle.sh "$PWD/mac-native-dist"
+          APP="mac-native-dist/Mio.app"
+          V=$(node -p "require('./package.json').version")
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = xyz.mio.app
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$V"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")" = 10
+          test -f "$APP/Contents/Resources/AppIcon.icns"
+          # 打包前留一份没跑过的 .app（冒烟不改 .app，但保险起见发布用原样）
+          ditto "$APP" mac-native-pristine/Mio.app
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist"
+          lipo -info "$APP/Contents/MacOS/MioMac"
+          lipo "$APP/Contents/MacOS/MioMac" -verify_arch arm64 x86_64
+          otool -L "$APP/Contents/MacOS/MioMac" | grep -E 'WebKit|AppKit'
+          ! otool -L "$APP/Contents/MacOS/MioMac" | grep -i -E 'UIKit|Capacitor'
+          # MioKit 资源包（注入脚本 / 内置规则）在 Contents/Resources；构建目录删掉，冒烟只能从 .app 里找资源
+          find "$APP/Contents/Resources/MioKit_MioKit.bundle" -name '*.js' -o -name '*.txt' | sed "s|$APP/||"
+          rm -rf macos/.build
+
+      - name: Smoke (MSE gate, YouTube formats, Firefox-style UI, animations, screenshots + recording)
+        run: |
+          set +e -u
+          mkdir -p mac-native-smoke
+          OUT="$PWD/mac-native-smoke/smoke.json"
+          # MIO_REDUCE_MOTION=0：runner 系统开着「减少动态效果」，强制打开动画录证据（App 平时跟随系统设置）
+          MIO_REDUCE_MOTION=0 MIO_SMOKE_OUT="$OUT" MIO_SMOKE_SHOTS="$PWD/mac-native-smoke" "mac-native-dist/Mio.app/Contents/MacOS/MioMac" > mac-native-smoke/app.log 2>&1 &
+          PID=$!
+          SHOT=0
+          for i in $(seq 1 420); do
+            kill -0 $PID 2>/dev/null || break
+            if [ $SHOT = 0 ] && [ $i -ge 70 ]; then screencapture -x mac-native-smoke/screen.png 2>/dev/null; SHOT=1; fi
+            sleep 1
+          done
+          if kill -0 $PID 2>/dev/null; then echo "still running after 420s"; screencapture -x mac-native-smoke/screen-timeout.png 2>/dev/null; kill $PID; fi
+          wait $PID
+          CODE=$?
+          echo "--- app.log (tail) ---"; tail -40 mac-native-smoke/app.log
+          echo "--- smoke.json ---"; cat "$OUT" 2>/dev/null || echo "(no smoke json)"
+          echo "--- summary ---"
+          jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, modulesOK, bridgeOK, blockOK, toggleOK, missingKeys, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
+          echo "--- MioKit ---"
+          jq -c '.miokit | {blockOK, toggleOK, ruleLists, rulesReadyMs, appliedOn, appliedOff, appliedOnAgain, on, off, onAgain, adLoadedWhenOff, panelRowsFound, settingsChangeKey, userScriptOK, userScript, userScriptError, pageMenu, filterStatus}' "$OUT" 2>/dev/null
+          jq -c '.ui.bridge' "$OUT" 2>/dev/null
+          echo "--- Firefox UI ---"
+          echo "--- MioCore home / Cloudflare Access ---"
+          jq -c '.ui | {homeOK, homeLanding, homeURL, homeAddressBar, homeLoginRuleLists, homeLoginUserAgent}' "$OUT" 2>/dev/null
+          jq -c '.ui | {systemReduceMotion, homeOK, homeAddressBar, bridge, pinnedOK, dragOK, detachOK, overflow, dropdownRows, zoomHUDShown, zoomPill, findStatus, verticalMode, reduceMotionOK, tabsAboveNav, trafficLightsInTabRow, layout}' "$OUT" 2>/dev/null
+          jq -c '.ui | {animation, recording, fullscreen}' "$OUT" 2>/dev/null
+          jq -c '.ui.strips | to_entries | map({(.key): {frames: .value.frames, changed: .value.framesThatChanged}}) | add' "$OUT" 2>/dev/null
+          ls -la mac-native-smoke
+          jq -c '.youtube | {playability, hlsManifest, dashManifest, adaptiveCount, maxAdaptiveHeight, qualityLevels, playbackQuality, video, mediaSource, managedMediaSource}' "$OUT" 2>/dev/null
+          jq -c '[.youtube.adaptiveVideo[]? | "\(.q) \(.mime)"] | unique' "$OUT" 2>/dev/null
+          ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i -E 'MioMac' | head -2 | while read f; do echo "--- crash $f ---"; head -60 ~/Library/Logs/DiagnosticReports/"$f"; done
+          echo "exit $CODE"
+          test "$CODE" = 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-native-smoke
+          path: mac-native-smoke
+          retention-days: 14
+
+      - name: Package (Mio-<version>-mac.zip + .dmg)
+        run: |
+          set -euo pipefail
+          V=$(node -p "require('./package.json').version")
+          mkdir -p out dmgroot
+          ditto mac-native-pristine/Mio.app dmgroot/Mio.app
+          codesign --verify --deep --strict --verbose=2 dmgroot/Mio.app
+          ditto -c -k --sequesterRsrc --keepParent dmgroot/Mio.app "out/Mio-$V-mac.zip"
+          ln -s /Applications dmgroot/Applications
+          hdiutil create -volname "Mio $V" -srcfolder dmgroot -ov -format UDZO "out/Mio-$V-mac.dmg"
+          ls -l out
+
+      - name: v0.3.x Mac updater installs this zip (same helper script as v0.3.3 / v0.3.4; wrong bundle id keeps the old app)
+        run: |
+          set -euo pipefail
+          V=$(node -p "require('./package.json').version")
+          T="$RUNNER_TEMP/upd"; rm -rf "$T"; mkdir -p "$T"
+          # 安装脚本取自 ios/App/App/MioUpdateCore.swift（v0.3.3 / v0.3.4 Catalyst 版里的同一份），期望 bundle id = 旧 App 的 xyz.mio.app
+          node tools/MioAppTests/js/mac-install-script.mjs > "$T/install.sh"
+          run() { # $1 = case name, $2 = bundle id the running (old) app passes
+            rm -rf "$T/$1"; mkdir -p "$T/$1/apps/Mio.app/Contents" "$T/$1/work"
+            # 「旧版」：一个占位的 Mio.app（Catalyst 版的位置 / 名字）
+            echo old > "$T/$1/apps/Mio.app/Contents/old-marker"
+            cp "out/Mio-$V-mac.zip" "$T/$1/work/update.zip"
+            sleep 1 & local pid=$!
+            set +e
+            MIO_UPDATE_NO_RELAUNCH=1 /bin/sh "$T/install.sh" "$pid" "$T/$1/work/update.zip" "$T/$1/apps/Mio.app" "$T/$1/work" "$T/$1/update.log" "$2"
+            local code=$?
+            set -e
+            echo "--- $1 (exit $code)"; cat "$T/$1/update.log"
+            return $code
+          }
+          run ok xyz.mio.app
+          grep -q '^installed$' "$T/ok/update.log"
+          test ! -e "$T/ok/apps/Mio.app/Contents/old-marker"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$T/ok/apps/Mio.app/Contents/Info.plist")" = "$V"
+          test -x "$T/ok/apps/Mio.app/Contents/MacOS/MioMac"
+          codesign --verify --deep --strict "$T/ok/apps/Mio.app"
+          if run wrongid "xyz.example.other"; then echo "expected failure for wrong bundle id"; exit 1; fi
+          grep -q 'unexpected bundle id' "$T/wrongid/update.log"
+          test -e "$T/wrongid/apps/Mio.app/Contents/old-marker"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mio-mac
+          path: out/*
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [unit, miokit, miokit-linux, ios, ios-sim-smoke, mac-native]
+    runs-on: ubuntu-24.04
+    steps:
+      # 软件内更新用的清单：scripts/release-manifests.mjs 读 apple/ios fork 的版本 / 构建号 / 最低系统（xcconfig + Info.plist）和隐私说明
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Mio-*
+          path: dist
+          merge-multiple: true
+
+      - name: Check artifacts (Mio.ipa + Mio-<version>-mac.zip / .dmg, version = tag)
+        run: |
+          set -euo pipefail
+          V="${GITHUB_REF_NAME#v}"
+          test "$(node -p "require('./package.json').version")" = "$V"
+          test -s dist/Mio.ipa
+          test -s "dist/Mio-$V-mac.zip"
+          test -s "dist/Mio-$V-mac.dmg"
+          ls -la dist
+
+      # SHA256SUMS.txt（v0.3.x Mac 更新器校验 zip）+ altstore-source.json（SideStore / AltStore 源，
+      # 稳定地址 https://github.com/mio-co/MioApp/releases/latest/download/altstore-source.json）。
+      - name: In-app update manifests
+        run: node scripts/release-manifests.mjs --dist dist --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+
+      - run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+
+  legacy-ios:
+    # v0.3.x 旧工程（Capacitor iOS / Mac Catalyst）：源码保留，v0.4.0 起不进 Release；只在手动运行（workflow_dispatch）时构建
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -117,11 +424,13 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Mio-ipa
+          name: legacy-Mio-ipa
           path: Mio.ipa
           retention-days: 14
 
-  ios-sim-smoke:
+  legacy-ios-sim-smoke:
+    # v0.3.x 旧工程（Capacitor iOS / Mac Catalyst）：源码保留，v0.4.0 起不进 Release；只在手动运行（workflow_dispatch）时构建
+    if: github.event_name == 'workflow_dispatch'
     # iOS 模拟器冷启动冒烟：原包 + 模拟免费 Apple ID 侧载（bundle id 改成 xyz.mio.app.<TEAMID>、BGTask identifiers 不变、ad-hoc 重签）
     # 任一场景 20 秒内退出 / 崩溃即失败
     runs-on: macos-26
@@ -172,11 +481,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ios-sim-smoke
+          name: legacy-ios-sim-smoke
           path: sim-smoke
           retention-days: 14
 
-  adblock-check:
+  legacy-adblock-check:
+    # v0.3.x 旧工程（Capacitor iOS / Mac Catalyst）：源码保留，v0.4.0 起不进 Release；只在手动运行（workflow_dispatch）时构建
+    if: github.event_name == 'workflow_dispatch'
     # 在 macOS 上用同一份 MioAdblockCore.swift：转换 + 编译全部列表、查询 YouTube 规则、WKWebView 开/关对比
     runs-on: macos-26
     timeout-minutes: 30
@@ -206,56 +517,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: adblock-check
+          name: legacy-adblock-check
           path: adblock-check
           retention-days: 14
 
-  miokit:
-    # v0.4.0 线路 C：apple/MioKit 共享 Swift package（iOS fork 与 Mac 原生壳共用）。
-    # swift test 在 macOS 上跑全部单测，包括真实 WebKit 的：WKContentRuleList 编译（内置列表 / 超 15 万条拆分）、
-    # WKWebView 里 MioCore 桥对其他来源 / iframe 的拒绝、mio:// 方案处理；再做 iOS 模拟器编译检查。不进 release。
-    runs-on: macos-26
-    timeout-minutes: 40
-    defaults:
-      run:
-        working-directory: apple/MioKit
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Toolchain
-        run: |
-          xcodebuild -version
-          swift --version
-
-      - name: swift test (macOS + WebKit)
-        run: |
-          set -o pipefail
-          swift test 2>&1 | tee "$RUNNER_TEMP/miokit-test.log"
-
-      - name: Test summary
-        if: always()
-        run: grep -E "Executed [0-9]+ tests|error:|failed|skipped" "$RUNNER_TEMP/miokit-test.log" | tail -60 || true
-
-      - name: iOS Simulator build check
-        run: |
-          xcodebuild -list
-          set -o pipefail
-          xcodebuild build -scheme MioKit -destination 'generic/platform=iOS Simulator' \
-            -skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO \
-            -derivedDataPath "$RUNNER_TEMP/miokit-dd" | tail -40
-
-  miokit-linux:
-    # 同一个包的纯逻辑部分在 Linux 上也要能编、能测（WebKit / SafariConverterLib 部分自动排除）
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: swift test (Linux, Foundation only)
-        run: |
-          swift --version
-          swift test --package-path apple/MioKit
-
-  mac:
+  legacy-mac:
+    # v0.3.x 旧工程（Capacitor iOS / Mac Catalyst）：源码保留，v0.4.0 起不进 Release；只在手动运行（workflow_dispatch）时构建
+    if: github.event_name == 'workflow_dispatch'
     # Mac Catalyst（同一个 Xcode 工程；Capacitor 只链接到 iOS，Mac 用纯 WKWebView 根控制器 MioDesktop.swift），ad-hoc 签名
     runs-on: macos-26
     timeout-minutes: 45
@@ -375,111 +643,12 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: mac-smoke-diag
+          name: legacy-mac-smoke-diag
           path: smoke-diag
           retention-days: 7
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Mio-mac
+          name: legacy-Mio-mac
           path: out/*
           retention-days: 14
-
-  mac-native:
-    # 原生 macOS（AppKit，SwiftPM：macos/，依赖 apple/MioKit）浏览器壳的冒烟（feat/mac-native，不进 release）：
-    # MSE 门槛（Catalyst 的 WKWebView 没有 MediaSource）、YouTube 桌面 UA 的可用格式（只记录）、标签 / 容器 / 缩放 / 菜单快捷键、工具栏截图；
-    # MioKit 接通：测试页广告请求被内容规则拦下、Mio 扩展开关切换生效、MioCore 桥只对 MioCore / mio:// 开放
-    runs-on: macos-26
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build + bundle (xcodebuild macos/ + apple/MioKit → Mio Preview.app, ad-hoc)
-        run: |
-          set -euo pipefail
-          xcodebuild -version
-          bash macos/scripts/bundle.sh "$PWD/mac-native-dist"
-          APP="mac-native-dist/Mio Preview.app"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist"
-          lipo -info "$APP/Contents/MacOS/MioMac"
-          otool -L "$APP/Contents/MacOS/MioMac" | grep -E 'WebKit|AppKit'
-          ! otool -L "$APP/Contents/MacOS/MioMac" | grep -i -E 'UIKit|Capacitor'
-          # MioKit 资源包（注入脚本 / 内置规则）在 Contents/Resources；构建目录删掉，冒烟只能从 .app 里找资源
-          find "$APP/Contents/Resources/MioKit_MioKit.bundle" -name '*.js' -o -name '*.txt' | sed "s|$APP/||"
-          rm -rf macos/.build
-
-      - name: Smoke (MSE gate, YouTube formats, Firefox-style UI, animations, screenshots + recording)
-        run: |
-          set +e -u
-          mkdir -p mac-native-smoke
-          OUT="$PWD/mac-native-smoke/smoke.json"
-          # MIO_REDUCE_MOTION=0：runner 系统开着「减少动态效果」，强制打开动画录证据（App 平时跟随系统设置）
-          MIO_REDUCE_MOTION=0 MIO_SMOKE_OUT="$OUT" MIO_SMOKE_SHOTS="$PWD/mac-native-smoke" "mac-native-dist/Mio Preview.app/Contents/MacOS/MioMac" > mac-native-smoke/app.log 2>&1 &
-          PID=$!
-          SHOT=0
-          for i in $(seq 1 420); do
-            kill -0 $PID 2>/dev/null || break
-            if [ $SHOT = 0 ] && [ $i -ge 70 ]; then screencapture -x mac-native-smoke/screen.png 2>/dev/null; SHOT=1; fi
-            sleep 1
-          done
-          if kill -0 $PID 2>/dev/null; then echo "still running after 420s"; screencapture -x mac-native-smoke/screen-timeout.png 2>/dev/null; kill $PID; fi
-          wait $PID
-          CODE=$?
-          echo "--- app.log (tail) ---"; tail -40 mac-native-smoke/app.log
-          echo "--- smoke.json ---"; cat "$OUT" 2>/dev/null || echo "(no smoke json)"
-          echo "--- summary ---"
-          jq -c '{pass, mseOK, zoomOK, containerOK, keysOK, chromeOK, modulesOK, bridgeOK, blockOK, toggleOK, missingKeys, mse: {mediaSource: .mse.mediaSource, managedMediaSource: .mse.managedMediaSource, mseTypes: .mse.mseTypes}}' "$OUT" 2>/dev/null
-          echo "--- MioKit ---"
-          jq -c '.miokit | {blockOK, toggleOK, ruleLists, rulesReadyMs, appliedOn, appliedOff, appliedOnAgain, on, off, onAgain, adLoadedWhenOff, panelRowsFound, settingsChangeKey, userScriptOK, userScript, userScriptError, pageMenu, filterStatus}' "$OUT" 2>/dev/null
-          jq -c '.ui.bridge' "$OUT" 2>/dev/null
-          echo "--- Firefox UI ---"
-          jq -c '.ui | {systemReduceMotion, homeOK, homeAddressBar, bridge, pinnedOK, dragOK, detachOK, overflow, dropdownRows, zoomHUDShown, zoomPill, findStatus, verticalMode, reduceMotionOK, tabsAboveNav, trafficLightsInTabRow, layout}' "$OUT" 2>/dev/null
-          jq -c '.ui | {animation, recording, fullscreen}' "$OUT" 2>/dev/null
-          jq -c '.ui.strips | to_entries | map({(.key): {frames: .value.frames, changed: .value.framesThatChanged}}) | add' "$OUT" 2>/dev/null
-          ls -la mac-native-smoke
-          jq -c '.youtube | {playability, hlsManifest, dashManifest, adaptiveCount, maxAdaptiveHeight, qualityLevels, playbackQuality, video, mediaSource, managedMediaSource}' "$OUT" 2>/dev/null
-          jq -c '[.youtube.adaptiveVideo[]? | "\(.q) \(.mime)"] | unique' "$OUT" 2>/dev/null
-          ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i -E 'MioMac' | head -2 | while read f; do echo "--- crash $f ---"; head -60 ~/Library/Logs/DiagnosticReports/"$f"; done
-          echo "exit $CODE"
-          test "$CODE" = 0
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mac-native-smoke
-          path: mac-native-smoke
-          retention-days: 14
-
-      - name: Zip preview app
-        run: ditto -c -k --sequesterRsrc --keepParent "mac-native-dist/Mio Preview.app" mac-native-preview.zip
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mac-native-preview
-          path: mac-native-preview.zip
-          retention-days: 14
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [unit, ios, ios-sim-smoke, mac]
-    runs-on: ubuntu-24.04
-    steps:
-      # 软件内更新用的清单：scripts/release-manifests.mjs 读 pbxproj（buildVersion / minOSVersion）和 Info.plist（隐私说明）
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: Mio-*
-          path: dist
-          merge-multiple: true
-
-      # SHA256SUMS.txt（Mac 更新器校验 zip）+ altstore-source.json（SideStore / AltStore 源，
-      # 稳定地址 https://github.com/mio-co/MioApp/releases/latest/download/altstore-source.json）。
-      - name: In-app update manifests
-        run: node scripts/release-manifests.mjs --dist dist --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
-
-      - run: ls -la dist
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*

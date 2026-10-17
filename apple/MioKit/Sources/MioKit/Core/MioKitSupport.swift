@@ -73,6 +73,9 @@ public final class MioKeychainSecretStore: MioSecretStore {
     let fallback: MioPrefs
     public init(fallback: MioPrefs = UserDefaults.standard) { self.fallback = fallback }
 
+    /// 这些名字不退回 UserDefaults（登录 Cookie 不能明文落在 plist 里）：钥匙串不可用就不存
+    static let keychainOnlyNames: Set<String> = ["access.cookies"]
+
     /// name → (service, account, 退路 key)
     static func location(_ name: String) -> (String, String, String) {
         switch name {
@@ -103,11 +106,11 @@ public final class MioKeychainSecretStore: MioSecretStore {
             add[kSecValueData as String] = Data(v.utf8)
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             if SecItemAdd(add as CFDictionary, nil) == errSecSuccess { fallback.set(nil, forKey: fb); return }
-            fallback.set(v, forKey: fb)
+            if !Self.keychainOnlyNames.contains(name) { fallback.set(v, forKey: fb) }
             return
         }
         #else
-        if let v = value, !v.isEmpty { fallback.set(v, forKey: fb); return }
+        if let v = value, !v.isEmpty { if !Self.keychainOnlyNames.contains(name) { fallback.set(v, forKey: fb) }; return }
         #endif
         fallback.set(nil, forKey: fb)
     }

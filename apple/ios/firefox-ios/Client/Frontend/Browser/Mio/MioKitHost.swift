@@ -24,6 +24,9 @@ final class MioKitHost {
     let kit: MioKitContainer
     let blocker: MioContentBlocker
     private lazy var saveRunner = MioSaveRunner(kit: kit, dataStore: .default())
+    /// Cloudflare Access login cookies (MioCore behind Access): Keychain backup of the normal-tab data store
+    /// (WKWebsiteDataStore.default(), the store Firefox uses for every non-private tab), restored on launch.
+    private(set) lazy var accessVault = MioAccessCookieVault(prefs: kit.prefs, store: { .default() })
     /// Computed once on the main thread; the bridge may ask for it from any thread.
     nonisolated(unsafe) private let deviceInfo: MioDeviceInfo
 
@@ -63,9 +66,15 @@ final class MioKitHost {
         })
         observers.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                                             object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.kit.translate.cache.flush() }
+            MainActor.assumeIsolated {
+                self?.kit.translate.cache.flush()
+                if let vault = self?.accessVault { Task { await vault.backUp() } }
+            }
         })
         Task { await blocker.prepare() }
+        // Put back Access cookies that did not reach disk before the app was killed (before tabs restore)
+        let vault = accessVault
+        Task { await vault.restore() }
     }
 
     // MARK: - Web views
@@ -122,6 +131,34 @@ final class MioKitHost {
             mainFrameNavigations[ObjectIdentifier(webView), default: []].append(url.absoluteString)
         }
         entries[ObjectIdentifier(webView)]?.mods.willNavigateMainFrame(to: url)
+    }
+
+    /// Main-frame navigation finished (BrowserViewController didFinish): back to MioCore after an Access login
+    /// → back up the Access cookies; Access logout → drop the backup.
+    func didFinishMainFrame(webView: WKWebView) {
+        guard webView.configuration.websiteDataStore.isPersistent else { return }
+        accessVault.didFinishMainFrame(webView.url)
+    }
+
+    // MARK: - Cloudflare Access login
+
+    /// Access / identity-provider pages (always loaded in this web view, never handed to another app).
+    func isAuthFlow(_ url: URL?) -> Bool {
+        MioAccessAuth.isAuthFlowURL(url, prefs: kit.prefs)
+    }
+
+    /// window.open / target=_blank from the Access login page (or MioCore) to a login URL: continue in the opener tab.
+    func shouldOpenPopupInOpener(opener: URL?, target: URL?) -> Bool {
+        MioAccessAuth.popupDisposition(opener: opener, target: target, prefs: kit.prefs) == .openerTab
+    }
+
+    /// Safari user agent for Access + Google sign-in pages. Firefox's UA carries "FxiOS/<app version>", which for
+    /// Mio is FxiOS/0.4.0: Google treats that as an outdated / embedded browser (disallowed_useragent or
+    /// "this browser may not be secure"). Safari's UA is accepted. Returns nil for every other page.
+    func authUserAgent(for url: URL?) -> String? {
+        guard isAuthFlow(url) else { return nil }
+        return MioAccessAuth.mobileSafariUserAgent(iOSVersion: UIDevice.current.systemVersion,
+                                                   iPad: UIDevice.current.userInterfaceIdiom == .pad)
     }
 
     func detach(webView: WKWebView?) {

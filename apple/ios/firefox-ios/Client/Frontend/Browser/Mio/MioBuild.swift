@@ -18,7 +18,11 @@ enum MioBuild {
     static let homeDisplayURL = URL(string: "mio://home")!
     /// MioCore site behind mio://home (default home / new tab URL; mio:// pages themselves are served by MioKit's
     /// MioSchemeHandler, which redirects mio://home to the configured MioCore home path).
-    static let homeContentURL = URL(string: "https://mio.300031.xyz/")!
+    /// MioCore home page (same as MioKit's mio.core.homePath default). When MioCore is behind Cloudflare Access the first
+    /// load lands on the Access login page; after signing in Access redirects back here (redirect_url=/mio/nav).
+    static let homeContentURL = URL(string: "https://mio.300031.xyz/mio/nav")!
+    /// Home URL written by defaults version 1 (MioCore root); migrated to homeContentURL.
+    private static let legacyHomeContentURL = "https://mio.300031.xyz/"
 
     private static let homePaths: Set<String> = ["", "/", "/mio/nav", "/mio/nav/"]
 
@@ -63,7 +67,7 @@ enum MioBuild {
     // MARK: - Defaults
 
     private static let defaultsVersionKey = "mio.defaults.version"
-    private static let defaultsVersion = 1
+    private static let defaultsVersion = 2
 
     /// Applied on every launch before telemetry / Nimbus / FxA would start.
     /// - Privacy prefs are forced off every launch (their toggles are removed from Settings).
@@ -84,7 +88,19 @@ enum MioBuild {
         prefs.setBool(false, forKey: PrefsKeys.SearchSettings.showFirefoxSponsoredSuggestions)
         prefs.setBool(false, forKey: PrefsKeys.SearchSettings.showFirefoxNonSponsoredSuggestions)
 
-        guard (prefs.intForKey(defaultsVersionKey) ?? 0) < Int32(defaultsVersion) else { return }
+        let appliedVersion = prefs.intForKey(defaultsVersionKey) ?? 0
+        guard appliedVersion < Int32(defaultsVersion) else { return }
+
+        // Version 1 → 2: home / new tab pointed at the MioCore root; MioCore's home page is /mio/nav.
+        // Only rewritten if the user did not pick another page.
+        if appliedVersion == 1 {
+            for key in [PrefsKeys.NewTabCustomUrlPrefKey, PrefsKeys.HomeButtonHomePageURL]
+            where prefs.stringForKey(key) == legacyHomeContentURL {
+                prefs.setString(homeContentURL.absoluteString, forKey: key)
+            }
+            prefs.setInt(Int32(defaultsVersion), forKey: defaultsVersionKey)
+            return
+        }
 
         // Home page and new tab: mio://home (rendered from MioCore).
         prefs.setString(NewTabPage.homePage.rawValue, forKey: PrefsKeys.KeyNewTab)

@@ -172,9 +172,22 @@ final class MioMacSmoke {
         ui["homeURL"] = orNull(c.activeWebView?.url?.absoluteString)
         ui["homeIsHome"] = c.isHome(c.activeWebView?.url)
         ui["homeSecurity"] = c.navBar.urlBar.security.rawValue
-        let homeOK = c.navBar.urlBar.displayedText == MioMacHome.displayName && c.isHome(c.activeWebView?.url)
+        // MioCore 在 Cloudflare Access 后面、CI 没登录：落在 Access 登录页 → homeOK = "access-login"（不算失败，截图）
+        let landing = MioAccessAuth.homeStatus(landedOn: c.activeWebView?.url, home: host.kit.home)
+        ui["homeLanding"] = landing
+        let homeOK: Any
+        if landing == "access-login" {
+            let applied = host.modules(for: c.activeWebView)?.appliedRuleListIdentifiers ?? []
+            let ua = c.activeWebView?.customUserAgent ?? ""
+            ui["homeLoginRuleLists"] = applied
+            ui["homeLoginUserAgent"] = ua
+            homeOK = applied.isEmpty && ua.contains("Safari/") ? "access-login" : false
+            shot("mac-native-access-login", &shots)
+        } else {
+            homeOK = c.navBar.urlBar.displayedText == MioMacHome.displayName && c.isHome(c.activeWebView?.url)
+            shot("mac-native-home", &shots)
+        }
         ui["homeOK"] = homeOK
-        shot("mac-native-home", &shots)
 
         // 5b. MioCore 本机桥（MioKit 的 MioCoreBridgeHandler，消息通道 mio）：只对 MioCore 来源和 mio:// 内置页开放
         let bridgeJS = "try { const r = await window.webkit.messageHandlers.mio.postMessage({v: 1, id: 'ci', method: 'ping', params: {}}); return JSON.stringify(r); } catch (e) { return 'rejected:' + (e && e.message ? e.message : String(e)); }"

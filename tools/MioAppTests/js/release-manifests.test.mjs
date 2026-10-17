@@ -109,3 +109,17 @@ test('generate writes SHA256SUMS.txt (covering altstore-source.json) and the sou
   assert.equal(r2.source, null);
   assert.deepEqual(Object.keys(parseSha256Sums(r2.sums)), ['a.exe']);
 });
+
+test('v0.4.0: iOS version info comes from the apple/ios fork (xcconfig + Info.plist)', async () => {
+  const { readIOSFork, readXcconfig } = await import('../../../scripts/release-manifests.mjs');
+  const fs = await import('node:fs');
+  const root = new URL('../../../apple/ios/firefox-ios/', import.meta.url);
+  const info = readIOSFork({
+    versionXcconfig: fs.readFileSync(new URL('Client/Configuration/version.xcconfig', root), 'utf8'),
+    commonXcconfig: fs.readFileSync(new URL('Client/Configuration/Common.xcconfig', root), 'utf8'),
+    plistText: fs.readFileSync(new URL('Client/Info.plist', root), 'utf8'),
+  });
+  assert.deepEqual(info, { marketingVersion: '0.4.0', buildVersion: '10', minOSVersion: '15.0' });
+  assert.equal(readXcconfig('A = 1 // c\nA = 2\nB[sdk=iphoneos*] = x').A, '1');
+  assert.equal(readIOSFork({ plistText: '<key>CFBundleVersion</key><string>$(BUILD)</string>' }).buildVersion, null);
+});

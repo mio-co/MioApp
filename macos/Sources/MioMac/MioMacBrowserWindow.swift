@@ -928,6 +928,7 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         webViewChanged(webView)
+        host.didFinishMainFrame(webView) // Access 登录 Cookie 备份
         guard let id = tabID(of: webView) else { return }
         finished.insert(id)
         if let u = webView.url?.absoluteString, !isHome(webView.url) {
@@ -997,6 +998,11 @@ final class MioMacBrowserWindowController: NSWindowController, NSWindowDelegate,
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        // Cloudflare Access 登录（MioCore 在 Access 后面）：登录页 / MioCore 弹出的登录地址在当前标签继续，不开新标签
+        if host.shouldOpenPopupInOpener(opener: webView.url, target: navigationAction.request.url) {
+            webView.load(navigationAction.request)
+            return nil
+        }
         let container = tabID(of: webView).flatMap { store.tab($0)?.containerID }
         let url = navigationAction.request.url?.absoluteString ?? "about:blank"
         return newTab(url: url, containerID: container, activate: true, fromActive: true, configuration: configuration)?.webView

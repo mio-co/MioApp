@@ -1,6 +1,6 @@
 {
   "name": "mio-app",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "private": true,
   "description": "iOS / iPadOS / Mac shell for MioCore (https://mio.300031.xyz)",
   "scripts": {

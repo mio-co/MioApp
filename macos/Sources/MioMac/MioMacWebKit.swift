@@ -42,6 +42,11 @@ final class MioMacKit {
     let dataStores: MioContainerDataStores
     let schemeHandler: MioSchemeHandler
     private lazy var saveRunner = MioSaveRunner(kit: kit, dataStore: dataStores.dataStore(for: MioContainerCore.defaultId))
+    /// Cloudflare Access 登录 Cookie（MioCore 在 Access 后面）：默认容器的固定数据存储，钥匙串备份 + 启动补回；
+    /// 第一次启动从 v0.3.x Catalyst 主界面用的 .default() 迁移 MioCore / Access 的 Cookie（升级后不用再登）
+    private(set) lazy var accessVault = MioAccessCookieVault(prefs: kit.prefs) { [dataStores] in
+        dataStores.dataStore(for: MioContainerCore.defaultId)
+    }
     /// 主线程算好，桥可能在任意线程要
     nonisolated(unsafe) private let deviceInfo: MioDeviceInfo
 
@@ -96,7 +101,10 @@ final class MioMacKit {
             MainActor.assumeIsolated { self?.containerWillRemove(id) }
         })
         observers.append(center.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.kit.translate.cache.flush() }
+            MainActor.assumeIsolated {
+                self?.kit.translate.cache.flush()
+                if let vault = self?.accessVault { Task { await vault.backUp() } }
+            }
         })
     }
 
@@ -106,6 +114,24 @@ final class MioMacKit {
         prepared = true
         let blocker = self.blocker
         Task { await blocker.prepare(checkUpdates: checkUpdates) }
+        let vault = accessVault
+        Task {
+            await vault.migrateOnce(from: .default())
+            await vault.restore()
+        }
+    }
+
+    // MARK: - Cloudflare Access 登录
+
+    /// 主框架载入完成：回到 MioCore（登录完成）→ 备份 Access Cookie；Access 退出页 → 清空备份。只看默认容器
+    func didFinishMainFrame(_ wv: WKWebView) {
+        guard wv.configuration.websiteDataStore === dataStores.dataStore(for: MioContainerCore.defaultId) else { return }
+        accessVault.didFinishMainFrame(wv.url)
+    }
+
+    /// Access 登录页（或 MioCore）用 window.open / target=_blank 打开登录地址 → 在打开者标签里继续
+    func shouldOpenPopupInOpener(opener: URL?, target: URL?) -> Bool {
+        MioAccessAuth.popupDisposition(opener: opener, target: target, prefs: kit.prefs) == .openerTab
     }
 
     // MARK: - WebView

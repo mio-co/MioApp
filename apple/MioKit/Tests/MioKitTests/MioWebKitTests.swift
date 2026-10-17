@@ -171,3 +171,42 @@ final class MioWebKitTests: XCTestCase {
     }
 }
 #endif
+
+#if canImport(WebKit) && os(macOS)
+/// Cloudflare Access Cookie 备份 / 补回（真实 WKHTTPCookieStore，非持久存储）
+@MainActor
+final class MioAccessCookieVaultTests: XCTestCase {
+    func testBackUpAndRestoreAccessCookies() async throws {
+        let prefs = MioMemoryPrefs()
+        let secrets = MioMemorySecretStore()
+        let store = WKWebsiteDataStore.nonPersistent()
+        let vault = MioAccessCookieVault(prefs: prefs, secrets: secrets, store: { store })
+        let later = Date().addingTimeInterval(86_400)
+        func cookie(_ name: String, _ value: String, _ domain: String) -> HTTPCookie {
+            HTTPCookie(properties: [.name: name, .value: value, .domain: domain, .path: "/", .expires: later, .secure: "TRUE"])!
+        }
+        await store.httpCookieStore.setCookie(cookie("CF_Authorization", "jwt-app", "mio.300031.xyz"))
+        await store.httpCookieStore.setCookie(cookie("CF_Authorization", "jwt-team", "sakune.cloudflareaccess.com"))
+        await store.httpCookieStore.setCookie(cookie("other", "x", "mio.300031.xyz"))
+        let saved = await vault.backUp()
+        XCTAssertEqual(saved, 2)
+        XCTAssertEqual(vault.savedCount, 2)
+
+        // 模拟「Cookie 没落盘就被杀掉」：清掉数据存储里的 Access Cookie → 启动时补回
+        for c in await store.httpCookieStore.allCookies() where c.name == "CF_Authorization" {
+            await store.httpCookieStore.deleteCookie(c)
+        }
+        let restored = await vault.restore()
+        XCTAssertEqual(restored, 2)
+        let names = await store.httpCookieStore.allCookies().filter { $0.name == "CF_Authorization" }.map(\.value)
+        XCTAssertEqual(Set(names), ["jwt-app", "jwt-team"])
+        // 再补一次：都在，不重复
+        let again = await vault.restore()
+        XCTAssertEqual(again, 0)
+
+        // 退出登录 → 清空备份
+        vault.didFinishMainFrame(URL(string: "https://sakune.cloudflareaccess.com/cdn-cgi/access/logout"))
+        XCTAssertEqual(vault.savedCount, 0)
+    }
+}
+#endif

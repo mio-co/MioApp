@@ -26,6 +26,12 @@ extension BrowserViewController: WKUIDelegate {
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         guard let parentTab = tabManager[webView] else { return nil }
+        // Mio: Cloudflare Access login (MioCore behind Access) opened with window.open / target=_blank:
+        // continue in this tab (Access is all full-page redirects back to MioCore; a popup tab would strand the opener)
+        if MioKitHost.shared.shouldOpenPopupInOpener(opener: webView.url, target: navigationAction.request.url) {
+            webView.load(navigationAction.request)
+            return nil
+        }
         guard parentTab.popupThrottler.canShowAlert(type: .popupWindow) else {
             logger.log("Popup window disallowed for exceeding threshold for tab.", level: .info, category: .webview)
             return nil
@@ -857,6 +863,11 @@ extension BrowserViewController: WKNavigationDelegate {
         } else {
             webView.customUserAgent = UserAgent.getUserAgent(domain: url.baseDomain ?? "")
         }
+        // Mio: Access / Google sign-in pages get Safari's UA (Google rejects FxiOS/0.x as an embedded / outdated browser)
+        let mioAuthFlow = MioKitHost.shared.isAuthFlow(url)
+        if let authUA = MioKitHost.shared.authUserAgent(for: url) {
+            webView.customUserAgent = authUA
+        }
 
         if url.isFileURL,
            tab.shouldDownloadDocument(navigationAction.request),
@@ -878,7 +889,8 @@ extension BrowserViewController: WKNavigationDelegate {
         let isGoogleDomain = url.host?.contains("google") ?? false
         let isPrivate = tab.isPrivate
 
-        if isPrivate || isGoogleDomain || shouldBlockExternalApps {
+        // Mio: login pages never open another app through a universal link (e.g. the GitHub app for github.com/login)
+        if isPrivate || isGoogleDomain || shouldBlockExternalApps || mioAuthFlow {
             decisionHandler(allowPolicy)
             return
         }
@@ -1371,6 +1383,7 @@ extension BrowserViewController: WKNavigationDelegate {
         // Reveal content hidden on a cross-origin popup commit now that the page has presented.
         webView.isHidden = false
         webviewTelemetry.stop()
+        MioKitHost.shared.didFinishMainFrame(webView: webView) // Mio: Access login cookies backup
         recordGoogleLensSearchCompletedIfNeeded(for: tabManager[webView], succeeded: true)
 
         if let url = webView.url, InternalURL(url) == nil {

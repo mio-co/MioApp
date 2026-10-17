@@ -11,13 +11,16 @@
 //      `simctl io screenshot`, deletes the request; the app also keeps its own drawHierarchy copy (<name>-app.png)
 //
 // Checks (gate = all true):
-//   homeOK    mio://home starts a main-frame navigation to the MioCore origin (https://mio.300031.xyz)
+//   homeOK    mio://home starts a main-frame navigation to the MioCore origin (https://mio.300031.xyz) and lands on
+//             MioCore (true), or on the Cloudflare Access login page ("access-login": CI is not signed in; not a
+//             failure as long as the login page gets no ad-block rule lists and Safari's UA)
 //   bridgeOK  example.com: window.Mio undefined and the bridge answers forbidden; mio://about: ping → pong
 //   blockOK   example.com: Mio ad-block rule lists attached, doubleclick request blocked, same-origin request loads
 //   settingsOK  Settings → "Mio 扩展" page (MioExtensionsView) renders with module rows
 //   (recorded only) tab overview via the app's own deep link
 
 import Foundation
+@preconcurrency import MioKit
 import UIKit
 import WebKit
 import SwiftUI
@@ -86,7 +89,7 @@ final class MioSmoke {
         let firstTab = tabManager()?.selectedTab
         home["launchTabURL"] = orNull(firstTab?.url?.absoluteString)
         home["launchWebViewURL"] = orNull(firstTab?.webView?.url?.absoluteString)
-        var homeOK = false
+        var homeOK: Any = false
         if let tab = openTab(MioBuild.homeDisplayURL, select: true), let wv = await webView(of: tab) {
             await waitLoad(wv, timeout: 30)
             let navs = host.mainFrameLog(for: wv)
@@ -95,9 +98,26 @@ final class MioSmoke {
             home["tabURL"] = orNull(tab.url?.absoluteString)
             home["tabIsMioHome"] = MioBuild.isMioHome(tab.url)
             let coreHost = MioBuild.homeContentURL.host ?? ""
-            homeOK = navs.contains { URL(string: $0)?.host?.lowercased() == coreHost }
+            let reachedCore = navs.contains { URL(string: $0)?.host?.lowercased() == coreHost }
                 || wv.url?.host?.lowercased() == coreHost
-            await shot("05-smoke-mio-home")
+            let status = MioAccessAuth.homeStatus(landedOn: wv.url, home: host.kit.home)
+            home["landing"] = status
+            if status == "access-login" {
+                // Access login page: no ad-block lists on it, Safari UA (Google sign-in), stays in this tab
+                let applied = host.modules(for: wv)?.appliedRuleListIdentifiers ?? []
+                let ua = wv.customUserAgent ?? ""
+                home["loginRuleLists"] = applied
+                home["loginUserAgent"] = ua
+                home["loginNavigatorUserAgent"] = await callJS(wv, "return navigator.userAgent")
+                home["loginHost"] = orNull(wv.url?.host)
+                home["loginTitle"] = orNull(wv.title)
+                let accessOK = reachedCore && applied.isEmpty && !ua.contains("FxiOS") && ua.contains("Safari/")
+                homeOK = accessOK ? "access-login" : false
+                await shot("05-smoke-access-login")
+            } else {
+                homeOK = reachedCore && status == "ok"
+                await shot("05-smoke-mio-home")
+            }
         }
         home["ok"] = homeOK
         report["home"] = home
@@ -176,7 +196,8 @@ final class MioSmoke {
             await shot("08-tab-tray")
         }
 
-        let pass = homeOK && bridgeOK && blockOK && settingsOK
+        let homePassed = (homeOK as? Bool) == true || (homeOK as? String) == "access-login"
+        let pass = homePassed && bridgeOK && blockOK && settingsOK
         report["homeOK"] = homeOK
         report["bridgeOK"] = bridgeOK
         report["blockOK"] = blockOK

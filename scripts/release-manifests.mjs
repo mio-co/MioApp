@@ -3,8 +3,11 @@
 //   - SHA256SUMS.txt          sha256sum 格式（"<hex>  <文件名>"），Mac 更新器校验用
 //   - altstore-source.json    AltStore / SideStore 源（v2 格式），指向本次 Release 的 Mio.ipa
 //
-// 用法：node scripts/release-manifests.mjs --dist dist --tag v0.3.3 [--repo mio-co/MioApp] [--date 2026-10-17T00:00:00Z]
-//       [--notes-file notes.md] [--pbxproj ios/App/App.xcodeproj/project.pbxproj] [--plist ios/App/App/Info.plist]
+// 用法：node scripts/release-manifests.mjs --dist dist --tag v0.4.0 [--repo mio-co/MioApp] [--date ISO]
+//       [--notes-file notes.md] [--ios-root apple/ios/firefox-ios]
+//       （v0.3.x 的 Capacitor 工程：--pbxproj ios/App/App.xcodeproj/project.pbxproj --plist ios/App/App/Info.plist）
+// v0.4.0 起 iOS 版是 apple/ios（firefox-ios fork）：版本 = Client/Configuration/version.xcconfig 的 APP_VERSION，
+// 构建号 = Client/Info.plist 的 CFBundleVersion，最低系统 = Client/Configuration/Common.xcconfig 的 IPHONEOS_DEPLOYMENT_TARGET。
 // 纯函数都导出，tools/MioAppTests/js/release-manifests.test.mjs 测。
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -62,6 +65,32 @@ export function readPbxproj(text) {
   return { marketingVersion: pick('MARKETING_VERSION'), buildVersion: pick('CURRENT_PROJECT_VERSION'), minOSVersion: pick('IPHONEOS_DEPLOYMENT_TARGET') };
 }
 
+/** xcconfig 文本 → { KEY: 值 }（忽略注释和 #include） */
+export function readXcconfig(text) {
+  const out = {};
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.replace(/\/\/.*$/, '').trim();
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?\s*=\s*(.*)$/.exec(line);
+    if (m && !(m[1] in out)) out[m[1]] = m[2].trim();
+  }
+  return out;
+}
+
+/** Info.plist（XML）里某个 key 的字符串值 */
+export function readPlistString(plistXml, key) {
+  const m = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(String(plistXml || ''));
+  return m ? m[1] : null;
+}
+
+/** apple/ios（firefox-ios fork）的版本信息 → { marketingVersion, buildVersion, minOSVersion }（同 readPbxproj 的形状） */
+export function readIOSFork({ versionXcconfig = '', commonXcconfig = '', plistText = '' }) {
+  const v = readXcconfig(versionXcconfig);
+  const c = readXcconfig(commonXcconfig);
+  let build = readPlistString(plistText, 'CFBundleVersion');
+  if (build && /\$\(/.test(build)) build = null;
+  return { marketingVersion: v.APP_VERSION || null, buildVersion: build, minOSVersion: c.IPHONEOS_DEPLOYMENT_TARGET || null };
+}
+
 const xmlUnescape = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 
 /** Info.plist（XML）里所有 NS*UsageDescription → { key: 文案 }（AltStore 要求源里列出，和 ipa 不一致会拒绝安装） */
@@ -106,8 +135,8 @@ export function buildAltStoreSource({ repo, tag, version, buildVersion, minOSVer
     name: 'Mio',
     bundleIdentifier: BUNDLE_ID,
     developerName: 'Mio',
-    subtitle: 'MioCore 客户端 + 内置广告拦截浏览器',
-    localizedDescription: 'MioCore（mio.300031.xyz）的 iOS / iPadOS 客户端：后台导航页、内置浏览器（AdGuard 规则广告拦截、YouTube 防沉迷、后台播放）。免签名安装包，由 SideStore / AltStore 用你自己的 Apple ID 签名。',
+    subtitle: 'WebKit 浏览器 + MioCore 主页',
+    localizedDescription: 'Mio：iOS / iPadOS 浏览器（WebKit），主页和新标签页是 MioCore（mio.300031.xyz）；Mio 扩展：广告 / 跟踪拦截、YouTube 防沉迷、SponsorBlock、翻译、阅读 / 强制深色、用户脚本、容器。源码以 MPL-2.0 公开。免签名安装包，由 SideStore / AltStore 用你自己的 Apple ID 签名。',
     iconURL: icon,
     tintColor: '#F0A3BF',
     category: 'utilities',
@@ -141,12 +170,12 @@ export function buildAltStoreSource({ repo, tag, version, buildVersion, minOSVer
 }
 
 /** 生成清单写进 dist；返回 { sums, source }（source 在没有 Mio.ipa 时为 null） */
-export async function generate({ dist, tag, repo = 'mio-co/MioApp', date, notes = '', pbxprojText = '', plistText = '' }) {
+export async function generate({ dist, tag, repo = 'mio-co/MioApp', date, notes = '', pbxprojText = '', plistText = '', iosInfo = null }) {
   const version = versionFromTag(tag);
   const files = readdirSync(dist).filter((n) => !SKIP.has(n) && statSync(join(dist, n)).isFile());
   let source = null;
   if (files.includes('Mio.ipa')) {
-    const pbx = readPbxproj(pbxprojText);
+    const pbx = iosInfo || readPbxproj(pbxprojText);
     if (pbx.marketingVersion && pbx.marketingVersion !== version) {
       console.warn(`warning: MARKETING_VERSION ${pbx.marketingVersion} != tag version ${version}`);
     }
@@ -187,14 +216,25 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(2);
   }
   const read = (p) => (p && existsSync(p) ? readFileSync(p, 'utf8') : '');
+  // 默认：v0.4.0 的 apple/ios fork；显式给了 --pbxproj 才按 v0.3.x Capacitor 工程读
+  const iosRoot = a['ios-root'] || join(root, 'apple/ios/firefox-ios');
+  const useFork = !a.pbxproj && existsSync(join(iosRoot, 'Client/Info.plist'));
+  const plistText = read(a.plist || (useFork ? join(iosRoot, 'Client/Info.plist') : join(root, 'ios/App/App/Info.plist')));
+  const iosInfo = useFork ? readIOSFork({
+    versionXcconfig: read(join(iosRoot, 'Client/Configuration/version.xcconfig')),
+    commonXcconfig: read(join(iosRoot, 'Client/Configuration/Common.xcconfig')),
+    plistText,
+  }) : null;
+  if (iosInfo) console.log(`iOS (apple/ios fork): ${iosInfo.marketingVersion} (${iosInfo.buildVersion}), iOS ${iosInfo.minOSVersion}+`);
   const r = await generate({
     dist: resolve(a.dist),
     tag: a.tag,
     repo: a.repo || 'mio-co/MioApp',
     date: a.date,
     notes: read(a['notes-file']),
-    pbxprojText: read(a.pbxproj || join(root, 'ios/App/App.xcodeproj/project.pbxproj')),
-    plistText: read(a.plist || join(root, 'ios/App/App/Info.plist')),
+    pbxprojText: useFork ? '' : read(a.pbxproj || join(root, 'ios/App/App.xcodeproj/project.pbxproj')),
+    plistText,
+    iosInfo,
   });
   process.stdout.write(`${SUMS_NAME}:\n${r.sums}`);
   if (r.source) console.log(`${SOURCE_NAME}: ${r.source.apps[0].versions[0].version} (${r.source.apps[0].versions[0].buildVersion}) → ${r.source.apps[0].versions[0].downloadURL}`);

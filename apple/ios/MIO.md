@@ -42,6 +42,24 @@ Branding (strings + artwork) is produced by `mio/scripts/rebrand.py` (idempotent
 - The native bridge (`window.Mio.call`, API v1) is **only** for the MioCore origin and `mio://` pages; MioKit checks the
   calling frame's security origin. Interface contract: `apple/MioKit/README.md` (line C).
 
+## Cloudflare Access (MioCore behind Access)
+
+The MioCore site can sit behind Cloudflare Access. Opening mio://home then lands on
+`https://<team>.cloudflareaccess.com/cdn-cgi/access/login/…`; the whole sign-in (Google / GitHub OAuth or the one-time
+PIN e-mail) happens in the same tab and Access redirects back to `/mio/nav`. Hooks (logic in MioKit `MioAccessAuth`):
+
+- `createWebViewWith`: a login URL opened with `window.open` / `target=_blank` from the Access page or MioCore is loaded
+  in the opener tab (no popup tab that would leave the opener stuck on the login page).
+- `handleWebURLNavigation`: Access / identity-provider pages get Safari's UA (Firefox's UA says `FxiOS/0.4.0`, which
+  Google rejects as an embedded / outdated browser: `disallowed_useragent`) and never open another app through a
+  universal link (e.g. the GitHub app for github.com/login).
+- Ad-block rule lists are not attached on login pages.
+- Login cookies (`CF_Authorization`, …) live in `WKWebsiteDataStore.default()` (the store of every normal tab) and are
+  also backed up to the Keychain after a sign-in / when the app goes to the background, then restored on launch
+  (`MioAccessCookieVault`), so a kill right after signing in does not lose them.
+- ASWebAuthenticationSession is not used: its cookies go to Safari's jar, not the app's web views, and an https callback
+  needs an associated domain (Apple developer account). If Google still refuses, use the one-time PIN e-mail.
+
 ## Mozilla services
 
 Removed or switched off (the Swift code mostly stays compiled but is never started):

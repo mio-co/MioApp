@@ -85,6 +85,25 @@ mods.webView = webView                    // 同时交给 userScriptBridge
 - 地址栏显示：`kit.home.addressBarText(for: url)` → 主页（`mio://home` 或 MioCore 首页）返回 `"Mio"`；其他 `mio://` 返回原样；普通网页返回 nil（照常显示）。
 - 设置：`mio.core.origin`（MioCore 地址，默认 `https://mio.300031.xyz`，只收 https，本机调试允许 http://localhost）、`mio.core.homePath`（默认 `/mio/nav`）。
 
+## Cloudflare Access（MioCore 在 Access 后面）
+
+MioCore 站点（默认 `https://mio.300031.xyz`）可以挡在 Cloudflare Access 后面：`mio://home` → `/mio/nav` → 302 到
+`https://<team>.cloudflareaccess.com/cdn-cgi/access/login/…&redirect_url=%2Fmio%2Fnav` → 身份提供商（Google / GitHub OAuth 或一次性验证码邮件）
+→ `/cdn-cgi/access/authorized` → 回到 `/mio/nav`。全部在当前标签内完成。`MioAccessAuth`（纯逻辑）+ `MioAccessCookieVault`（WebKit）：
+
+| 宿主时机 | 调用 |
+|---|---|
+| `decidePolicyFor`（主框架 http/https） | `MioAccessAuth.isAuthFlowURL(url, prefs:)` → 在当前 WebView 放行，不走通用链接 / 外部 App；iOS 另外按 `needsSafariUserAgent` / 宿主的 auth UA 换 Safari UA |
+| `createWebViewWith` | `popupDisposition(opener: webView.url, target: request.url, prefs:) == .openerTab` → `webView.load(request)`，返回 nil（不开弹窗标签） |
+| 主框架 `didFinish`（默认容器） | `vault.didFinishMainFrame(url)`：回到 MioCore → 备份 Access Cookie 到钥匙串；`/cdn-cgi/access/logout` → 清空 |
+| App 启动 | `await vault.restore()`（补回没落盘的 Access Cookie）；Mac 另外 `migrateOnce(from: .default())`（v0.3.x Catalyst 主界面的登录态） |
+| 进入后台 / 失去焦点 | `await vault.backUp()` |
+| CI 冒烟 | `MioAccessAuth.homeStatus(landedOn:home:)` → `"ok"` / `"access-login"`（没登录，不算失败）/ `"other"` |
+
+- 广告拦截：Access / 身份提供商页面不挂内容规则（`MioAdblockModule.shouldApplyContentRules`）。
+- 备份只收 `CF_Authorization` / `CF_Binding` / `CF_AppSession` / `CF_Session` / `CF_Device`，只限 MioCore 主机和 `*.cloudflareaccess.com`，
+  只收带过期时间的；钥匙串不可用时不退回 UserDefaults（`MioKeychainSecretStore.keychainOnlyNames`）。
+
 ## 菜单 / 分享 / 动作
 
 ```swift

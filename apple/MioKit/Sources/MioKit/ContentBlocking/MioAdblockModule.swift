@@ -42,6 +42,8 @@ public final class MioAdblockModule: MioModuleContentRules {
 
     public func shouldApplyContentRules(topURL: URL?, prefs: MioPrefs) -> Bool {
         guard let u = topURL, let sc = u.scheme?.lowercased(), sc == "http" || sc == "https" else { return true }
+        // Cloudflare Access / 身份提供商的登录页不挂规则（拦截列表误伤登录脚本会让 MioCore 登录卡住）
+        if MioAccessAuth.isAuthFlowURL(u, prefs: prefs) { return false }
         return MioFilterCatalog.allowlistEntry(for: u.host, prefs: prefs) == nil
     }
 
