@@ -231,6 +231,7 @@ class ContentBlocker: Notifiable {
 
     private func removeTrackingProtection(forTab tab: ContentBlockerTab) {
         tab.currentWebView()?.configuration.userContentController.removeAllContentRuleLists()
+        MioKitHost.shared.contentRulesWereCleared(webView: tab.currentWebView()) // Mio: keep Mio's ad-block lists
 
         // Add back the block images rule (if needed) after having removed all rules.
         if let rule = blockImagesRule, tab.imageContentBlockingEnabled() {

@@ -3,11 +3,12 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import Common
+@preconcurrency import MioKit
 import SwiftUI
 import UIKit
 
-/// Settings → "Mio 扩展" entry. Placeholder page: the module list and their switches come from MioKit
-/// (`apple/MioKit`, line C). Until it is linked, the page lists the planned modules read-only.
+/// Settings → "Mio 扩展" entry. The page is generated from MioKit's MioExtensionSettingsModel:
+/// one section per module (module switch first, sub-settings only while the module is on).
 final class MioExtensionsSetting: Setting {
     override var title: NSAttributedString? {
         guard let theme else { return NSAttributedString(string: MioExtensionsStrings.title) }
@@ -26,7 +27,8 @@ final class MioExtensionsSetting: Setting {
     override var accessibilityIdentifier: String? { return "Settings.MioExtensions" }
 
     override func onClick(_ navigationController: UINavigationController?) {
-        let controller = UIHostingController(rootView: MioExtensionsPlaceholderView())
+        let model = MioExtensionsViewModel(model: MioKitHost.shared.kit.settingsModel, kit: MioKitHost.shared.kit)
+        let controller = UIHostingController(rootView: MioExtensionsView(viewModel: model))
         controller.title = MioExtensionsStrings.title
         navigationController?.pushViewController(controller, animated: true)
     }
@@ -37,43 +39,148 @@ enum MioExtensionsStrings {
     static let subtitle = "广告拦截、YouTube 防沉迷、翻译、用户脚本等"
 }
 
-/// Module ids follow the v0.4.0 plan; MioKit owns the real registry and settings keys.
-struct MioExtensionsPlaceholderView: View {
-    private struct Module: Identifiable {
-        let id: String
-        let name: String
-        let detail: String
+@MainActor
+final class MioExtensionsViewModel: ObservableObject {
+    @Published private(set) var groups: [MioSettingsGroup] = []
+    @Published var toast: String?
+    private let model: MioExtensionSettingsModel
+    private let kit: MioKitContainer
+
+    init(model: MioExtensionSettingsModel, kit: MioKitContainer) {
+        self.model = model
+        self.kit = kit
+        reload()
     }
 
-    private let modules: [Module] = [
-        Module(id: "adblock", name: "广告 / 跟踪拦截", detail: "WKContentRuleList，可导入 EasyList / AdGuard 列表"),
-        Module(id: "youtubeFocus", name: "YouTube 防沉迷", detail: "隐藏推荐、Shorts 等"),
-        Module(id: "sponsorBlock", name: "SponsorBlock", detail: "跳过视频中的赞助片段"),
-        Module(id: "translate", name: "翻译", detail: "整页翻译"),
-        Module(id: "webrtc", name: "WebRTC 控制", detail: "防止 IP 泄露"),
-        Module(id: "readerDark", name: "阅读 / 强制深色", detail: "阅读模式与网页强制深色"),
-        Module(id: "userScripts", name: "用户脚本", detail: "安装自己的脚本插件"),
-        Module(id: "containers", name: "容器", detail: "按标签页隔离 Cookie 与登录")
-    ]
+    func reload() { groups = model.groups() }
+
+    func set(_ row: MioSettingsRow, _ value: MioPrefValue) {
+        if case .text(_, _, let secure) = row.setting.kind, secure {
+            // Secrets (translate API key) go to the keychain, never to UserDefaults.
+            kit.translate.setAPIKey(value.stringValue?.isEmpty == false ? value.stringValue : nil)
+            toast = "已保存到钥匙串"
+        } else {
+            model.apply(row, value)
+        }
+        reload()
+    }
+
+    func trigger(_ row: MioSettingsRow) {
+        Task {
+            let message = await model.trigger(row)
+            self.toast = message ?? "完成"
+            self.reload()
+        }
+    }
+}
+
+struct MioExtensionsView: View {
+    @ObservedObject var viewModel: MioExtensionsViewModel
 
     var body: some View {
         List {
-            Section(footer: Text("开关与子设置由 MioKit 提供，接入后在这里生效。")) {
-                ForEach(modules) { module in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(module.name)
-                            Text(module.detail).font(.footnote).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: .constant(false))
-                            .labelsHidden()
-                            .disabled(true)
+            ForEach(viewModel.groups) { group in
+                Section(header: Label(group.title, systemImage: group.symbol),
+                        footer: footer(for: group)) {
+                    ForEach(group.rows) { row in
+                        MioSettingRowView(row: row, viewModel: viewModel)
                     }
-                    .accessibilityIdentifier("MioExtensions.\(module.id)")
                 }
             }
         }
         .listStyle(.insetGrouped)
+        .alert(isPresented: Binding(get: { viewModel.toast != nil }, set: { if !$0 { viewModel.toast = nil } })) {
+            Alert(title: Text(viewModel.toast ?? ""))
+        }
+        .onAppear { viewModel.reload() }
+    }
+
+    private func footer(for group: MioSettingsGroup) -> some View {
+        let notes = group.rows.compactMap { $0.setting.footer }
+        return Text(notes.isEmpty ? group.summary : notes.joined(separator: "\n"))
+    }
+}
+
+struct MioSettingRowView: View {
+    let row: MioSettingsRow
+    @ObservedObject var viewModel: MioExtensionsViewModel
+    @State private var text = ""
+    @State private var newItem = ""
+
+    var body: some View {
+        content.accessibilityIdentifier("MioExtensions.\(row.id)")
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch row.setting.kind {
+        case .toggle:
+            Toggle(isOn: Binding(get: { row.value.boolValue ?? false },
+                                 set: { viewModel.set(row, .bool($0)) })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.setting.title).fontWeight(row.role == .moduleToggle ? .semibold : .regular)
+                    if row.role == .moduleToggle, let detail = row.detail {
+                        Text(detail).font(.footnote).foregroundColor(.secondary)
+                    }
+                }
+            }
+        case .choice(let options, _):
+            Picker(row.setting.title, selection: Binding(
+                get: { options.firstIndex { $0.value == row.value } ?? 0 },
+                set: { index in if options.indices.contains(index) { viewModel.set(row, options[index].value) } }
+            )) {
+                ForEach(options.indices, id: \.self) { index in Text(options[index].label).tag(index) }
+            }
+        case .text(_, let placeholder, let secure):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.setting.title).font(.footnote).foregroundColor(.secondary)
+                Group {
+                    if secure {
+                        SecureField(placeholder, text: $text)
+                    } else {
+                        TextField(placeholder, text: $text)
+                    }
+                }
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onSubmit { viewModel.set(row, .string(text)) }
+                .onAppear { text = secure ? "" : (row.value.stringValue ?? "") }
+            }
+        case .stringList(let placeholder):
+            let list = row.value.stringsValue ?? []
+            VStack(alignment: .leading, spacing: 6) {
+                Text(row.setting.title).font(.footnote).foregroundColor(.secondary)
+                ForEach(list, id: \.self) { item in
+                    HStack {
+                        Text(item).lineLimit(1)
+                        Spacer()
+                        Button(role: .destructive) {
+                            viewModel.set(row, .strings(list.filter { $0 != item }))
+                        } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                HStack {
+                    TextField(placeholder, text: $newItem)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Button("添加") {
+                        viewModel.set(row, .strings(list + [newItem]))
+                        newItem = ""
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(newItem.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        case .action(let title):
+            Button(title) { viewModel.trigger(row) }
+        case .info:
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.setting.title)
+                if let detail = row.detail {
+                    Text(detail).font(.footnote).foregroundColor(.secondary)
+                }
+            }
+        }
     }
 }

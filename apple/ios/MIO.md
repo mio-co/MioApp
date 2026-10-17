@@ -20,8 +20,15 @@ picked up automatically):
 | File | What |
 | --- | --- |
 | `MioBuild.swift` | switches for disabled Mozilla services, mio://home URLs, first-run / privacy defaults |
-| `MioHostBridge.swift` | placeholder protocol for the MioCore native bridge (real one comes from `apple/MioKit`) |
-| `MioExtensionsSetting.swift` | Settings → "Mio 扩展" entry + placeholder page |
+| `MioKitHost.swift` | glue to the shared `apple/MioKit` package: one `MioKitContainer`, mio:// scheme handler, per-tab `MioWebViewModules` (module scripts, MioCore bridge, ad-block rule lists), `MioCoreBridgeDelegate` (device info, open tab, save to Mio, permission prompt) |
+| `MioExtensionsSetting.swift` | Settings → "Mio 扩展" page generated from MioKit's `MioExtensionSettingsModel` (module switches + sub-settings) |
+
+MioKit (`apple/MioKit`, interface in its README) is linked into the Client target as a local Swift package
+(`Client.xcodeproj` file reference `../../MioKit`, product `MioKit`); its SafariConverterLib dependency is pinned in
+the workspace `Package.resolved`. Hooks: `TabConfigurationProvider` (mio scheme handler), `Tab.createWebview` / `close` /
+night & no-image mode re-injection (Firefox's `UserScriptManager` removes all user scripts, so MioKit keeps Firefox's
+as host scripts and reinstalls), `decidePolicyFor` (main-frame `willNavigateMainFrame`, mio:// allowed),
+`ContentBlocker.removeTrackingProtection` (Firefox clears every rule list; Mio's are added back).
 
 Branding (strings + artwork) is produced by `mio/scripts/rebrand.py` (idempotent; re-run after an upstream merge).
 
@@ -30,8 +37,10 @@ Branding (strings + artwork) is produced by `mio/scripts/rebrand.py` (idempotent
 - New tab and home page default to **mio://home**; it renders the MioCore site `https://mio.300031.xyz/`.
 - The address bar shows **Mio** for it (editing shows `mio://home`). Typing / linking `mio://home`, or opening it
   from outside (`mio` is the app's public URL scheme), loads the same page.
-- The native bridge is **only** for the MioCore origin and `mio://` pages. Until MioKit is linked it is a no-op
-  (`MioNoopHostBridge`). Interface contract: `apple/MioKit/README.md` (line C).
+- mio:// pages are served by MioKit's `MioSchemeHandler` (mio://home redirects to the MioCore home path,
+  default `/mio/nav`; mio://offline, mio://about).
+- The native bridge (`window.Mio.call`, API v1) is **only** for the MioCore origin and `mio://` pages; MioKit checks the
+  calling frame's security origin. Interface contract: `apple/MioKit/README.md` (line C).
 
 ## Mozilla services
 

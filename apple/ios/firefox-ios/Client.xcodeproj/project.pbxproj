@@ -24,6 +24,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		A1310000000000000000B003 /* MioKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1310000000000000000B002 /* MioKit */; };
 		032CE5F62EBA0C04007CCC0D /* ToUExperiencePointsCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032CE5F52EBA0C04007CCC0D /* ToUExperiencePointsCalculatorTests.swift */; };
 		033A5FCC2E5F001200A84E8A /* TermsOfUseTelemetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 033A5FCB2E5F001200A84E8A /* TermsOfUseTelemetryTests.swift */; };
 		033A62002E77FE9900A84E8A /* ResetTermsOfServiceAcceptancePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 033A61FF2E77FE9900A84E8A /* ResetTermsOfServiceAcceptancePage.swift */; };
@@ -11656,6 +11657,7 @@
 		D4BF6AB92893DDAA001B5130 /* en-US */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en-US"; path = "en-US.lproj/Today.strings"; sourceTree = "<group>"; };
 		D4C35390283500A600F7DC7D /* PerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTests.swift; sourceTree = "<group>"; };
 		D4C4BDCD2253725E00986F04 /* LibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryTests.swift; sourceTree = "<group>"; };
+		A1310000000000000000B001 /* MioKit */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = MioKit; path = ../../MioKit; sourceTree = "<group>"; };
 		D4F0C2642B2C90FB008ECEE8 /* BrowserKit */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = BrowserKit; path = ../BrowserKit; sourceTree = "<group>"; };
 		D4F389132981634F0082E974 /* Fake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fake.swift; sourceTree = "<group>"; };
 		D50268E825D1AE2D00026CDA /* el */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = el; path = el.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -12694,6 +12696,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1310000000000000000B003 /* MioKit in Frameworks */,
 				AA93D2D82F71B445002E5E88 /* LLMKit in Frameworks */,
 				5A70EF0E295DFCCF00790249 /* Common in Frameworks */,
 				8A08EC6427EBDCAD00E119C7 /* AdServices.framework in Frameworks */,
@@ -17781,6 +17784,7 @@
 			isa = PBXGroup;
 			children = (
 				D4F0C2642B2C90FB008ECEE8 /* BrowserKit */,
+				A1310000000000000000B001 /* MioKit */,
 				1BFB58D82E4D1CB700643A49 /* MozillaRustComponents */,
 				C2F335362ECE339F0071588A /* TranslationsEngine.html */,
 				43BE578B278BA4D900491291 /* RustMozillaAppServices-Info.plist */,
@@ -18689,6 +18693,7 @@
 				AA93B7142F6D95D6002E5E88 /* LLMKit */,
 				EDD592492FC1090C0015EF9E /* ModifiedCopy */,
 				9405F1D23013762800BF6B10 /* AppAttestKit */,
+				A1310000000000000000B002 /* MioKit */,
 			);
 			productName = Client;
 			productReference = F84B21BE1A090F8100AAB793 /* Client.app */;
@@ -33770,6 +33775,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A1310000000000000000B002 /* MioKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MioKit;
+		};
 		0B6D1C872E15456F00919F1E /* SummarizeKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SummarizeKit;

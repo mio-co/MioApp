@@ -70,6 +70,11 @@ class TabConfigurationProvider {
                 )
             }
         }
+        // Mio: mio://home, mio://offline, mio://about come from MioKit's scheme handler
+        let mioConfig = engineConfiguration.webViewConfiguration
+        if mioConfig.urlSchemeHandler(forURLScheme: MioBuild.homeScheme) == nil {
+            mioConfig.setURLSchemeHandler(MioKitHost.shared.makeSchemeHandler(), forURLScheme: MioBuild.homeScheme)
+        }
         return engineConfiguration
     }
 }

@@ -5,9 +5,9 @@ name: iOS (firefox-ios fork)
 on:
   push:
     branches: [feat/ios-firefox]
-    paths: ['apple/ios/**', '.github/workflows/ios-firefox.yml']
+    paths: ['apple/ios/**', 'apple/MioKit/**', '.github/workflows/ios-firefox.yml']
   pull_request:
-    paths: ['apple/ios/**', '.github/workflows/ios-firefox.yml']
+    paths: ['apple/ios/**', 'apple/MioKit/**', '.github/workflows/ios-firefox.yml']
 
 concurrency:
   group: ios-firefox-${{ github.head_ref || github.ref_name }}

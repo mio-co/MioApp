@@ -389,6 +389,7 @@ class Tab: NSObject,
                 backgroundAudio: featureFlagsProvider.isEnabled(.backgroundAudio)
                     && BackgroundAudioHelper.isEnabled(profile.prefs)
             )
+            MioKitHost.shared.hostScriptsDidChange(webView: webView) // Mio: put MioKit scripts back
         }
     }
 
@@ -407,6 +408,7 @@ class Tab: NSObject,
                 backgroundAudio: featureFlagsProvider.isEnabled(.backgroundAudio)
                     && BackgroundAudioHelper.isEnabled(profile.prefs)
             )
+            MioKitHost.shared.hostScriptsDidChange(webView: webView) // Mio: put MioKit scripts back
         }
     }
 
@@ -578,6 +580,9 @@ class Tab: NSObject,
                 && BackgroundAudioHelper.isEnabled(profile.prefs)
         )
 
+        // Mio: MioKit modules / MioCore bridge / ad-block rule lists for this web view
+        MioKitHost.shared.attach(webView: webView)
+
         tabDelegate?.tab(self, didCreateWebView: webView)
         webViewLoadingObserver = webView.observe(\.isLoading) { [weak self] _, _ in
             guard let self else { return }
@@ -650,6 +655,7 @@ class Tab: NSObject,
         webView?.stopLoading()
 
         contentScriptManager.uninstall(tab: self)
+        MioKitHost.shared.detach(webView: webView) // Mio
         webView?.removeAllUserScripts()
 
         if let webView = webView {

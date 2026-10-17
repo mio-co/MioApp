@@ -577,10 +577,14 @@ extension BrowserViewController: WKNavigationDelegate {
             return
         }
 
-        // Mio: mio://home (typed, linked or restored) loads the MioCore page behind it
+        // Mio: MioKit attaches / detaches ad-block rule lists per site before a main-frame navigation
+        if navigationAction.targetFrame?.isMainFrame ?? true {
+            MioKitHost.shared.willNavigateMainFrame(webView: webView, to: url)
+        }
+
+        // Mio: mio:// pages (mio://home → MioCore home, mio://offline, mio://about) come from MioKit's scheme handler
         if MioBuild.isMioScheme(url) {
-            decisionHandler(.cancel)
-            webView.load(URLRequest(url: MioBuild.resolve(url)))
+            decisionHandler(.allow)
             return
         }
 
